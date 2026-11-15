@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import type { ChatRecord } from '../src/lib/concierge-history';
 
 type VoiceRequest = {
   model: string;
@@ -184,6 +185,20 @@ async function readHome(page: Page, index: number) {
   await expect.poll(() => page.evaluate(() => window.__hjemVoice.requests.length)).toBe(index + 2);
 }
 
+async function savedChats(page: Page): Promise<ChatRecord[]> {
+  return page.evaluate(() => new Promise<ChatRecord[]>((resolve, reject) => {
+    const request = indexedDB.open('hjem-concierge-history', 1);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const database = request.result;
+      const transaction = database.transaction('chats', 'readonly');
+      const records = transaction.objectStore('chats').getAll();
+      transaction.oncomplete = () => { database.close(); resolve(records.result as ChatRecord[]); };
+      transaction.onabort = () => { database.close(); reject(transaction.error); };
+    };
+  }));
+}
+
 test('a voice message streams PCM audio and keeps a readable transcript without changing the saved text model', async ({ page }) => {
   await startConcierge(page);
   await sendVoice(page);
@@ -200,13 +215,42 @@ test('a voice message streams PCM audio and keeps a readable transcript without 
     .find((part) => part.type === 'input_audio');
   expect(Buffer.from(audioPart!.input_audio!.data, 'base64').subarray(0, 4).toString()).toBe('RIFF');
 
-  await emit(page, 0, [delta({ audio: { id: 'reply-audio', transcript: 'The **bedroom** lights ', data: Buffer.alloc(4800).toString('base64') } })]);
+  const outputAudio = Buffer.alloc(4802).toString('base64');
+  // Real provider variants include empty partial fields, omitted singleton
+  // indexes, and base64 split inside quartets rather than at audio boundaries.
+  await emit(page, 0, [
+    delta({ role: 'assistant', content: null, audio: { id: 'reply-audio', transcript: '', data: '' } }),
+    { choices: [{ delta: { audio: { transcript: 'The **bedroom** lights ' } } }] },
+    ...[outputAudio.slice(0, 1), outputAudio.slice(1, 3), outputAudio.slice(3, 1001), outputAudio.slice(1001)]
+      .map((data) => delta({ audio: { data } })),
+  ]);
   await expect.poll(() => page.evaluate(() => window.__hjemVoice.outputStarts)).toBeGreaterThan(0);
-  await emit(page, 0, [delta({ audio: { transcript: 'are on.' } }), finish()], true);
+  await emit(page, 0, [
+    delta({ audio: { transcript: 'are on.' } }), finish(),
+    delta({ audio: { id: 'reply-audio', expires_at: 1794770000, transcript: '', data: '' }, tool_calls: [] }),
+    { choices: [], usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30, cost: null } },
+  ], true);
   await expect(page.getByRole('article', { name: 'Home Concierge response' })).toContainText('The bedroom lights are on.');
   await expect(page.getByRole('button', { name: 'Start voice message', exact: true })).toBeEnabled();
+  await expect.poll(async () => (await savedChats(page))[0]?.messages).toEqual([
+    { id: expect.any(String), role: 'user', text: 'Voice message' },
+    { id: expect.any(String), role: 'assistant', text: 'The **bedroom** lights are on.' },
+  ]);
+  const saved = await savedChats(page);
+  expect(saved).toHaveLength(1);
+  expect(saved[0].model).toBe('fixture/text');
+  expect(JSON.stringify(saved)).not.toContain('input_audio');
+  expect(JSON.stringify(saved)).not.toContain(audioPart!.input_audio!.data);
+  expect(JSON.stringify(saved)).not.toContain(outputAudio);
   await navigate(page, 'Settings');
   await expect(page.getByLabel('Custom model ID', { exact: true })).toHaveValue('fixture/text');
+  await page.reload();
+  await navigate(page, 'Concierge');
+  await expect(page.getByRole('article', { name: 'Your message' })).toContainText('Voice message');
+  await expect(page.getByRole('article', { name: 'Home Concierge response' })).toContainText('The bedroom lights are on.');
+  expect(await page.evaluate(() => ({ requests: window.__hjemVoice.requests.length,
+    microphones: window.__hjemVoice.microphoneRequests, playback: window.__hjemVoice.outputStarts })))
+    .toEqual({ requests: 0, microphones: 0, playback: 0 });
 });
 
 test('streamed tool arguments execute only after a complete response and affect the real demo state', async ({ page }) => {

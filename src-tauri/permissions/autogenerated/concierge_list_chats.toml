@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-concierge-list-chats"
+description = "Enables the concierge_list_chats command without any pre-configured scope."
+commands.allow = ["concierge_list_chats"]
+
+[[permission]]
+identifier = "deny-concierge-list-chats"
+description = "Denies the concierge_list_chats command without any pre-configured scope."
+commands.deny = ["concierge_list_chats"]

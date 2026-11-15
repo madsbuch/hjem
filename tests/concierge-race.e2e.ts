@@ -49,6 +49,9 @@ test('native model saves block new requests and clear previous provider history'
         if (command === 'plugin:launcher|get_status')
           return { supported: false, isDefaultHome: false };
         if (command === 'concierge_get_settings') return { ...settings };
+        if (command === 'concierge_list_chats') return [];
+        if (command === 'concierge_load_chat') return null;
+        if (command === 'concierge_save_chat') return null;
         if (command === 'concierge_list_models') return ['fake/old-model', 'fake/new-model'].map((id) => ({
           id, name: id, description: 'Test model', contextLength: 32000,
           inputPrice: 0, outputPrice: 0, requestPrice: 0, isFree: true, supportsTools: true,

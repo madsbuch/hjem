@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-concierge-save-chat"
+description = "Enables the concierge_save_chat command without any pre-configured scope."
+commands.allow = ["concierge_save_chat"]
+
+[[permission]]
+identifier = "deny-concierge-save-chat"
+description = "Denies the concierge_save_chat command without any pre-configured scope."
+commands.deny = ["concierge_save_chat"]

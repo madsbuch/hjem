@@ -13,7 +13,9 @@ const array = (value: unknown): value is unknown[] => Array.isArray(value);
 const base64 = (value: unknown): value is string => typeof value === 'string' &&
   value.length > 0 && value.length % 4 === 0 && /^[A-Za-z0-9+/]*={0,2}$/.test(value);
 const stopped = () => new DOMException('Stopped.', 'AbortError');
-const protocolError = () => new Error(PROTOCOL_ERROR);
+// Only locally defined field/stage names belong in diagnostics. Never include
+// provider payloads: they can contain the recording, transcript or tool arguments.
+const protocolError = (detail: string) => new Error(`${PROTOCOL_ERROR} Detail: ${detail}.`);
 
 function voiceBody(body: Record<string, unknown>): Record<string, unknown> {
   if (!array(body.messages) || body.messages.length === 0 || body.messages.length > 200)
@@ -69,7 +71,7 @@ interface StreamTool {
   function: { name: string; arguments: string };
 }
 
-/** Shared strict SSE decoder for native IPC and browser fetch. */
+/** Shared SSE decoder; tolerant of partial metadata, strict about completed actions. */
 export class VoiceCompletionStream {
   private decoder = new TextDecoder('utf-8', { fatal: true });
   private buffer = '';
@@ -79,6 +81,7 @@ export class VoiceCompletionStream {
   private terminal: string | null = null;
   private text = '';
   private transcript = '';
+  private audioRemainder = '';
   private calls = new Map<number, StreamTool>();
   private usage: Record<string, unknown> | undefined;
   private id: string | undefined;
@@ -89,7 +92,7 @@ export class VoiceCompletionStream {
     this.bytes += chunk.byteLength;
     if (this.bytes > STREAM_LIMIT) throw new Error('OpenRouter returned a voice response that is too large.');
     try { this.buffer += this.decoder.decode(chunk, { stream: true }); }
-    catch { throw protocolError(); }
+    catch { throw protocolError('invalid UTF-8'); }
     let newline = this.buffer.indexOf('\n');
     while (newline !== -1) {
       const line = this.buffer.slice(0, newline).replace(/\r$/, '');
@@ -106,84 +109,102 @@ export class VoiceCompletionStream {
     } else if (line.startsWith('data:')) {
       this.data.push(line.slice(5).replace(/^ /, ''));
     } else if (!line.startsWith(':') && !/^(event|id|retry):/.test(line)) {
-      throw protocolError();
+      throw protocolError('invalid SSE field');
     }
   }
 
   private event(data: string): void {
-    if (this.done) throw protocolError();
+    if (this.done) throw protocolError('data after stream completion');
     if (data === '[DONE]') {
-      if (!this.terminal) throw protocolError();
+      if (!this.terminal) throw protocolError('missing finish_reason');
       this.done = true;
       return;
     }
     let value: unknown;
-    try { value = JSON.parse(data); } catch { throw protocolError(); }
-    if (!record(value)) throw protocolError();
+    try { value = JSON.parse(data); } catch { throw protocolError('invalid event JSON'); }
+    if (!record(value)) throw protocolError('invalid event object');
     if (value.error != null) throw new Error('The voice model could not finish this response. Please try again.');
-    if (value.id !== undefined) {
-      if (typeof value.id !== 'string' || !value.id || (this.id && value.id !== this.id)) throw protocolError();
+    if (value.id != null) {
+      if (typeof value.id !== 'string' || !value.id || (this.id && value.id !== this.id)) throw protocolError('invalid response id');
       this.id = value.id;
     }
     if (value.usage != null) {
-      if (!record(value.usage)) throw protocolError();
+      if (!record(value.usage)) throw protocolError('invalid usage');
       for (const key of ['prompt_tokens', 'completion_tokens', 'total_tokens', 'cost']) {
         const count = value.usage[key];
-        if (count !== undefined && (typeof count !== 'number' || !Number.isFinite(count) || count < 0)) throw protocolError();
+        // OpenRouter's ChatUsage schema explicitly permits an unknown cost.
+        if (key === 'cost' && count === null) continue;
+        if (count !== undefined && (typeof count !== 'number' || !Number.isFinite(count) || count < 0))
+          throw protocolError(`invalid usage.${key}`);
       }
       this.usage = value.usage;
     }
-    if (!array(value.choices) || value.choices.length > 1 || (!value.choices.length && value.usage == null)) throw protocolError();
+    if (!array(value.choices) || value.choices.length > 1 || (!value.choices.length && value.usage == null))
+      throw protocolError('invalid choices');
     for (const choice of value.choices) {
-      if (!record(choice) || choice.index !== 0 || !record(choice.delta)) throw protocolError();
-      const delta = choice.delta;
+      if (!record(choice)) throw protocolError('invalid choice');
       if (choice.error != null || choice.finish_reason === 'error')
         throw new Error('The voice model could not finish this response. Please try again.');
-      if (delta.role != null && delta.role !== 'assistant') throw protocolError();
+      // The audio guide's partial chunks omit index. This request asks for one
+      // choice; an explicit index must still identify that same choice.
+      if (choice.index !== undefined && choice.index !== 0) throw protocolError('invalid choice.index');
+      if (!record(choice.delta)) throw protocolError('invalid choice.delta');
+      const delta = choice.delta;
+      if (delta.role != null && delta.role !== 'assistant') throw protocolError('invalid delta.role');
       if (delta.refusal != null && delta.refusal !== '') throw new Error('The voice model declined this request.');
-      if (delta.content != null && typeof delta.content !== 'string') throw protocolError();
-      // OpenRouter repeats finish_reason on its final usage frame. It must not
-      // introduce new content or calls after a completed choice.
-      if (this.terminal && (delta.content || delta.audio != null || delta.tool_calls != null)) throw protocolError();
+      if (delta.content != null && typeof delta.content !== 'string') throw protocolError('invalid delta.content');
+      if (delta.audio != null && !record(delta.audio)) throw protocolError('invalid delta.audio');
+      const audio = record(delta.audio) ? delta.audio : undefined;
+      if (audio?.transcript != null && typeof audio.transcript !== 'string') throw protocolError('invalid audio.transcript');
+      if (audio?.data != null && typeof audio.data !== 'string') throw protocolError('invalid audio.data');
+      if (delta.tool_calls != null && !array(delta.tool_calls)) throw protocolError('invalid delta.tool_calls');
+      const tools = array(delta.tool_calls) ? delta.tool_calls : [];
+      // Repeated finish/usage and audio id/expiry trailers are metadata, not new
+      // output. Actual text, audio or tool changes must stop at finish_reason.
+      if (this.terminal && (delta.content || audio?.transcript || audio?.data || tools.length))
+        throw protocolError('output after finish_reason');
       if (typeof delta.content === 'string') this.text += delta.content;
-      if (delta.audio != null) {
-        if (!record(delta.audio)) throw protocolError();
-        if (delta.audio.transcript !== undefined) {
-          if (typeof delta.audio.transcript !== 'string') throw protocolError();
-          this.transcript += delta.audio.transcript;
-        }
-        if (delta.audio.data !== undefined) {
-          if (!base64(delta.audio.data)) throw protocolError();
-          this.onAudio(delta.audio.data);
-        }
-      }
-      if (delta.tool_calls != null) {
-        if (!array(delta.tool_calls)) throw protocolError();
-        for (const part of delta.tool_calls) this.tool(part);
-      }
+      if (typeof audio?.transcript === 'string') this.transcript += audio.transcript;
+      if (typeof audio?.data === 'string' && audio.data) this.audio(audio.data);
+      for (const part of tools) this.tool(part);
       if (choice.finish_reason != null) {
         if (choice.finish_reason !== 'stop' && choice.finish_reason !== 'tool_calls')
           throw new Error('The voice response was cut short. Please try again.');
-        if (this.terminal && this.terminal !== choice.finish_reason) throw protocolError();
+        if (this.terminal && this.terminal !== choice.finish_reason) throw protocolError('conflicting finish_reason');
         this.terminal = choice.finish_reason;
       }
     }
   }
 
+  private audio(fragment: string): void {
+    // Audio deltas are base64 fragments, not necessarily complete quartets.
+    // Retain at most three characters and send only decodable pieces to playback.
+    const encoded = this.audioRemainder + fragment;
+    if (!/^[A-Za-z0-9+/]*={0,2}$/.test(encoded)) throw protocolError('invalid audio.data base64');
+    const length = encoded.length - encoded.length % 4;
+    const complete = encoded.slice(0, length);
+    this.audioRemainder = encoded.slice(length);
+    if (complete) {
+      if (!base64(complete) || (complete.includes('=') && this.audioRemainder))
+        throw protocolError('invalid audio.data padding');
+      this.onAudio(complete);
+    }
+  }
+
   private tool(part: unknown): void {
     if (!record(part) || typeof part.index !== 'number' || !Number.isSafeInteger(part.index) || part.index < 0 || part.index >= 64)
-      throw protocolError();
+      throw protocolError('invalid tool_call.index');
     const call: StreamTool = this.calls.get(part.index) ?? { id: '', type: 'function', function: { name: '', arguments: '' } };
-    if (part.type !== undefined && part.type !== 'function') throw protocolError();
-    if (part.id !== undefined) {
-      if (typeof part.id !== 'string' || !part.id || (call.id && call.id !== part.id)) throw protocolError();
+    if (part.type != null && part.type !== 'function') throw protocolError('invalid tool_call.type');
+    if (part.id != null) {
+      if (typeof part.id !== 'string' || !part.id || (call.id && call.id !== part.id)) throw protocolError('invalid tool_call.id');
       call.id = part.id;
     }
-    if (part.function !== undefined) {
-      if (!record(part.function)) throw protocolError();
+    if (part.function != null) {
+      if (!record(part.function)) throw protocolError('invalid tool_call.function');
       for (const field of ['name', 'arguments']) {
         const value = part.function[field];
-        if (value !== undefined && typeof value !== 'string') throw protocolError();
+        if (value != null && typeof value !== 'string') throw protocolError(`invalid tool_call.function.${field}`);
       }
       if (typeof part.function.name === 'string') call.function.name += part.function.name;
       if (typeof part.function.arguments === 'string') call.function.arguments += part.function.arguments;
@@ -192,19 +213,23 @@ export class VoiceCompletionStream {
   }
 
   finish(): unknown {
-    try { this.buffer += this.decoder.decode(); } catch { throw protocolError(); }
-    if (this.buffer.trim() || this.data.length || !this.done || !this.terminal) throw protocolError();
+    try { this.buffer += this.decoder.decode(); } catch { throw protocolError('incomplete UTF-8'); }
+    if (this.buffer.trim() || this.data.length) throw protocolError('incomplete SSE event');
+    if (!this.done) throw protocolError('missing stream completion');
+    if (!this.terminal) throw protocolError('missing finish_reason');
+    if (this.audioRemainder) throw protocolError('incomplete audio.data base64');
     const calls = [...this.calls.entries()].sort(([a], [b]) => a - b).map(([index, call], expected) => {
-      if (index !== expected || !call.id || !/^[A-Za-z0-9_-]{1,128}$/.test(call.function.name)) throw protocolError();
+      if (index !== expected || !call.id || !/^[A-Za-z0-9_-]{1,128}$/.test(call.function.name))
+        throw protocolError('incomplete tool_call');
       let args: unknown;
-      try { args = JSON.parse(call.function.arguments); } catch { throw protocolError(); }
-      if (!record(args)) throw protocolError();
+      try { args = JSON.parse(call.function.arguments); } catch { throw protocolError('incomplete tool_call arguments'); }
+      if (!record(args)) throw protocolError('invalid tool_call arguments');
       return call;
     });
     if (new Set(calls.map((call) => call.id)).size !== calls.length ||
-        (this.terminal === 'tool_calls') !== (calls.length > 0)) throw protocolError();
+        (this.terminal === 'tool_calls') !== (calls.length > 0)) throw protocolError('inconsistent completed tool_calls');
     const content = this.transcript || this.text;
-    if (!content.trim() && !calls.length) throw protocolError();
+    if (!content.trim() && !calls.length) throw protocolError('missing transcript or text');
     return {
       ...(this.id ? { id: this.id } : {}), model: CONCIERGE_VOICE_MODEL,
       choices: [{ index: 0, finish_reason: this.terminal,
@@ -239,7 +264,7 @@ async function nativeStream(body: Record<string, unknown>, signal: AbortSignal, 
     const onEvent = new Channel<unknown>((event) => {
       if (closed) return;
       try {
-        if (!record(event) || receivedDone) throw protocolError();
+        if (!record(event) || receivedDone) throw protocolError('invalid native event');
         if (event.type === 'done') {
           receivedDone = true;
           complete();
@@ -247,7 +272,7 @@ async function nativeStream(body: Record<string, unknown>, signal: AbortSignal, 
           typeof byte === 'number' && Number.isInteger(byte) && byte >= 0 && byte <= 255)) {
           const data = event.data.filter((byte): byte is number => typeof byte === 'number');
           onChunk(Uint8Array.from(data));
-        } else throw protocolError();
+        } else throw protocolError('invalid native audio chunk');
       } catch (cause) { fail(cause); }
     });
     if (signal.aborted) { fail(stopped()); return; }

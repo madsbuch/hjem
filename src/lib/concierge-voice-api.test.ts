@@ -22,6 +22,19 @@ const done = 'data: [DONE]\n\n';
 const answer = event(delta({ audio: { data: 'AAABAA==', transcript: 'Hello ' } })) +
   event(delta({ audio: { data: 'AgADAA==', transcript: 'there.' } }, 'stop')) +
   event({ ...delta({ content: '', role: 'assistant' }, 'stop'), usage: { prompt_tokens: 2, completion_tokens: 3, total_tokens: 5, cost: 0.01 } }) + done;
+// Model the public audio guide's partial audio deltas and the SDK's nullable
+// usage.cost, rather than requiring every frame to contain a complete audio blob.
+// https://openrouter.ai/docs/guides/overview/multimodal/audio
+// https://github.com/OpenRouterTeam/typescript-sdk/blob/main/src/models/chatusage.ts
+const partialAudioAnswer = ': OPENROUTER PROCESSING\n\n' +
+  event(delta({ role: 'assistant', content: null, audio: { id: 'audio-1', data: '', transcript: '' } })) +
+  event({ choices: [{ delta: { audio: { transcript: 'Hello there.' } } }] }) +
+  event(delta({ audio: { data: 'AAAB' } })) +
+  event(delta({ audio: { data: 'AA==' } })) +
+  event(delta({}, 'stop')) +
+  event(delta({ audio: { id: 'audio-1', expires_at: 1794770000 }, tool_calls: [] }, 'stop')) +
+  event({ ...delta({}, 'stop'), usage: { prompt_tokens: 2, completion_tokens: 3, total_tokens: 5,
+    cost: null, completion_tokens_details: { audio_tokens: 2, reasoning_tokens: null } } }) + done;
 const voiceMessage = { role: 'user', content: [{ type: 'input_audio', input_audio: { data: 'UklGRg==', format: 'wav' } }] };
 const request = { messages: [voiceMessage], max_tokens: 4096 };
 const response = (text: string) => new Response(text, { headers: { 'content-type': 'text/event-stream; charset=utf-8' } });
@@ -34,6 +47,51 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe('voice SSE completion boundaries', () => {
+  it.each([
+    ['nullable usage.cost', event(delta({ content: 'Done' }, 'stop')) + event({ choices: [], usage: { cost: null } })],
+    ['omitted single choice index', event({ choices: [{ delta: { content: 'Done' }, finish_reason: 'stop' }] })],
+    ['empty audio delta', event(delta({ content: 'Done', audio: { data: '', transcript: '' } }, 'stop'))],
+    ['audio metadata trailer', event(delta({ content: 'Done' }, 'stop')) + event(delta({ audio: { expires_at: 1794770000 } }))],
+  ])('accepts the compatible response variant: %s', async (_name, text) => {
+    const { VoiceCompletionStream } = await import('./concierge-voice-api');
+    const stream = new VoiceCompletionStream(vi.fn());
+    stream.push(encoder.encode(text + done));
+    expect(stream.finish()).toMatchObject({ choices: [{ message: { content: 'Done' } }] });
+  });
+
+  it('accepts partial audio, metadata-only trailers, empty fields and an unavailable usage cost', async () => {
+    const { VoiceCompletionStream } = await import('./concierge-voice-api');
+    const audio = vi.fn();
+    const stream = new VoiceCompletionStream(audio);
+    for (const byte of encoder.encode(partialAudioAnswer)) stream.push(Uint8Array.of(byte));
+    expect(stream.finish()).toMatchObject({ choices: [{ finish_reason: 'stop', message: { content: 'Hello there.' } }],
+      usage: { cost: null, prompt_tokens: 2, completion_tokens: 3 } });
+    expect(audio.mock.calls).toEqual([['AAAB'], ['AA==']]);
+  });
+
+  it('reassembles base64 quartets split across audio deltas without dropping bytes', async () => {
+    const { VoiceCompletionStream } = await import('./concierge-voice-api');
+    const audio = vi.fn();
+    const stream = new VoiceCompletionStream(audio);
+    for (const data of ['A', 'AA', 'BA', 'A=', '=']) stream.push(encoder.encode(event(delta({ audio: { data } }))));
+    stream.push(encoder.encode(event(delta({ audio: { transcript: 'Done' } }, 'stop')) + done));
+    expect(stream.finish()).toMatchObject({ choices: [{ message: { content: 'Done' } }] });
+    expect(audio.mock.calls.map(([value]) => atob(value)).join('')).toBe(atob('AAABAA=='));
+  });
+
+  it('treats optional null fields as absent while assembling complete tool calls', async () => {
+    const { VoiceCompletionStream } = await import('./concierge-voice-api');
+    const stream = new VoiceCompletionStream(vi.fn());
+    stream.push(encoder.encode(event(delta({ audio: { data: null, transcript: null }, tool_calls: [
+      { index: 0, id: 'first', type: 'function', function: { name: 'home_status', arguments: '' } },
+    ] })) + event({ id: null, choices: [{ index: 0, finish_reason: 'tool_calls', delta: { content: null, tool_calls: [
+      { index: 0, id: null, type: null, function: { name: null, arguments: '{}' } },
+    ] } }] }) + done));
+    expect(stream.finish()).toMatchObject({ choices: [{ message: { tool_calls: [
+      { id: 'first', type: 'function', function: { name: 'home_status', arguments: '{}' } },
+    ] } }] });
+  });
+
   it('merges split UTF-8, multiline SSE, audio transcripts and repeated terminal usage chunks', async () => {
     const { VoiceCompletionStream } = await import('./concierge-voice-api');
     const audio = vi.fn();
@@ -72,11 +130,18 @@ describe('voice SSE completion boundaries', () => {
     event(delta({ content: 'No terminal' })) + done,
     event(delta({ content: 'Truncated' }, 'length')) + done,
     event(delta({ audio: { data: 'not base64' } }, 'stop')) + done,
+    event(delta({ audio: { data: 'AA', transcript: 'Truncated audio' } }, 'stop')) + done,
+    event(delta({ audio: { data: 'AA==A', transcript: 'Bad padding' } }, 'stop')) + done,
+    event(delta({ audio: { data: 123, transcript: 'Invalid audio type' } }, 'stop')) + done,
+    event(delta({ audio: { data: null, transcript: 123 } }, 'stop')) + done,
     event(delta({ tool_calls: [{ index: 0, id: 'call', type: 'function', function: { name: 'home_status', arguments: '{' } }] }, 'tool_calls')) + done,
     event(delta({ tool_calls: [{ index: 1, id: 'call', type: 'function', function: { name: 'home_status', arguments: '{}' } }] }, 'tool_calls')) + done,
     event(delta({ tool_calls: [{ index: 0, id: 'call', type: 'function', function: { name: 'home_status', arguments: '[]' } }] }, 'tool_calls')) + done,
     event(delta({ tool_calls: [{ index: 0, id: 'call', type: 'function', function: { name: 'home_status', arguments: '{}' } }] }, 'stop')) + done,
     event(delta({ content: 'Done' }, 'stop')) + event(delta({ content: 'Too late' }, 'stop')) + done,
+    event(delta({ content: 'Done' }, 'stop')) + event(delta({ audio: { data: 'AA==' } })) + done,
+    event(delta({ content: 'Done' }, 'stop')) + event(delta({ audio: { transcript: 'Too late' } })) + done,
+    event(delta({ content: 'Done' }, 'stop')) + event(delta({ tool_calls: [{ index: 0, id: 'late' }] })) + done,
     event(delta({ content: 'Done' }, 'stop')) + done + event(delta({ content: 'After done' })),
     event({ choices: [{ index: 0, delta: {} }, { index: 1, delta: {} }] }) + done,
     event(delta({ content: 'Hello' }, 'stop')) + event({ choices: [], usage: { cost: -1 } }) + done,
@@ -93,9 +158,39 @@ describe('voice SSE completion boundaries', () => {
     expect(() => new VoiceCompletionStream(vi.fn()).push(new Uint8Array(24 * 1024 * 1024 + 1))).toThrow('too large');
     expect(() => new VoiceCompletionStream(vi.fn()).push(encoder.encode(event({ error: { message: 'private-provider-content' } })))).toThrow('could not finish');
   });
+
+  it('identifies the failed field or stage without exposing provider content', async () => {
+    const { VoiceCompletionStream } = await import('./concierge-voice-api');
+    for (const [text, detail] of [
+      [event(delta({ audio: { data: 'private-provider-content' } })), 'invalid audio.data base64'],
+      [event({ choices: [], usage: { cost: 'private-provider-content' } }), 'invalid usage.cost'],
+      [event(delta({ content: 'private-provider-content' }, 'stop')), 'missing stream completion'],
+    ]) {
+      let failure: unknown;
+      try { const stream = new VoiceCompletionStream(vi.fn()); stream.push(encoder.encode(text)); stream.finish(); }
+      catch (error) { failure = error; }
+      expect(failure).toBeInstanceOf(Error);
+      if (!(failure instanceof Error)) throw new Error('Expected a diagnostic error');
+      expect(failure.message).toContain(detail);
+      expect(failure.message).not.toContain('private-provider-content');
+    }
+  });
 });
 
 describe('voice transports', () => {
+  it.each([
+    ['', 'missing stream completion'],
+    [event({ error: { message: 'private-provider-content' } }) + done, 'could not finish'],
+  ])('never returns complete-looking actions from an unfinished or failed response %#', async (ending, expected) => {
+    const action = event(delta({ tool_calls: [
+      { index: 0, id: 'call', type: 'function', function: { name: 'home_scene', arguments: '{"scene":"calm"}' } },
+    ] }, 'tool_calls'));
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(response(action + ending)));
+    await (await import('./concierge-api')).saveConciergeSettings('test-key', 'model');
+    const voice = await import('./concierge-voice-api');
+    await expect(voice.requestConciergeVoice(request, new AbortController().signal, vi.fn())).rejects.toThrow(expected);
+  });
+
   it('uses the saved preview key, fixed voice model and PCM stream without changing the text model', async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(response(answer));
     vi.stubGlobal('fetch', fetchMock);
@@ -146,7 +241,7 @@ describe('voice transports', () => {
     native.invoke.mockImplementation(async (command, args) => {
       expect(command).toBe('concierge_voice_request');
       expect(args?.body).toMatchObject({ model: 'openai/gpt-audio', stream: true });
-      const data = encoder.encode(answer);
+      const data = encoder.encode(partialAudioAnswer);
       for (let index = 0; index < data.length; index += 9) native.receive({ type: 'chunk', data: [...data.slice(index, index + 9)] });
       native.receive({ type: 'done' });
       return null;
@@ -154,7 +249,7 @@ describe('voice transports', () => {
     const voice = await import('./concierge-voice-api');
     const audio = vi.fn();
     await expect(voice.requestConciergeVoice(request, new AbortController().signal, audio)).resolves.toMatchObject({
-      choices: [{ message: { content: 'Hello there.' } }], usage: { cost: 0.01 },
+      choices: [{ message: { content: 'Hello there.' } }], usage: { cost: null },
     });
     expect(fetchMock).not.toHaveBeenCalled();
     expect(native.invoke).toHaveBeenCalledTimes(1);

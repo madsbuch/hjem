@@ -27,6 +27,9 @@ fn main() {
             "concierge_request",
             "concierge_voice_request",
             "concierge_cancel",
+            "concierge_list_chats",
+            "concierge_load_chat",
+            "concierge_save_chat",
         ]),
     ))
     .expect("Could not build Hjem's native command permissions")

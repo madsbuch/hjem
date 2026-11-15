@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 mod concierge;
+mod concierge_history;
 mod database;
 mod home_setup;
 mod schema;
@@ -45,6 +46,9 @@ pub fn run() {
             concierge::concierge_request,
             concierge::concierge_voice_request,
             concierge::concierge_cancel,
+            concierge_history::concierge_list_chats,
+            concierge_history::concierge_load_chat,
+            concierge_history::concierge_save_chat,
         ])
         .run(tauri::generate_context!())
         .expect("Hjem could not start");

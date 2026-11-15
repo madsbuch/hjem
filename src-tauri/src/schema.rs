@@ -60,3 +60,15 @@ diesel::table! {
         package_name -> Text,
     }
 }
+diesel::table! {
+    concierge_chats (id) {
+        id -> Text,
+        title -> Text,
+        created_at -> BigInt,
+        updated_at -> BigInt,
+        model -> Text,
+        home_key -> Text,
+        message_count -> Integer,
+        messages_json -> Text,
+    }
+}

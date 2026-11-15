@@ -2,6 +2,7 @@
 //! protected by the app sandbox/file permissions, not by database encryption.
 
 use crate::concierge::{apply_settings, StoredSettings};
+use crate::concierge_history::{ChatRecord, ChatSummary};
 use crate::schema::*;
 use diesel::connection::SimpleConnection;
 use diesel::prelude::*;
@@ -274,6 +275,61 @@ impl Database {
         read_concierge(&mut self.connection)
     }
 
+    pub(crate) fn list_concierge_chats(&mut self) -> Result<Vec<ChatSummary>> {
+        let summaries = concierge_chats::table
+            .order((
+                concierge_chats::updated_at.desc(),
+                concierge_chats::id.asc(),
+            ))
+            .select(ChatSummary::as_select())
+            .load::<ChatSummary>(&mut self.connection)?;
+        for summary in &summaries {
+            summary.validate().map_err(error_owned)?;
+        }
+        Ok(summaries)
+    }
+
+    pub(crate) fn load_concierge_chat(&mut self, id: &str) -> Result<Option<ChatRecord>> {
+        read_concierge_chat(&mut self.connection, id)
+    }
+
+    pub(crate) fn save_concierge_chat(&mut self, chat: &ChatRecord) -> Result<()> {
+        chat.validate().map_err(error_owned)?;
+        let messages_json = serde_json::to_string(&chat.messages)
+            .map_err(|_| error(crate::concierge_history::UNREADABLE))?;
+        let count = i32::try_from(chat.messages.len())
+            .map_err(|_| error(crate::concierge_history::UNREADABLE))?;
+        self.connection.transaction(|connection| {
+            if let Some(previous) = read_concierge_chat(connection, &chat.id)? {
+                if !previous.accepts_update(chat).map_err(error_owned)? {
+                    return Ok(());
+                }
+            }
+            diesel::insert_into(concierge_chats::table)
+                .values((
+                    concierge_chats::id.eq(&chat.id),
+                    concierge_chats::title.eq(&chat.title),
+                    concierge_chats::created_at.eq(chat.created_at),
+                    concierge_chats::updated_at.eq(chat.updated_at),
+                    concierge_chats::model.eq(&chat.model),
+                    concierge_chats::home_key.eq(&chat.home_key),
+                    concierge_chats::message_count.eq(count),
+                    concierge_chats::messages_json.eq(&messages_json),
+                ))
+                .on_conflict(concierge_chats::id)
+                .do_update()
+                .set((
+                    concierge_chats::title.eq(&chat.title),
+                    concierge_chats::updated_at.eq(chat.updated_at),
+                    concierge_chats::model.eq(&chat.model),
+                    concierge_chats::message_count.eq(count),
+                    concierge_chats::messages_json.eq(&messages_json),
+                ))
+                .execute(connection)?;
+            Ok(())
+        })
+    }
+
     pub(crate) fn update_concierge(
         &mut self,
         update: impl FnOnce(&mut StoredSettings) -> std::result::Result<(), String>,
@@ -482,6 +538,36 @@ impl Database {
 
 fn error_owned(message: String) -> StorageError {
     StorageError(message)
+}
+
+fn read_concierge_chat(connection: &mut SqliteConnection, id: &str) -> Result<Option<ChatRecord>> {
+    let row = concierge_chats::table
+        .find(id)
+        .select((ChatSummary::as_select(), concierge_chats::messages_json))
+        .first::<(ChatSummary, String)>(connection)
+        .optional()?;
+    let Some((summary, messages_json)) = row else {
+        return Ok(None);
+    };
+    if messages_json.len() > crate::concierge_history::MAX_BYTES {
+        return Err(error(crate::concierge_history::UNREADABLE));
+    }
+    let messages = serde_json::from_str(&messages_json)
+        .map_err(|_| error(crate::concierge_history::UNREADABLE))?;
+    let chat = ChatRecord {
+        id: summary.id,
+        title: summary.title,
+        created_at: summary.created_at,
+        updated_at: summary.updated_at,
+        model: summary.model,
+        home_key: summary.home_key,
+        messages,
+    };
+    chat.validate().map_err(error_owned)?;
+    if usize::try_from(summary.message_count).ok() != Some(chat.messages.len()) {
+        return Err(error(crate::concierge_history::UNREADABLE));
+    }
+    Ok(Some(chat))
 }
 
 fn import_complete(connection: &mut SqliteConnection, name: &str) -> Result<bool> {
@@ -1040,8 +1126,217 @@ fn calendar_status_error(status: u16, address: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::concierge_history::{ChatMessage, ChatRole};
     use diesel::migration::MigrationSource;
     use serde_json::json;
+
+    fn chat_record(id: &str, updated_at: i64) -> ChatRecord {
+        ChatRecord {
+            id: id.into(),
+            title: "Which lights are on?".into(),
+            created_at: 100,
+            updated_at,
+            model: "provider/model".into(),
+            home_key: "demo".into(),
+            messages: vec![
+                ChatMessage {
+                    id: "user-1".into(),
+                    role: ChatRole::User,
+                    text: "Which lights are on?".into(),
+                },
+                ChatMessage {
+                    id: "activity-1".into(),
+                    role: ChatRole::Activity,
+                    text: "Checking your home · done".into(),
+                },
+                ChatMessage {
+                    id: "assistant-1".into(),
+                    role: ChatRole::Assistant,
+                    text: "**Kitchen** and living room.".into(),
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn concierge_transcripts_survive_restart_and_list_every_home_without_a_cap() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("hjem.sqlite3");
+        let legacy = directory.path().join("missing.json");
+        let mut database = Database::open(&path, &legacy).unwrap();
+        let original = chat_record("chat-0", 200);
+        database.save_concierge_chat(&original).unwrap();
+        for index in 1..150 {
+            let mut chat = chat_record(&format!("chat-{index}"), 200 + index);
+            chat.home_key = format!("home-{}", index % 3);
+            database.save_concierge_chat(&chat).unwrap();
+        }
+        drop(database);
+        let mut reopened = Database::open(&path, &legacy).unwrap();
+        let summaries = reopened.list_concierge_chats().unwrap();
+        assert_eq!(summaries.len(), 150);
+        assert_eq!(summaries.first().unwrap().id, "chat-149");
+        assert_eq!(summaries.last().unwrap().id, "chat-0");
+        assert!(summaries.iter().all(|item| item.message_count == 3));
+        let loaded = reopened.load_concierge_chat("chat-0").unwrap().unwrap();
+        assert_eq!(
+            serde_json::to_value(&loaded).unwrap(),
+            serde_json::to_value(&original).unwrap()
+        );
+        assert!(reopened.load_concierge_chat("missing").unwrap().is_none());
+    }
+
+    #[test]
+    fn concierge_updates_preserve_identity_and_reject_lost_history() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut database = Database::open(
+            &directory.path().join("hjem.sqlite3"),
+            &directory.path().join("missing.json"),
+        )
+        .unwrap();
+        let original = chat_record("chat-1", 200);
+        database.save_concierge_chat(&original).unwrap();
+        let mut updated = original.clone();
+        updated.updated_at = 300;
+        updated.messages.push(ChatMessage {
+            id: "user-2".into(),
+            role: ChatRole::User,
+            text: "Turn off the kitchen light".into(),
+        });
+        database.save_concierge_chat(&updated).unwrap();
+        // A delayed save cannot replace the newer, longer transcript.
+        database.save_concierge_chat(&original).unwrap();
+        for changed in ["home", "creation", "messages"] {
+            let mut invalid = updated.clone();
+            invalid.updated_at = 400;
+            match changed {
+                "home" => invalid.home_key = "another-home".into(),
+                "creation" => invalid.created_at = 101,
+                _ => {
+                    invalid.messages.pop();
+                }
+            }
+            assert!(database.save_concierge_chat(&invalid).is_err());
+        }
+        assert_eq!(database.list_concierge_chats().unwrap().len(), 1);
+        let loaded = database.load_concierge_chat("chat-1").unwrap().unwrap();
+        assert_eq!(
+            serde_json::to_value(loaded).unwrap(),
+            serde_json::to_value(updated).unwrap()
+        );
+    }
+
+    #[test]
+    fn concierge_corrupt_transcripts_fail_without_resetting_saved_chats() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut database = Database::open(
+            &directory.path().join("hjem.sqlite3"),
+            &directory.path().join("missing.json"),
+        )
+        .unwrap();
+        database
+            .save_concierge_chat(&chat_record("chat-1", 200))
+            .unwrap();
+        diesel::update(concierge_chats::table.find("chat-1"))
+            .set(concierge_chats::messages_json.eq("{unreadable transcript"))
+            .execute(&mut database.connection)
+            .unwrap();
+        let error = database
+            .load_concierge_chat("chat-1")
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("saved chats have not been changed"));
+        assert!(!error.contains("unreadable transcript"));
+        assert_eq!(database.list_concierge_chats().unwrap().len(), 1);
+        assert!(database
+            .save_concierge_chat(&chat_record("chat-1", 300))
+            .is_err());
+        let stored = concierge_chats::table
+            .find("chat-1")
+            .select(concierge_chats::messages_json)
+            .first::<String>(&mut database.connection)
+            .unwrap();
+        assert_eq!(stored, "{unreadable transcript");
+    }
+
+    #[test]
+    fn concierge_concurrent_branches_cannot_replace_a_saved_transcript() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut database = Database::open(
+            &directory.path().join("hjem.sqlite3"),
+            &directory.path().join("missing.json"),
+        )
+        .unwrap();
+        let original = chat_record("chat-1", 200);
+        database.save_concierge_chat(&original).unwrap();
+        let mut latest = original.clone();
+        latest.updated_at = 300;
+        latest.messages.push(ChatMessage {
+            id: "user-2".into(),
+            role: ChatRole::User,
+            text: "What about upstairs?".into(),
+        });
+        latest.messages.push(ChatMessage {
+            id: "error-1".into(),
+            role: ChatRole::Error,
+            text: "The home could not be reached.".into(),
+        });
+        database.save_concierge_chat(&latest).unwrap();
+        for timestamp in [299, 300, 301] {
+            for changed in ["id", "role", "user", "assistant", "error"] {
+                let mut branch = latest.clone();
+                branch.updated_at = timestamp;
+                match changed {
+                    "id" => branch.messages[3].id = "other-user-2".into(),
+                    "role" => branch.messages[3].role = ChatRole::Assistant,
+                    "user" => branch.messages[0].text = "A different question".into(),
+                    "assistant" => branch.messages[2].text = "A different answer".into(),
+                    _ => branch.messages[4].text = "A different error".into(),
+                }
+                let error = database
+                    .save_concierge_chat(&branch)
+                    .unwrap_err()
+                    .to_string();
+                assert!(error.contains("newer version"));
+                let loaded = database.load_concierge_chat("chat-1").unwrap().unwrap();
+                assert_eq!(
+                    serde_json::to_value(loaded).unwrap(),
+                    serde_json::to_value(&latest).unwrap()
+                );
+            }
+        }
+        // An actual earlier snapshot is harmless, and lifecycle updates to an
+        // existing activity remain valid even when timestamps are equal.
+        database.save_concierge_chat(&original).unwrap();
+        latest.messages[1].text = "Checking your home · interrupted".into();
+        database.save_concierge_chat(&latest).unwrap();
+        let loaded = database.load_concierge_chat("chat-1").unwrap().unwrap();
+        assert_eq!(
+            serde_json::to_value(loaded).unwrap(),
+            serde_json::to_value(latest).unwrap()
+        );
+    }
+
+    #[test]
+    fn concierge_migration_preserves_existing_home_preferences() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("hjem.sqlite3");
+        let mut connection = SqliteConnection::establish(path.to_str().unwrap()).unwrap();
+        assert!(connection.applied_migrations().unwrap().is_empty());
+        let migrations = MIGRATIONS.migrations().unwrap();
+        for migration in migrations.iter().take(migrations.len() - 1) {
+            connection.run_migration(migration.as_ref()).unwrap();
+        }
+        set_theme(&mut connection, Theme::Dark).unwrap();
+        drop(connection);
+        let mut database = Database::open(&path, &directory.path().join("missing.json")).unwrap();
+        assert_eq!(database.snapshot().unwrap().theme, Theme::Dark);
+        assert!(database.list_concierge_chats().unwrap().is_empty());
+        database
+            .save_concierge_chat(&chat_record("first", 200))
+            .unwrap();
+        assert_eq!(database.list_concierge_chats().unwrap().len(), 1);
+    }
 
     #[test]
     fn calendar_http_errors_explain_public_google_access_without_exposing_links() {

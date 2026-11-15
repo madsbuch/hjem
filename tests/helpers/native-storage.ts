@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import type { LauncherApp } from '../../src/lib/launcher';
+import type { ChatRecord } from '../../src/lib/concierge-history';
 import {
   parseStorageSnapshot,
   type StorageSnapshot,
@@ -33,6 +34,7 @@ export async function nativeStorage(
   };
   let failedCommand = '';
   let concierge = { hasApiKey: false, model: '' };
+  const chats = new Map<string, ChatRecord>();
   let launcherSupported = false;
   let launcherApps: LauncherApp[] = [];
   const commands: string[] = [];
@@ -146,6 +148,18 @@ export async function nativeStorage(
         return null;
       }
       else if (command === 'concierge_get_settings') return { ...concierge };
+      else if (command === 'concierge_list_chats') return [...chats.values()]
+        .sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id))
+        .map(({ messages, ...chat }) => ({ ...structuredClone(chat), messageCount: messages.length }));
+      else if (command === 'concierge_load_chat') return structuredClone(chats.get(String(raw.id)) ?? null);
+      else if (command === 'concierge_save_chat') {
+        if (!record(raw.chat) || typeof raw.chat.id !== 'string' || !Array.isArray(raw.chat.messages))
+          throw new Error('Expected a chat record');
+        const chat = structuredClone(raw.chat) as unknown as ChatRecord;
+        const previous = chats.get(chat.id);
+        if (!previous || previous.updatedAt <= chat.updatedAt) chats.set(chat.id, chat);
+        return null;
+      }
       else if (command === 'concierge_save_settings') {
         if (typeof raw.model !== 'string') throw new Error('Expected model');
         concierge = {
@@ -172,6 +186,16 @@ export async function nativeStorage(
       return structuredClone(snapshot);
     },
     commands,
+    get chats() {
+      return structuredClone([...chats.values()]);
+    },
+    setChats(records: ChatRecord[]) {
+      chats.clear();
+      for (const chat of records) chats.set(chat.id, structuredClone(chat));
+    },
+    setConciergeSettings(settings: { hasApiKey: boolean; model: string }) {
+      concierge = { ...settings };
+    },
     feedFetches,
     setAndroidApps(apps: LauncherApp[]) {
       launcherSupported = true;

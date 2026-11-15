@@ -38,6 +38,9 @@ async function mockAndroid(page: Page) {
         if (command === 'plugin:launcher|get_status') return { supported: true, isDefaultHome: true };
         if (command === 'plugin:launcher|list_apps') return fixture.apps;
         if (command === 'concierge_get_settings') return { hasApiKey: false, model: '' };
+        if (command === 'concierge_list_chats') return [];
+        if (command === 'concierge_load_chat') return null;
+        if (command === 'concierge_save_chat') return null;
         if (command === 'plugin:launcher|register_listener' || command === 'plugin:launcher|remove_listener') return;
         if (['plugin:launcher|launch_app', 'plugin:launcher|open_app_info', 'plugin:launcher|uninstall_app'].includes(command)) {
           if (typeof args.packageName !== 'string') throw new Error('Missing package name.');

@@ -451,7 +451,7 @@ export default function App() {
     action: act,
     launch: launchApp,
     setup,
-  });
+  }, mode === 'demo' ? 'demo' : connectedServer);
 
   async function undoSetup(changeId: string) {
     if (!setup || setupUiBusy || concierge.busy || !canControl) return;
@@ -900,6 +900,15 @@ export default function App() {
                 onSend={(text) => void concierge.send(text)}
                 onSendVoice={concierge.sendVoice}
                 voiceSessionKey={concierge.voiceSessionKey}
+                chats={concierge.chats}
+                chatId={concierge.chatId}
+                historyLoading={concierge.historyLoading}
+                historyError={concierge.historyError}
+                saveError={concierge.saveError}
+                readOnly={concierge.readOnly}
+                onOpenChat={concierge.openChat}
+                onRefreshChats={concierge.refreshChats}
+                onRetrySaving={concierge.retrySaving}
                 onStop={concierge.stop}
                 onClear={concierge.clear}
                 onOpenSettings={() => navigate('settings')}
@@ -942,7 +951,7 @@ export default function App() {
                   settings={concierge.settings}
                   onChange={concierge.setSettings}
                   onBusyChange={concierge.setSettingsBusy}
-                  disabled={concierge.busy || concierge.settingsBusy}
+                  disabled={concierge.busy || concierge.settingsBusy || concierge.historyLoading}
                   initialError={concierge.settingsError}
                 />
                 <section className="settings-card">
