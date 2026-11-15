@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <!-- Local app origin and Home Assistant's standard local hostname only.
+         Add your exact LAN hostname/IP here if it does not support HTTPS. -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain>localhost</domain>
+        <domain>tauri.localhost</domain>
+        <domain>homeassistant.local</domain>
+    </domain-config>
+</network-security-config>

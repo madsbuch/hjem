@@ -1,0 +1,215 @@
+name: Build Hjem
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  check:
+    name: Frontend and integration tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: browser-test-results
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
+  desktop:
+    name: Desktop (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos
+            os: macos-15
+            args: --target universal-apple-darwin --bundles dmg
+          - name: windows
+            os: windows-latest
+            args: --bundles nsis
+          - name: linux
+            os: ubuntu-24.04
+            args: --bundles deb,appimage
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+          targets: ${{ matrix.name == 'macos' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.name }}
+      - name: Install Linux build dependencies
+        if: matrix.name == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev patchelf pkg-config xdg-utils
+      - run: npm ci
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
+      - name: Build desktop installer
+        run: npm run tauri -- build --ci ${{ matrix.args }} -- --locked
+        env:
+          # Ad-hoc signing makes the Apple Silicon bundle structurally valid;
+          # distribution signing/notarization can be configured separately.
+          APPLE_SIGNING_IDENTITY: '-'
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+      - uses: actions/upload-artifact@v7
+        with:
+          name: hjem-${{ matrix.name }}
+          path: |
+            src-tauri/target/**/bundle/dmg/*.dmg
+            src-tauri/target/**/bundle/nsis/*.exe
+            src-tauri/target/**/bundle/deb/*.deb
+            src-tauri/target/**/bundle/appimage/*.AppImage
+          if-no-files-found: error
+          retention-days: 14
+
+  android:
+    name: Android (ARM phones and tablets)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0 ndk;28.0.12674087'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: android
+      - run: npm ci
+      - name: Configure Android tools
+        run: |
+          echo "NDK_HOME=$ANDROID_HOME/ndk/28.0.12674087" >> "$GITHUB_ENV"
+          chmod +x src-tauri/gen/android/gradlew
+      # The Android project is committed so custom network policy survives.
+      - name: Build release APK
+        run: npm run tauri -- android build --ci --apk --target aarch64 --target armv7 -- --locked
+      - name: Sign and verify APK
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          keystore="$RUNNER_TEMP/hjem-signing.jks"
+          aligned="$RUNNER_TEMP/hjem-aligned.apk"
+          trap 'rm -f "$keystore" "$aligned"' EXIT
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore"
+          else
+            echo '::warning::Using a temporary signing key. This APK cannot upgrade an earlier CI install.'
+            export ANDROID_KEYSTORE_PASSWORD='hjem-ci-temporary'
+            export ANDROID_KEY_PASSWORD="$ANDROID_KEYSTORE_PASSWORD"
+            export ANDROID_KEY_ALIAS='hjem-ci'
+            keytool -genkeypair -keystore "$keystore" -alias "$ANDROID_KEY_ALIAS" \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass:env ANDROID_KEYSTORE_PASSWORD -keypass:env ANDROID_KEY_PASSWORD \
+              -dname 'CN=Hjem CI, O=Hjem, C=DK'
+          fi
+          apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*release*.apk' -print -quit)
+          test -n "$apk"
+          android_tools="$ANDROID_HOME/build-tools/36.0.0"
+          "$android_tools/zipalign" -p -f 4 "$apk" "$aligned"
+          "$android_tools/apksigner" sign --ks "$keystore" \
+            --ks-pass env:ANDROID_KEYSTORE_PASSWORD --key-pass env:ANDROID_KEY_PASSWORD \
+            --ks-key-alias "$ANDROID_KEY_ALIAS" --out out/Hjem-android.apk "$aligned"
+          "$android_tools/apksigner" verify out/Hjem-android.apk
+      - uses: actions/upload-artifact@v7
+        with:
+          name: hjem-android
+          path: out/Hjem-android.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  ios:
+    name: iOS simulator (unsigned)
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios-sim
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ios-simulator
+      - name: Install Xcode project tools
+        run: |
+          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+          command -v pod >/dev/null 2>&1 || brew install cocoapods
+      - run: npm ci
+      - name: Generate Xcode project
+        run: npm run tauri -- ios init --ci --skip-targets-install
+      - name: Build unsigned simulator archive
+        run: npm run tauri -- ios build --ci --target aarch64-sim --no-sign --archive-only -- --locked
+      - name: Package simulator app
+        run: |
+          set -euo pipefail
+          app=$(find src-tauri/gen/apple -type d -iname 'hjem.app' -print -quit)
+          test -n "$app"
+          mkdir -p out
+          # Preserve executable modes and bundle structure in the downloaded artifact.
+          ditto -c -k --sequesterRsrc --keepParent "$app" out/Hjem-ios-simulator.zip
+      - uses: actions/upload-artifact@v7
+        with:
+          name: hjem-ios-simulator
+          path: out/Hjem-ios-simulator.zip
+          if-no-files-found: error
+          retention-days: 14
