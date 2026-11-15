@@ -10,12 +10,17 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, State};
+use tauri::{ipc::Channel, AppHandle, State};
 
 const API: &str = "https://openrouter.ai/api/v1";
 const RESPONSE_LIMIT: usize = 4 * 1024 * 1024;
 const REQUEST_LIMIT: usize = 1024 * 1024;
 const RESPONSE_LENGTH_LIMIT: u64 = 4 * 1024 * 1024;
+const VOICE_REQUEST_LIMIT: usize = 8 * 1024 * 1024;
+const VOICE_STREAM_LIMIT: usize = 24 * 1024 * 1024;
+const VOICE_STREAM_LENGTH_LIMIT: u64 = 24 * 1024 * 1024;
+const VOICE_AUDIO_LIMIT: usize = 2 * 1024 * 1024;
+const VOICE_MODEL: &str = "openai/gpt-audio";
 const STOPPED: &str = "Stopped.";
 type Result<T> = std::result::Result<T, String>;
 
@@ -293,6 +298,71 @@ pub async fn concierge_test_key(app: AppHandle, database: State<'_, DatabaseStat
 pub struct ConciergeModel {
     id: String,
     name: String,
+    description: String,
+    context_length: Option<u64>,
+    input_price: Option<f64>,
+    output_price: Option<f64>,
+    request_price: Option<f64>,
+    is_free: bool,
+    supports_tools: bool,
+    input_modalities: Vec<String>,
+    output_modalities: Vec<String>,
+    created: Option<u64>,
+}
+
+fn model_strings(value: Option<&Value>) -> Vec<String> {
+    value
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn model_price(value: Option<&Value>) -> Option<f64> {
+    let value = value?;
+    let price = value
+        .as_f64()
+        .or_else(|| value.as_str()?.trim().parse::<f64>().ok())?;
+    (price.is_finite() && price >= 0.0).then_some(price)
+}
+
+fn model_integer(value: Option<&Value>, minimum: u64) -> Option<u64> {
+    // Keep native IPC integers exactly representable by the JavaScript UI.
+    value
+        .and_then(Value::as_u64)
+        .filter(|number| *number >= minimum && *number <= 9_007_199_254_740_991)
+}
+
+fn model_is_free(pricing: Option<&Value>, output_modalities: Option<&Value>) -> bool {
+    // Non-text generation can carry per-song/image charges absent from pricing.
+    if !output_modalities
+        .and_then(Value::as_array)
+        .is_some_and(|modalities| {
+            !modalities.is_empty()
+                && modalities
+                    .iter()
+                    .all(|modality| modality.as_str() == Some("text"))
+        })
+    {
+        return false;
+    }
+    let Some(pricing) = pricing.and_then(Value::as_object) else {
+        return false;
+    };
+    model_price(pricing.get("prompt")) == Some(0.0)
+        && model_price(pricing.get("completion")) == Some(0.0)
+        && pricing.iter().all(|(key, value)| {
+            if key == "overrides" {
+                value.as_array().is_some_and(Vec::is_empty)
+            } else {
+                model_price(Some(value)) == Some(0.0)
+            }
+        })
 }
 
 fn models_from_response(body: Value) -> Result<Vec<ConciergeModel>> {
@@ -304,17 +374,10 @@ fn models_from_response(body: Value) -> Result<Vec<ConciergeModel>> {
         .iter()
         .filter_map(|model| {
             let id = model.get("id")?.as_str()?;
-            let tools = model
-                .get("supported_parameters")?
-                .as_array()?
-                .iter()
-                .any(|parameter| parameter == "tools");
-            let text = model
-                .pointer("/architecture/output_modalities")?
-                .as_array()?
-                .iter()
-                .any(|modality| modality == "text");
-            if !tools || !text || id.is_empty() || id.len() > 200 {
+            if id.is_empty()
+                || id.encode_utf16().count() > 200
+                || id.chars().any(|c| c.is_whitespace() || c.is_control())
+            {
                 return None;
             }
             Some(ConciergeModel {
@@ -322,8 +385,28 @@ fn models_from_response(body: Value) -> Result<Vec<ConciergeModel>> {
                 name: model
                     .get("name")
                     .and_then(Value::as_str)
+                    .filter(|name| !name.is_empty())
                     .unwrap_or(id)
                     .to_owned(),
+                description: model
+                    .get("description")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_owned(),
+                context_length: model_integer(model.get("context_length"), 1),
+                input_price: model_price(model.pointer("/pricing/prompt")),
+                output_price: model_price(model.pointer("/pricing/completion")),
+                request_price: model_price(model.pointer("/pricing/request")),
+                is_free: model_is_free(
+                    model.get("pricing"),
+                    model.pointer("/architecture/output_modalities"),
+                ),
+                supports_tools: model_strings(model.get("supported_parameters"))
+                    .iter()
+                    .any(|parameter| parameter == "tools"),
+                input_modalities: model_strings(model.pointer("/architecture/input_modalities")),
+                output_modalities: model_strings(model.pointer("/architecture/output_modalities")),
+                created: model_integer(model.get("created"), 0),
             })
         })
         .collect();
@@ -333,10 +416,59 @@ fn models_from_response(body: Value) -> Result<Vec<ConciergeModel>> {
 
 #[tauri::command]
 pub async fn concierge_list_models() -> Result<Vec<ConciergeModel>> {
-    models_from_response(response_json(client()?.get(format!("{API}/models"))).await?)
+    // OpenRouter defaults to text output. Explicitly include every modality;
+    // omitting offset and limit requests the complete, unpaginated catalogue.
+    models_from_response(
+        response_json(client()?.get(format!("{API}/models?output_modalities=all"))).await?,
+    )
 }
 
-fn request_body(mut body: Value, model: &str) -> Result<Value> {
+fn request_body(body: Value, model: &str) -> Result<Value> {
+    prepare_request_body(body, model, false)
+}
+
+fn voice_request_body(body: Value) -> Result<Value> {
+    prepare_request_body(body, VOICE_MODEL, true)
+}
+
+fn valid_audio_base64(data: &str) -> bool {
+    let content = data.trim_end_matches('=');
+    !data.is_empty()
+        && data.len() <= VOICE_AUDIO_LIMIT
+        && data.len().is_multiple_of(4)
+        && data.len() - content.len() <= 2
+        && content
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/'))
+}
+
+fn voice_content(content: Option<&Value>) -> bool {
+    let Some(parts) = content.and_then(Value::as_array) else {
+        return false;
+    };
+    if parts.is_empty() || parts.len() > 2 {
+        return false;
+    }
+    let mut audio_count = 0;
+    for part in parts {
+        match part.get("type").and_then(Value::as_str) {
+            Some("text") if part.get("text").is_some_and(Value::is_string) => {}
+            Some("input_audio")
+                if part.pointer("/input_audio/format").and_then(Value::as_str) == Some("wav")
+                    && part
+                        .pointer("/input_audio/data")
+                        .and_then(Value::as_str)
+                        .is_some_and(valid_audio_base64) =>
+            {
+                audio_count += 1;
+            }
+            _ => return false,
+        }
+    }
+    audio_count == 1
+}
+
+fn prepare_request_body(mut body: Value, model: &str, voice: bool) -> Result<Value> {
     if model.is_empty() {
         return Err("Choose a concierge model in Settings first.".into());
     }
@@ -350,6 +482,7 @@ fn request_body(mut body: Value, model: &str) -> Result<Value> {
     if messages.is_empty() || messages.len() > 200 {
         return Err("This conversation is too long. Start a new conversation.".into());
     }
+    let mut audio_count = 0;
     for message in messages {
         let role = message.get("role").and_then(Value::as_str);
         if !matches!(role, Some("system" | "user" | "assistant" | "tool")) {
@@ -371,10 +504,19 @@ fn request_body(mut body: Value, model: &str) -> Result<Value> {
         let tool_calls = message.get("tool_calls").and_then(Value::as_array);
         let assistant_tools =
             role == Some("assistant") && tool_calls.is_some_and(|calls| !calls.is_empty());
-        if !content.is_some_and(Value::is_string)
+        let audio_message = voice && role == Some("user") && voice_content(content);
+        if audio_message {
+            audio_count += 1;
+        }
+        if !audio_message
+            && !content.is_some_and(Value::is_string)
             && !(assistant_tools && content.is_some_and(Value::is_null))
         {
-            return Err("The concierge accepts text messages only.".into());
+            return Err(if voice {
+                "Voice accepts text or WAV recordings of up to 30 seconds only.".into()
+            } else {
+                "The concierge accepts text messages only.".into()
+            });
         }
         if role == Some("tool")
             && !message
@@ -408,6 +550,11 @@ fn request_body(mut body: Value, model: &str) -> Result<Value> {
             return Err("The concierge conversation contains invalid tool calls.".into());
         }
     }
+    if audio_count > 4 {
+        return Err(
+            "This voice conversation has too many recordings. Start a new conversation.".into(),
+        );
+    }
     // Only the chat fields used by Hjem are accepted. The caller cannot inject
     // provider keys, alternate models, routing options, callbacks or paid plugins.
     object.retain(|key, _| {
@@ -422,8 +569,18 @@ fn request_body(mut body: Value, model: &str) -> Result<Value> {
         )
     });
     object.insert("model".into(), json!(model));
-    object.insert("stream".into(), json!(false));
-    object.insert("modalities".into(), json!(["text"]));
+    object.insert("stream".into(), json!(voice));
+    object.insert(
+        "modalities".into(),
+        if voice {
+            json!(["text", "audio"])
+        } else {
+            json!(["text"])
+        },
+    );
+    if voice {
+        object.insert("audio".into(), json!({"voice":"alloy", "format":"pcm16"}));
+    }
     let tokens = object
         .get("max_tokens")
         .and_then(Value::as_u64)
@@ -433,11 +590,88 @@ fn request_body(mut body: Value, model: &str) -> Result<Value> {
     if serde_json::to_vec(&body)
         .map_err(|_| "The concierge request is unreadable.")?
         .len()
-        > REQUEST_LIMIT
+        > if voice {
+            VOICE_REQUEST_LIMIT
+        } else {
+            REQUEST_LIMIT
+        }
     {
         return Err("This conversation is too large. Start a new conversation.".into());
     }
     Ok(body)
+}
+
+#[derive(Serialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum VoiceStreamEvent {
+    Chunk { data: Vec<u8> },
+    Done,
+}
+
+async fn voice_response_stream(
+    request: reqwest::RequestBuilder,
+    on_event: &Channel<VoiceStreamEvent>,
+) -> Result<()> {
+    let response = request.send().await.map_err(transport_error)?;
+    if !response.status().is_success() {
+        return Err(status_error(response.status().as_u16()));
+    }
+    if !response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|header| header.to_str().ok())
+        .is_some_and(|header| header.to_ascii_lowercase().starts_with("text/event-stream"))
+    {
+        return Err("OpenRouter returned an unreadable voice stream.".into());
+    }
+    if response
+        .content_length()
+        .is_some_and(|length| length > VOICE_STREAM_LENGTH_LIMIT)
+    {
+        return Err("OpenRouter returned a voice response that is too large.".into());
+    }
+    let mut bytes = 0usize;
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(transport_error)?;
+        bytes = bytes.saturating_add(chunk.len());
+        if bytes > VOICE_STREAM_LIMIT {
+            return Err("OpenRouter returned a voice response that is too large.".into());
+        }
+        // Preserve bytes across network boundaries. The shared frontend SSE
+        // decoder handles split UTF-8, audio and function-call deltas.
+        on_event
+            .send(VoiceStreamEvent::Chunk {
+                data: chunk.to_vec(),
+            })
+            .map_err(|_| "The voice conversation was closed.")?;
+    }
+    on_event
+        .send(VoiceStreamEvent::Done)
+        .map_err(|_| "The voice conversation was closed.".into())
+}
+
+#[tauri::command]
+pub async fn concierge_voice_request(
+    app: AppHandle,
+    database: State<'_, DatabaseState>,
+    state: State<'_, ConciergeState>,
+    request_id: String,
+    body: Value,
+    on_event: Channel<VoiceStreamEvent>,
+) -> Result<()> {
+    let (_guard, registration) = state.begin(request_id)?;
+    let settings = snapshot(&app, &database)?;
+    let body = voice_request_body(body)?;
+    let request = client()?
+        .post(format!("{API}/chat/completions"))
+        .bearer_auth(settings.key()?)
+        .header("HTTP-Referer", "https://github.com/madsbuch/hjem")
+        .header("X-Title", "Hjem Home Concierge")
+        .json(&body);
+    Abortable::new(voice_response_stream(request, &on_event), registration)
+        .await
+        .map_err(|_| STOPPED.to_owned())?
 }
 
 #[tauri::command]
@@ -470,6 +704,118 @@ pub fn concierge_cancel(state: State<'_, ConciergeState>, request_id: String) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn voice_requests_fix_model_and_format_without_loosening_text_requests() {
+        let audio = json!({"role":"user","content":[{"type":"input_audio","input_audio":{"data":"UklGRg==","format":"wav"}}]});
+        let request = json!({"messages":[audio.clone()],"model":"injected","stream":false,
+            "provider":{"api_key":"other"},"plugins":[{"id":"web"}],"audio":{"voice":"injected"},"max_tokens":999999});
+        assert!(request_body(request.clone(), "saved/text").is_err());
+        let prepared = voice_request_body(request).unwrap();
+        assert_eq!(prepared["model"], VOICE_MODEL);
+        assert_eq!(prepared["audio"], json!({"voice":"alloy","format":"pcm16"}));
+        assert_eq!(prepared["modalities"], json!(["text", "audio"]));
+        assert_eq!(prepared["stream"], true);
+        assert_eq!(prepared["max_tokens"], 8192);
+        assert!(prepared.get("provider").is_none());
+        assert!(prepared.get("plugins").is_none());
+        assert_eq!(prepared["messages"][0], audio);
+        assert!(voice_request_body(json!({"messages":[
+            {"role":"assistant","content":null,"tool_calls":[{"id":"call-1","type":"function","function":{"name":"home_status","arguments":"{}"}}]},
+            {"role":"tool","content":"done","tool_call_id":"call-1"}
+        ]})).is_ok());
+    }
+
+    #[test]
+    fn voice_requests_reject_wrong_roles_formats_malformed_audio_and_oversize() {
+        for data in ["", "a", "AAAA=", "AA=A", "%%%%", "====", "a a="] {
+            assert!(!valid_audio_base64(data), "{data}");
+        }
+        for data in ["AAAA", "AAA=", "AA==", "UklGRg=="] {
+            assert!(valid_audio_base64(data), "{data}");
+        }
+        let audio = json!({"role":"user","content":[{"type":"input_audio","input_audio":{"data":"UklGRg==","format":"wav"}}]});
+        let mut wrong_role = audio.clone();
+        wrong_role["role"] = json!("system");
+        assert!(voice_request_body(json!({"messages":[wrong_role]})).is_err());
+        let mut wrong_format = audio.clone();
+        wrong_format["content"][0]["input_audio"]["format"] = json!("webm");
+        assert!(voice_request_body(json!({"messages":[wrong_format]})).is_err());
+        let mut too_large = audio.clone();
+        too_large["content"][0]["input_audio"]["data"] = json!("A".repeat(VOICE_AUDIO_LIMIT + 4));
+        assert!(voice_request_body(json!({"messages":[too_large]})).is_err());
+        assert!(voice_request_body(json!({"messages":vec![audio.clone(); 5]})).is_err());
+        assert!(voice_request_body(json!({"messages":vec![audio; 4]})).is_ok());
+        assert!(voice_request_body(
+            json!({"messages":[{"role":"user","content":"x".repeat(VOICE_REQUEST_LIMIT)}]})
+        )
+        .is_err());
+    }
+
+    #[tokio::test]
+    async fn voice_stream_forwards_bytes_and_done_but_sanitizes_http_failures() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        let fixture = "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hæ\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
+        for (status, content_type, length, body, succeeds) in [
+            ("200 OK", "text/event-stream", fixture.len(), fixture, true),
+            ("200 OK", "application/json", 2, "{}", false),
+            (
+                "200 OK",
+                "text/event-stream",
+                VOICE_STREAM_LIMIT + 1,
+                "",
+                false,
+            ),
+            (
+                "402 Payment Required",
+                "text/event-stream",
+                14,
+                "fixture-secret",
+                false,
+            ),
+        ] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let address = listener.local_addr().unwrap();
+            let reply = format!("HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {length}\r\nConnection: close\r\n\r\n{body}");
+            let server = std::thread::spawn(move || {
+                let (mut socket, _) = listener.accept().unwrap();
+                let mut buffer = [0; 4096];
+                socket.read(&mut buffer).unwrap();
+                socket.write_all(reply.as_bytes()).unwrap();
+            });
+            let events = Arc::new(Mutex::new(Vec::new()));
+            let captured = events.clone();
+            let channel = Channel::new(move |event| {
+                if let tauri::ipc::InvokeResponseBody::Json(value) = event {
+                    captured
+                        .lock()
+                        .unwrap()
+                        .push(serde_json::from_str::<Value>(&value).unwrap());
+                }
+                Ok(())
+            });
+            let request = reqwest::Client::new().get(format!("http://{address}"));
+            let result = voice_response_stream(request, &channel).await;
+            server.join().unwrap();
+            if succeeds {
+                result.unwrap();
+                let events = events.lock().unwrap();
+                assert_eq!(events.last(), Some(&json!({"type":"done"})));
+                let bytes: Vec<u8> = events
+                    .iter()
+                    .filter_map(|event| event.get("data").and_then(Value::as_array))
+                    .flatten()
+                    .map(|byte| u8::try_from(byte.as_u64().unwrap()).unwrap())
+                    .collect();
+                assert_eq!(bytes, fixture.as_bytes());
+            } else {
+                let error = result.unwrap_err();
+                assert!(!error.contains("fixture-secret"));
+                assert!(events.lock().unwrap().is_empty());
+            }
+        }
+    }
 
     #[test]
     fn settings_validate_and_public_response_never_contains_key() {
@@ -545,14 +891,143 @@ mod tests {
     }
 
     #[test]
-    fn models_require_tools_and_text_output() {
+    fn models_include_all_modalities_and_comparison_metadata() {
         let models = models_from_response(json!({"data":[
-            {"id":"ok","name":"Good","supported_parameters":["tools"],"architecture":{"output_modalities":["text"]}},
+            {"id":"ok","name":"Good","description":"A tool model.","context_length":128000,"created":1700000000,
+             "pricing":{"prompt":"0.000001","completion":"0.000003","request":"0"},
+             "supported_parameters":["tools"],"architecture":{"input_modalities":["text","image"],"output_modalities":["text"]}},
             {"id":"image","supported_parameters":["tools"],"architecture":{"output_modalities":["image"]}},
-            {"id":"plain","supported_parameters":[],"architecture":{"output_modalities":["text"]}}
+            {"id":"plain","supported_parameters":[],"architecture":{"output_modalities":["text"]}},
+            {"id":"audio","architecture":{"output_modalities":["audio"]}},
+            {"id":"unknown","supported_parameters":"tools","architecture":{"output_modalities":"text"}},
+            {"id":14},{"id":""},{"id":"bad id"},null
         ]})).unwrap();
-        assert_eq!(models.len(), 1);
-        assert_eq!(models[0].id, "ok");
+        assert_eq!(
+            models
+                .iter()
+                .map(|model| model.id.as_str())
+                .collect::<Vec<_>>(),
+            ["audio", "ok", "image", "plain", "unknown"]
+        );
+        assert_eq!(
+            serde_json::to_value(&models[1]).unwrap(),
+            json!({
+                "id":"ok","name":"Good","description":"A tool model.","contextLength":128000,"created":1700000000,
+                "inputPrice":0.000001,"outputPrice":0.000003,"requestPrice":0.0,"isFree":false,"supportsTools":true,
+                "inputModalities":["text","image"],"outputModalities":["text"]
+            })
+        );
+        assert_eq!(models[2].output_modalities, ["image"]);
+        assert!(!models[3].supports_tools);
+        assert_eq!(
+            serde_json::to_value(&models[4]).unwrap(),
+            json!({
+                "id":"unknown","name":"unknown","description":"","contextLength":null,"created":null,
+                "inputPrice":null,"outputPrice":null,"requestPrice":null,"isFree":false,"supportsTools":false,
+                "inputModalities":[],"outputModalities":[]
+            })
+        );
+        assert!(models_from_response(json!({"data":"unreadable"})).is_err());
+    }
+
+    #[test]
+    fn model_prices_preserve_free_and_do_not_guess_unknown_values() {
+        for value in [
+            json!(null),
+            json!(-1),
+            json!("-1"),
+            json!(""),
+            json!("Infinity"),
+            json!("NaN"),
+            json!("dynamic"),
+            json!(true),
+            json!("0x10"),
+        ] {
+            assert_eq!(model_price(Some(&value)), None, "{value}");
+        }
+        for value in [json!(0), json!("0")] {
+            assert_eq!(model_price(Some(&value)), Some(0.0));
+        }
+        assert_eq!(model_price(Some(&json!(" 1e-6 "))), Some(0.000001));
+        assert_eq!(model_price(Some(&json!(".000002"))), Some(0.000002));
+        for value in [
+            json!(null),
+            json!(0),
+            json!(-1),
+            json!(1.5),
+            json!(9_007_199_254_740_992_u64),
+        ] {
+            assert_eq!(model_integer(Some(&value), 1), None);
+        }
+        assert_eq!(model_integer(Some(&json!(32000)), 1), Some(32000));
+        assert_eq!(model_integer(Some(&json!(0)), 0), Some(0));
+    }
+
+    #[test]
+    fn free_models_have_no_known_or_unknown_extra_charges() {
+        assert!(model_is_free(
+            Some(
+                &json!({"prompt":"0","completion":"0","request":"0","image":"0","audio":"0","overrides":[]})
+            ),
+            Some(&json!(["text"]))
+        ));
+        for pricing in [
+            json!({"prompt":"0","completion":"0","request":"0.001"}),
+            json!({"prompt":"0","completion":"0","image":"0.02"}),
+            json!({"prompt":"0","completion":"0","audio":"-1"}),
+            json!({"prompt":"0","completion":"0","web_search":null}),
+            json!({"prompt":"0","completion":"0","overrides":[{"prompt":"0.01"}]}),
+            json!({"prompt":"0","completion":"0","overrides":{}}),
+            json!({"image":"0"}),
+        ] {
+            assert!(
+                !model_is_free(Some(&pricing), Some(&json!(["text"]))),
+                "{pricing}"
+            );
+        }
+    }
+
+    #[test]
+    fn non_text_generation_is_not_free_based_on_zero_token_prices() {
+        let models = models_from_response(json!({"data":[
+            {"id":"google/lyria-3-clip-preview","description":"30 second clips are priced at $0.04 per clip.",
+                "architecture":{"output_modalities":["text","audio"]},"pricing":{"prompt":"0","completion":"0"}},
+            {"id":"google/lyria-3-pro-preview","description":"Full-length songs are priced at $0.08 per song.",
+                "architecture":{"output_modalities":["text","audio"]},"pricing":{"prompt":"0","completion":"0"}},
+            {"id":"free/text","architecture":{"output_modalities":["text"]},"pricing":{"prompt":"0","completion":"0"}},
+            {"id":"unknown/modalities","pricing":{"prompt":"0","completion":"0"}}
+        ]})).unwrap();
+        assert_eq!(
+            models
+                .iter()
+                .filter(|model| model.is_free)
+                .map(|model| model.id.as_str())
+                .collect::<Vec<_>>(),
+            ["free/text"]
+        );
+        let lyria = models
+            .iter()
+            .find(|model| model.id == "google/lyria-3-clip-preview")
+            .unwrap();
+        assert_eq!(lyria.input_price, Some(0.0));
+        assert_eq!(lyria.output_price, Some(0.0));
+        assert!(!lyria.is_free);
+        for modalities in [
+            json!([]),
+            json!(["image"]),
+            json!(["audio"]),
+            json!(["video"]),
+            json!(["speech"]),
+            json!(["text", null]),
+        ] {
+            assert!(
+                !model_is_free(
+                    Some(&json!({"prompt":"0","completion":"0"})),
+                    Some(&modalities)
+                ),
+                "{modalities}"
+            );
+        }
     }
 
     #[tokio::test]

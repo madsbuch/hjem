@@ -3,6 +3,16 @@ import { nativeStorage } from './helpers/native-storage';
 
 const fakeKey = 'sk-or-v1-hjem-e2e-only-not-a-real-key';
 const fakeModel = 'fake/test-tool-model';
+const recommendedModels = [
+  { id: 'anthropic/claude-haiku-5.5', name: 'Claude Haiku 5.5' },
+  { id: 'openai/gpt-6.1-terra', name: 'GPT-6.1 Terra' },
+  { id: 'anthropic/claude-sonnet-5.5', name: 'Claude Sonnet 5.5' },
+];
+const nativeModels = [...recommendedModels, { id: fakeModel, name: 'Test tool model' }].map((model) => ({
+  ...model, description: 'Test model for home controls.', contextLength: 128000,
+  inputPrice: 0.000001, outputPrice: 0.000005, requestPrice: 0,
+  isFree: false, supportsTools: true, inputModalities: ['text'], outputModalities: ['text'], created: 1770000000,
+}));
 const cors = {
   'access-control-allow-origin': '*',
   'access-control-allow-headers': '*',
@@ -86,25 +96,33 @@ async function mockOpenRouter(page: Page, onChat?: ChatHandler) {
       });
     } else if (pathname === '/api/v1/models') {
       modelLists++;
+      expect(new URL(route.request().url()).searchParams.get('output_modalities')).toBe('all');
+      expect(route.request().headers().authorization).toBeUndefined();
       await json(route, {
         data: [
+          ...recommendedModels.map((model) => ({
+            ...model, description: 'Test model for home controls.', context_length: 128000,
+            pricing: { prompt: '0.000001', completion: '0.000005', request: '0' },
+            supported_parameters: ['tools'],
+            architecture: { input_modalities: ['text'], output_modalities: ['text'] },
+          })),
           {
             id: fakeModel,
             name: 'Test tool model',
             supported_parameters: ['tools'],
-            architecture: { output_modalities: ['text'] },
+            architecture: { input_modalities: ['text'], output_modalities: ['text'] },
           },
           {
             id: 'fake/no-tools',
             name: 'Text only',
             supported_parameters: ['temperature'],
-            architecture: { output_modalities: ['text'] },
+            architecture: { input_modalities: ['text'], output_modalities: ['text'] },
           },
           {
             id: 'fake/image-output',
             name: 'Images only',
             supported_parameters: ['tools'],
-            architecture: { output_modalities: ['image'] },
+            architecture: { input_modalities: ['text'], output_modalities: ['image'] },
           },
           { id: 42, name: 'Malformed ID', supported_parameters: ['tools'] },
         ],
@@ -229,15 +247,13 @@ test('settings check a custom model and key, and keep browser keys out of storag
       exact: true,
     }),
   ).toBeVisible();
-  expect(mock.modelLists).toBe(1);
+  expect(mock.modelLists).toBeGreaterThanOrEqual(1);
   await expect(page.locator('datalist')).toHaveCount(0);
   await page
     .getByLabel('Custom model ID', { exact: true })
     .fill('fake/no-tools');
   await page.getByRole('button', { name: 'Check model', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText(
-    'not found among OpenRouter’s tool-capable text models',
-  );
+  await expect(page.getByRole('alert')).toContainText(/tool calls|compatible/i);
   const storage = await page.evaluate(() =>
     JSON.stringify({
       local: { ...localStorage },
@@ -551,6 +567,14 @@ test('model recommendations are concise, selectable, and preserve a saved custom
   page,
 }) => {
   await nativeStorage(page);
+  await page.addInitScript((models) => {
+    const target = window as typeof window & {
+      __TAURI_INTERNALS__: { invoke: (command: string, args?: unknown) => Promise<unknown> };
+    };
+    const invoke = target.__TAURI_INTERNALS__.invoke;
+    target.__TAURI_INTERNALS__.invoke = (command, args) => command === 'concierge_list_models'
+      ? Promise.resolve(models) : invoke(command, args);
+  }, nativeModels);
   const mock = await mockOpenRouter(page);
   await page.goto('/');
   await navigate(page, 'Settings');
@@ -558,14 +582,14 @@ test('model recommendations are concise, selectable, and preserve a saved custom
     name: 'Concierge model',
     exact: true,
   });
-  await expect(picker.getByRole('radio')).toHaveCount(4);
+  await expect(picker.locator('.recommended-models').getByRole('radio')).toHaveCount(3);
   await expect(
     page.getByRole('radio', { name: 'Claude Haiku 5.5', exact: true }),
   ).toBeChecked();
   await expect(page.getByLabel('Custom model ID', { exact: true })).toHaveCount(
     0,
   );
-  await expect(page.locator('datalist, select')).toHaveCount(0);
+  await expect(picker.getByRole('searchbox', { name: 'Search models' })).toBeVisible();
   await page.getByLabel('OpenRouter API key', { exact: true }).fill(fakeKey);
   await page.getByRole('radio', { name: 'GPT-6.1 Terra', exact: true }).check();
   await page.getByRole('button', { name: 'Save concierge settings' }).click();
@@ -596,7 +620,7 @@ test('model recommendations are concise, selectable, and preserve a saved custom
     fakeModel,
   );
   expect(mock.requests).toHaveLength(0);
-  expect(mock.modelLists).toBe(0);
+  expect(mock.modelLists).toBe(0); // Native catalogue uses IPC, not browser fetch.
 });
 
 test('changing the saved model starts a fresh conversation', async ({

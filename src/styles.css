@@ -236,6 +236,7 @@ input[type='range'] {
   margin: 22px 8px 0;
 }
 .main-shell {
+  min-width: 0;
   margin-left: calc(232px + var(--safe-area-left));
 }
 .topbar {
@@ -298,6 +299,7 @@ input[type='range'] {
   color: #6f7f92;
 }
 .main-shell main {
+  min-width: 0;
   max-width: 1440px;
   margin: auto;
   padding: calc(37px + var(--safe-area-top))
@@ -309,6 +311,13 @@ input[type='range'] {
   justify-content: space-between;
   margin-bottom: 29px;
   gap: 20px;
+}
+.page-intro > div,
+.section-heading > div {
+  min-width: 0;
+}
+.section-heading h2 {
+  overflow-wrap: anywhere;
 }
 .eyebrow {
   font-size: 9px;
@@ -504,6 +513,7 @@ input[type='range'] {
   gap: 12px;
 }
 .scene-button {
+  min-width: 0;
   min-height: 65px;
   border: 1px solid var(--border);
   background: #fff;
@@ -522,6 +532,8 @@ input[type='range'] {
   border-color: #a7b4c2;
 }
 .scene-button > span:not(.scene-icon) {
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: 10px;
   font-weight: 500;
   line-height: 1.5;
@@ -645,6 +657,7 @@ input[type='range'] {
   gap: 15px;
 }
 .device-card {
+  min-width: 0;
   background: #fff;
   border: 1px solid #dfe4e9;
   border-radius: 12px;
@@ -707,6 +720,7 @@ input[type='range'] {
   color: #c6b680;
 }
 .device-heading .eyebrow {
+  overflow-wrap: anywhere;
   font-size: 7px;
   letter-spacing: 1px;
   color: #8e98a3;
@@ -731,6 +745,7 @@ input[type='range'] {
   margin-bottom: 7px;
 }
 .device-range {
+  min-width: 0;
   appearance: none;
   -webkit-appearance: none;
   width: 100%;
@@ -770,6 +785,8 @@ input[type='range'] {
   padding-top: 15px;
 }
 .device-status {
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: 9px;
   color: #8d96a1;
   text-transform: capitalize;
@@ -830,6 +847,8 @@ input[type='range'] {
   margin-left: 2px;
 }
 .climate-info {
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: 7px;
   display: flex;
   align-items: center;
@@ -1030,6 +1049,7 @@ input[type='range'] {
   border-color: #dfe7f1;
 }
 .cover-value {
+  overflow-wrap: anywhere;
   font-size: 29px;
   letter-spacing: -1px;
   margin: 14px 0 6px;
@@ -1047,6 +1067,8 @@ input[type='range'] {
   margin-top: auto;
 }
 .cover-controls button {
+  min-width: 0;
+  padding: 0;
   background: #eef1f5;
   color: #768495;
   border-radius: 6px;
@@ -1056,6 +1078,7 @@ input[type='range'] {
   place-items: center;
 }
 .sensor-reading {
+  overflow-wrap: anywhere;
   font-size: 35px;
   font-weight: 350;
   letter-spacing: -1px;
@@ -1120,6 +1143,8 @@ input[type='range'] {
   gap: 15px;
 }
 .room-card {
+  min-width: 0;
+  overflow-wrap: anywhere;
   background: #fff;
   border: 1px solid var(--border);
   padding: 24px 20px;
@@ -1191,6 +1216,7 @@ input[type='range'] {
   gap: 22px;
 }
 .settings-card {
+  min-width: 0;
   padding: 30px;
   background: white;
   border: 1px solid var(--border);
@@ -1236,6 +1262,8 @@ input[type='range'] {
   color: #8d98a5;
 }
 .setting-row strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-weight: 500;
   color: #576a80;
 }
@@ -2071,6 +2099,9 @@ input[type='range'] {
   }
 }
 @media (max-width: 370px) {
+  .devices-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
   .main-shell main {
     padding-left: calc(14px + var(--safe-area-left));
     padding-right: calc(14px + var(--safe-area-right));

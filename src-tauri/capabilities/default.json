@@ -16,6 +16,7 @@
     "allow-concierge-test-key",
     "allow-concierge-list-models",
     "allow-concierge-request",
+    "allow-concierge-voice-request",
     "allow-concierge-cancel",
     "allow-storage-load",
     "allow-storage-save-connection",

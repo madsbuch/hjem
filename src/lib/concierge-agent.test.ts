@@ -593,7 +593,7 @@ describe('Home Concierge cancellation', () => {
     expect(
       error.messages
         .filter((message) => message.role === 'tool')
-        .every((message) => message.content?.includes('not_executed')),
+        .every((message) => typeof message.content === 'string' && message.content.includes('not_executed')),
     ).toBe(true);
     expectPaired(error.messages);
   });

@@ -43,6 +43,7 @@ pub fn run() {
             concierge::concierge_test_key,
             concierge::concierge_list_models,
             concierge::concierge_request,
+            concierge::concierge_voice_request,
             concierge::concierge_cancel,
         ])
         .run(tauri::generate_context!())

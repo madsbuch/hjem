@@ -601,7 +601,7 @@ export default function App() {
   };
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${page === 'concierge' ? ' app-shell-concierge' : ''}`}>
       <aside className="sidebar">
         <button
           className="brand"
@@ -898,24 +898,27 @@ export default function App() {
                 }
                 model={concierge.settings.model}
                 onSend={(text) => void concierge.send(text)}
+                onSendVoice={concierge.sendVoice}
+                voiceSessionKey={concierge.voiceSessionKey}
                 onStop={concierge.stop}
                 onClear={concierge.clear}
                 onOpenSettings={() => navigate('settings')}
                 draftRequest={conciergeDraft}
                 onDraftApplied={(id) => setConciergeDraft((current) => current?.id === id ? undefined : current)}
-              />
-              <SetupHistory
-                changes={setup?.changes() ?? []}
-                demo={mode === 'demo'}
-                disabled={!canControl || concierge.busy || setupUiBusy}
-                onUndo={(id) => void undoSetup(id)}
-              />
-              {concierge.usage?.cost != null && (
-                <p className="concierge-usage">
-                  Last turn: ${concierge.usage.cost.toFixed(4)} reported by
-                  OpenRouter
-                </p>
-              )}
+              >
+                <SetupHistory
+                  changes={setup?.changes() ?? []}
+                  demo={mode === 'demo'}
+                  disabled={!canControl || concierge.busy || setupUiBusy}
+                  onUndo={(id) => void undoSetup(id)}
+                />
+                {concierge.usage?.cost != null && (
+                  <p className="concierge-usage">
+                    Last turn: ${concierge.usage.cost.toFixed(4)} reported by
+                    OpenRouter
+                  </p>
+                )}
+              </ConciergeChat>
             </>
           )}
 

@@ -6,7 +6,7 @@ export interface ToolCall {
 
 export interface WireMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
-  content: string | null;
+  content: string | null | { type: 'input_audio'; input_audio: { data: string; format: 'wav' } }[];
   tool_calls?: ToolCall[];
   tool_call_id?: string;
   /** Opaque provider state. Replay unchanged; never display it as assistant text. */
@@ -164,6 +164,8 @@ function copyReasoningDetails(
 function copyMessages(messages: WireMessage[]): WireMessage[] {
   return messages.map((message) => {
     const { reasoning_details: opaque, ...copy } = message;
+    if (Array.isArray(copy.content) && copy.role !== 'user')
+      throw new RunFailure('protocol', 'Audio input belongs only on user messages.');
     if (opaque != null && message.role !== 'assistant')
       throw new RunFailure(
         'protocol',
@@ -172,6 +174,9 @@ function copyMessages(messages: WireMessage[]): WireMessage[] {
     const reasoningDetails = copyReasoningDetails(opaque);
     return {
       ...copy,
+      ...(Array.isArray(copy.content)
+        ? { content: copy.content.map((part) => ({ ...part, input_audio: { ...part.input_audio } })) }
+        : {}),
       ...(message.tool_calls
         ? {
             tool_calls: message.tool_calls.map((call) => ({
@@ -419,7 +424,7 @@ function previousResults(messages: WireMessage[]): Map<string, CompletedCall> {
     ) {
       const call = requests.get(message.tool_call_id);
       if (call) {
-        const content = message.content || 'null';
+        const content = typeof message.content === 'string' ? message.content : 'null';
         completed.set(call.id, {
           fingerprint: fingerprint(call),
           content,

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-concierge-voice-request"
+description = "Enables the concierge_voice_request command without any pre-configured scope."
+commands.allow = ["concierge_voice_request"]
+
+[[permission]]
+identifier = "deny-concierge-voice-request"
+description = "Denies the concierge_voice_request command without any pre-configured scope."
+commands.deny = ["concierge_voice_request"]

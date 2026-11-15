@@ -8,30 +8,7 @@ import {
   testConciergeKey,
   type ConciergeSettings as SettingsValue,
 } from '../lib/concierge-api';
-
-// Tool-capable models verified against OpenRouter's public catalogue, 2026-11-15.
-const recommendedModels = [
-  {
-    id: 'anthropic/claude-haiku-5.5',
-    name: 'Claude Haiku 5.5',
-    badge: 'Recommended',
-    description: 'Quick, low-cost help with everyday home controls.',
-  },
-  {
-    id: 'openai/gpt-6.1-terra',
-    name: 'GPT-6.1 Terra',
-    badge: 'Balanced',
-    description: 'For requests that need a few steps and more planning.',
-  },
-  {
-    id: 'anthropic/claude-sonnet-5.5',
-    name: 'Claude Sonnet 5.5',
-    badge: 'More capable',
-    description: 'For more involved requests. Higher cost per message.',
-  },
-];
-const isRecommended = (id: string) =>
-  recommendedModels.some((item) => item.id === id);
+import { ModelBrowser, isRecommended, recommendedModels, supportsConcierge } from './ModelBrowser';
 
 export function ConciergeSettings({
   settings,
@@ -140,33 +117,10 @@ export function ConciergeSettings({
         </p>
         <fieldset className="concierge-model-picker" disabled={locked}>
           <legend className="field-label">Concierge model</legend>
-          <div className="recommended-models">
-            {recommendedModels.map((item) => (
-              <label
-                className={`model-choice ${!custom && model === item.id ? 'selected' : ''}`}
-                key={item.id}
-              >
-                <input
-                  type="radio"
-                  name="concierge-model-choice"
-                  aria-label={item.name}
-                  checked={!custom && model === item.id}
-                  onChange={() => {
-                    setCustom(false);
-                    setModel(item.id);
-                  }}
-                />
-                <span className="model-choice-top">
-                  <span className="model-badge">{item.badge}</span>
-                  <span className="model-choice-check" aria-hidden="true">
-                    <Check size={14} />
-                  </span>
-                </span>
-                <strong>{item.name}</strong>
-                <span className="model-description">{item.description}</span>
-              </label>
-            ))}
-          </div>
+          <ModelBrowser value={model} active={!custom} disabled={locked} onSelect={(id) => {
+            setCustom(false);
+            setModel(id);
+          }} />
           <label className="custom-model-choice">
             <input
               type="radio"
@@ -209,8 +163,10 @@ export function ConciergeSettings({
                       );
                       if (!match)
                         throw new Error(
-                          'This model was not found among OpenRouter’s tool-capable text models. Check the model ID.',
+                          'This model was not found in OpenRouter’s catalogue. Check the model ID.',
                         );
+                      if (!supportsConcierge(match))
+                        throw new Error('This model does not support the text and tool calls required by Home Concierge.');
                       setFeedback(
                         `${match.name} is available and supports tools.`,
                       );
@@ -228,9 +184,8 @@ export function ConciergeSettings({
           )}
         </fieldset>
         <p className="field-help">
-          Models use your OpenRouter credits. Haiku is a good starting point for
-          home controls; actual cost depends on the model and the length of your
-          conversation.
+          Models use your OpenRouter credits. Browsing the catalogue is free;
+          sending a message uses the selected model’s rates.
         </p>
         <div className="concierge-key-actions">
           <button

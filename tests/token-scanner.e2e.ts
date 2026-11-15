@@ -232,6 +232,7 @@ async function nativeCamera(page: Page, denied = false) {
               return { supported: false, isDefaultHome: false };
             if (command === 'concierge_get_settings')
               return { hasApiKey: false, model: '' };
+            if (command === 'concierge_list_models') return [];
             if (command === 'qr_scanner_native') return true;
             if (command === 'plugin:barcode-scanner|check_permissions')
               return { camera: 'prompt' };

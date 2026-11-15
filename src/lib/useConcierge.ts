@@ -17,6 +17,7 @@ import {
   requestConcierge,
   type ConciergeSettings,
 } from './concierge-api';
+import { requestConciergeVoice } from './concierge-voice-api';
 import {
   conciergeSystemPrompt,
   conciergeTools,
@@ -115,19 +116,19 @@ export function useConcierge(context: ConciergeContext) {
     setStatus('');
   }, [context.sessionId, settings.model]);
 
-  async function send(text: string) {
+  async function send(text: string, voice?: { audio: string; onAudio: (chunk: string) => void }): Promise<boolean> {
     if (currentRun.current || pendingSettings.current > 0 || !text.trim())
-      return;
+      return false;
     if (!settings.hasApiKey || !settings.model) {
       add(
         'error',
         'Add your OpenRouter key and choose a model in Settings first.',
       );
-      return;
+      return false;
     }
     if (text.length > 8000) {
       add('error', 'Please keep your message under 8,000 characters.');
-      return;
+      return false;
     }
     const controller = new AbortController();
     currentRun.current = controller;
@@ -152,16 +153,28 @@ export function useConcierge(context: ConciergeContext) {
         ? history.current.slice(userTurns[userTurns.length - 3])
         : history.current;
     const wire: WireMessage[] = [
-      ...retained,
-      { role: 'user', content: text.trim() },
+      // Text-only models cannot accept earlier microphone recordings. Retain
+      // their replies and tool results without sending unsupported audio.
+      ...retained.map((message) => !voice && Array.isArray(message.content)
+        ? { ...message, content: '[Voice message]' }
+        : message),
+      { role: 'user', content: voice
+        ? [{ type: 'input_audio', input_audio: { data: voice.audio, format: 'wav' } }]
+        : text.trim() },
     ];
     const activityIds = new Map<string, string[]>();
     try {
       const result = await runConcierge({
         messages: wire,
-        systemPrompt: conciergeSystemPrompt,
+        systemPrompt: conciergeSystemPrompt + (voice
+          ? '\nThis is a spoken conversation. Reply naturally and concisely in the language the user speaks. Avoid Markdown formatting in spoken answers. Use the same home tools and wait for their results before reporting completed actions.'
+          : ''),
         tools: conciergeTools,
-        request: requestConcierge,
+        request: voice
+          ? (body, signal) => requestConciergeVoice(body, signal, (chunk) => {
+              if (isCurrentRun() && !signal.aborted) voice.onAudio(chunk);
+            })
+          : requestConcierge,
         executeTool: createConciergeExecutor(() => latest.current),
         signal: controller.signal,
         onEvent(event) {
@@ -210,7 +223,9 @@ export function useConcierge(context: ConciergeContext) {
       if (isCurrentRun()) {
         history.current = result.messages;
         setUsage(result.usage);
+        return true;
       }
+      return false;
     } catch (error) {
       if (isCurrentRun()) {
         if (error instanceof ConciergeRunError)
@@ -225,6 +240,7 @@ export function useConcierge(context: ConciergeContext) {
             : 'Home Concierge could not complete this request.',
         );
       }
+      return false;
     } finally {
       if (currentRun.current === controller) {
         currentRun.current = null;
@@ -254,7 +270,9 @@ export function useConcierge(context: ConciergeContext) {
     setSettings,
     settingsError,
     usage,
+    voiceSessionKey: `${context.sessionId}:${settings.model}`,
     send,
+    sendVoice: (audio: string, onAudio: (chunk: string) => void) => send('Voice message', { audio, onAudio }),
     stop,
     clear,
   };

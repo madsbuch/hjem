@@ -25,6 +25,7 @@ fn main() {
             "concierge_test_key",
             "concierge_list_models",
             "concierge_request",
+            "concierge_voice_request",
             "concierge_cancel",
         ]),
     ))

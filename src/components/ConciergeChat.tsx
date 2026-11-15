@@ -4,6 +4,7 @@ import {
   useState,
   type FormEvent,
   type KeyboardEvent,
+  type ReactNode,
 } from 'react';
 import {
   ArrowRight,
@@ -12,14 +13,17 @@ import {
   Lightbulb,
   LoaderCircle,
   MessageCircle,
+  Mic,
   Music2,
   Plus,
-  Settings2,
   Sofa,
   Sparkles,
   Square,
   Wrench,
+  X,
 } from 'lucide-react';
+import { ConciergeMarkdown } from './ConciergeMarkdown';
+import { useConciergeVoice } from '../lib/useConciergeVoice';
 
 export interface ConciergeMessage {
   id: string;
@@ -35,11 +39,14 @@ export interface ConciergeChatProps {
   configured: boolean;
   model: string;
   onSend: (text: string) => void;
+  onSendVoice: (audio: string, onAudio: (chunk: string) => void) => Promise<boolean>;
+  voiceSessionKey: string;
   onStop: () => void;
   onClear: () => void;
   onOpenSettings: () => void;
   draftRequest?: { id: number; text: string };
   onDraftApplied?: (id: number) => void;
+  children?: ReactNode;
 }
 
 const suggestions = [
@@ -57,18 +64,28 @@ export function ConciergeChat({
   configured,
   model,
   onSend,
+  onSendVoice,
+  voiceSessionKey,
   onStop,
   onClear,
   onOpenSettings,
   draftRequest,
   onDraftApplied,
+  children,
 }: ConciergeChatProps) {
   const [draft, setDraft] = useState('');
   const input = useRef<HTMLTextAreaElement>(null);
-  const newest = useRef<HTMLDivElement>(null);
+  const transcript = useRef<HTMLDivElement>(null);
   const appliedDraft = useRef<number | undefined>(undefined);
+  const voice = useConciergeVoice({
+    enabled: configured && !settingsPending,
+    busy,
+    sessionKey: voiceSessionKey,
+    onSend: onSendVoice,
+    onStop,
+  });
   const canSend =
-    configured && !busy && !settingsPending && draft.trim().length > 0;
+    configured && !busy && !settingsPending && !voice.active && draft.trim().length > 0;
 
   useEffect(() => {
     if (!draftRequest || !configured || busy || appliedDraft.current === draftRequest.id) return;
@@ -82,15 +99,15 @@ export function ConciergeChat({
     if (!input.current) return;
     input.current.style.height = 'auto';
     input.current.style.height = `${Math.min(input.current.scrollHeight, 160)}px`;
-  }, [draft]);
+  }, [draft, busy, voice.active]);
 
   useEffect(() => {
     const reducedMotion = window.matchMedia(
       '(prefers-reduced-motion: reduce)',
     ).matches;
-    newest.current?.scrollIntoView({
+    transcript.current?.scrollTo({
+      top: messages.length || busy ? transcript.current.scrollHeight : 0,
       behavior: busy || reducedMotion ? 'auto' : 'smooth',
-      block: 'nearest',
     });
   }, [messages, busy, status]);
 
@@ -137,41 +154,14 @@ export function ConciergeChat({
               setDraft('');
               input.current?.focus();
             }}
-            disabled={busy || settingsPending}
+            disabled={busy || settingsPending || voice.active}
             aria-label="New conversation"
           >
             <Plus size={17} />
             <span>New conversation</span>
           </button>
-          <button
-            className="concierge-settings-button"
-            onClick={onOpenSettings}
-            aria-label="Concierge settings"
-            title="Concierge settings"
-          >
-            <Settings2 size={19} />
-          </button>
         </div>
       </header>
-
-      {!configured && (
-        <div className="concierge-setup">
-          <span className="concierge-setup-icon">
-            <Sparkles size={25} strokeWidth={1.6} />
-          </span>
-          <div>
-            <h2>A little introduction first.</h2>
-            <p>
-              Add your OpenRouter key and choose a model in Settings to start
-              talking with your home.
-            </p>
-          </div>
-          <button className="primary-button" onClick={onOpenSettings}>
-            Set up Concierge
-            <ArrowRight size={17} />
-          </button>
-        </div>
-      )}
 
       <div className="concierge-chat-panel">
         <div className="concierge-panel-topline">
@@ -182,16 +172,35 @@ export function ConciergeChat({
           <button
             className="concierge-model"
             onClick={onOpenSettings}
-            title={model || 'Choose a model in Settings'}
+            title={voice.active ? 'openai/gpt-audio' : model || 'Choose a model in Settings'}
+            disabled={voice.active}
           >
             <span className={configured ? 'configured' : ''} />
-            {configured
+            {voice.active ? 'gpt-audio' : configured
               ? model.split('/').pop() || 'OpenRouter'
               : 'Ready for setup'}
           </button>
         </div>
 
-        <div className="concierge-scroll">
+        <div className="concierge-scroll" ref={transcript} tabIndex={0} role="region" aria-label="Conversation history">
+          {!configured && (
+            <div className="concierge-setup">
+              <span className="concierge-setup-icon">
+                <Sparkles size={25} strokeWidth={1.6} />
+              </span>
+              <div>
+                <h2>A little introduction first.</h2>
+                <p>
+                  Add your OpenRouter key and choose a model in Settings to start
+                  talking with your home.
+                </p>
+              </div>
+              <button className="primary-button" onClick={onOpenSettings}>
+                Set up Concierge
+                <ArrowRight size={17} />
+              </button>
+            </div>
+          )}
           {messages.length === 0 && !busy && (
             <div className="concierge-welcome">
               <span className="concierge-welcome-mark">
@@ -213,7 +222,7 @@ export function ConciergeChat({
                     <button
                       key={text}
                       onClick={() => onSend(text)}
-                      disabled={busy || settingsPending}
+                      disabled={busy || settingsPending || voice.active}
                     >
                       <Icon size={19} strokeWidth={1.7} />
                       <span>{text}</span>
@@ -257,7 +266,9 @@ export function ConciergeChat({
                     {message.role === 'assistant' && <Sparkles size={12} />}
                     {message.role === 'user' ? 'You' : 'Home Concierge'}
                   </span>
-                  <p>{message.text}</p>
+                  {message.role === 'assistant'
+                    ? <ConciergeMarkdown>{message.text}</ConciergeMarkdown>
+                    : <p>{message.text}</p>}
                 </article>
               ),
             )}
@@ -268,10 +279,25 @@ export function ConciergeChat({
               <span>{status || 'Thinking about your home…'}</span>
             </div>
           )}
-          <div ref={newest} className="concierge-scroll-anchor" />
+          {children}
         </div>
 
         <form className="concierge-compose" onSubmit={handleSubmit}>
+          {voice.active && (
+            <div className="concierge-voice-status" role="status">
+              <Mic size={15} />
+              <span>{voice.phase === 'starting' ? 'Opening microphone…'
+                : voice.phase === 'recording' ? 'Listening… Tap send when finished.'
+                  : voice.phase === 'speaking' ? 'Speaking…' : 'Waiting for a reply…'}</span>
+              <span>GPT Audio</span>
+            </div>
+          )}
+          {voice.error && (
+            <div className="concierge-voice-error" role="alert">
+              <span>{voice.error}</span>
+              <button type="button" onClick={voice.clearError} aria-label="Dismiss voice error"><X size={16} /></button>
+            </div>
+          )}
           <div
             className={`concierge-input-wrap ${!configured ? 'unconfigured' : ''}`}
           >
@@ -288,13 +314,23 @@ export function ConciergeChat({
               aria-label="Message Home Concierge"
               placeholder={
                 configured
-                  ? 'What can I help with at home?'
+                  ? 'Message Home Concierge'
                   : 'Set up Concierge in Settings to send a message.'
               }
-              disabled={!configured || settingsPending}
+              disabled={!configured || settingsPending || voice.active}
               rows={1}
             />
-            {busy ? (
+            {voice.phase === 'recording' ? (
+              <>
+                <button type="button" className="concierge-mic" onClick={voice.stop} aria-label="Cancel voice message" title="Cancel recording"><X size={20} /></button>
+                <button type="button" className="concierge-send" onClick={() => void voice.send()} aria-label="Send voice message" title="Send voice message"><ArrowUp size={22} /></button>
+              </>
+            ) : voice.active ? (
+              <button type="button" className="concierge-stop" onClick={voice.stop}
+                aria-label={voice.phase === 'starting' ? 'Cancel voice message' : 'Stop concierge'} title="Stop voice">
+                <Square size={15} fill="currentColor" />
+              </button>
+            ) : busy ? (
               <button
                 type="button"
                 className="concierge-stop"
@@ -305,6 +341,11 @@ export function ConciergeChat({
                 <Square size={15} fill="currentColor" />
               </button>
             ) : (
+              <>
+              <button type="button" className="concierge-mic" onClick={() => void voice.start()}
+                disabled={!configured || settingsPending} aria-label="Start voice message" title="Voice message · GPT Audio">
+                <Mic size={21} />
+              </button>
               <button
                 type="submit"
                 className="concierge-send"
@@ -314,16 +355,11 @@ export function ConciergeChat({
               >
                 <ArrowUp size={22} />
               </button>
+              </>
             )}
           </div>
           <div className="concierge-compose-hint">
-            <span>
-              {settingsPending
-                ? 'Updating concierge settings…'
-                : configured
-                  ? 'A little help, right here at home.'
-                  : 'Add an OpenRouter key and choose a model in Settings.'}
-            </span>
+            {settingsPending && <span>Updating concierge settings…</span>}
             <span className="concierge-keyboard-hint">
               Enter to send · Shift + Enter for a new line
             </span>
