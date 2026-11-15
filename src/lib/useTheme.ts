@@ -18,11 +18,23 @@ export function useTheme() {
 
   useEffect(() => {
     const media = window.matchMedia('(prefers-color-scheme: dark)');
-    const onChange = () => setSystemDark(media.matches);
+    const onChange = () =>
+      setSystemDark(window.matchMedia('(prefers-color-scheme: dark)').matches);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') onChange();
+    };
     media.addEventListener('change', onChange);
+    const poll = window.setInterval(onChange, 10 * 60_000);
+    window.addEventListener('focus', onChange);
+    document.addEventListener('visibilitychange', onVisible);
     // Catch a system change between the initial render and subscription.
     onChange();
-    return () => media.removeEventListener('change', onChange);
+    return () => {
+      media.removeEventListener('change', onChange);
+      window.clearInterval(poll);
+      window.removeEventListener('focus', onChange);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, []);
 
   useLayoutEffect(() => {

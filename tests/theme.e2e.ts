@@ -213,3 +213,55 @@ test('reduced motion applies manual and system themes immediately', async ({
   ).toBe(true);
   await expect(page.locator('html')).not.toHaveClass(/theme-changing/);
 });
+
+test('System catches missed appearance notifications on the ten-minute poll and foreground check', async ({
+  page,
+}) => {
+  await page.clock.install();
+  await page.addInitScript(() => {
+    const original = window.matchMedia.bind(window);
+    (window as any).silentSystemDark = false;
+    window.matchMedia = (query: string) => {
+      if (query !== '(prefers-color-scheme: dark)') return original(query);
+      // Model a WebView that updates its preference but drops change events.
+      return {
+        media: query,
+        get matches() {
+          return (window as any).silentSystemDark;
+        },
+        onchange: null,
+        addListener() {},
+        removeListener() {},
+        addEventListener() {},
+        removeEventListener() {},
+        dispatchEvent() {
+          return true;
+        },
+      } as MediaQueryList;
+    };
+  });
+  await page.goto('/');
+  await openAppearance(page);
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await page.evaluate(() => {
+    (window as any).silentSystemDark = true;
+  });
+  await page.clock.fastForward(9 * 60_000);
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await page.clock.fastForward(60_000);
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(page.locator('html')).toHaveClass(/theme-changing/);
+  await page.clock.fastForward(1000);
+  await expect(page.locator('html')).not.toHaveClass(/theme-changing/);
+  await page.evaluate(() => {
+    (window as any).silentSystemDark = false;
+    window.dispatchEvent(new Event('focus'));
+  });
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await expect(page.locator('html')).toHaveClass(/theme-changing/);
+  await page.clock.fastForward(1000);
+  await option(page, 'Dark').click();
+  await page.clock.fastForward(10 * 60_000);
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(option(page, 'Dark')).toHaveAttribute('aria-pressed', 'true');
+});

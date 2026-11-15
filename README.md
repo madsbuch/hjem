@@ -11,7 +11,7 @@ Start with the interactive demo home, then connect your own Home Assistant in Se
 - Open installed Android apps from a searchable app drawer and pin favourites in the app drawer.
 - Browse rooms using your Home Assistant areas and device assignments.
 - Search devices and filter by room or pinned favourites.
-- Choose Light, Dark, or System appearance in Settings. Changes animate smoothly; System follows the device’s appearance schedule.
+- Choose Light, Dark, or System appearance in Settings. Changes fade over 800 ms; System follows the device’s appearance schedule immediately, checks again when the app returns to the foreground, and polls every ten minutes as a fallback. Reduced-motion preferences disable the fade.
 - Ask Home Concierge to inspect your home, adjust devices, control Sonos, or open tablet apps.
 - Toggle lights, switches, fans, and input booleans; adjust supported light brightness.
 - Set supported thermostat temperatures, operate covers, and control music playback, tracks, volume, and mute.
