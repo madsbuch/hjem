@@ -283,6 +283,26 @@ test('streamed tool arguments execute only after a complete response and affect 
   await expect(page.getByRole('switch', { name: 'Toggle Reading lamp', exact: true })).toBeChecked();
 });
 
+test('the documented OpenRouter audio stream (no id, index or finish_reason) speaks, runs tools and answers', async ({ page }) => {
+  await startConcierge(page);
+  await sendVoice(page);
+  // Exactly the shape in OpenRouter's audio guide: only choices[0].delta.audio
+  // fragments, then [DONE]. No id, choice index or finish_reason is sent.
+  const bare = (value: Record<string, unknown>) => ({ choices: [{ delta: value }] });
+  await emit(page, 0, [bare({ tool_calls: [{ index: 0, id: 'look', type: 'function',
+    function: { name: 'get_home_state', arguments: '{}' } }] })], true);
+  await expect.poll(() => page.evaluate(() => window.__hjemVoice.requests.length)).toBe(2);
+  const audio = Buffer.alloc(4800).toString('base64');
+  await emit(page, 1, [
+    bare({ audio: { transcript: 'Your living room ', data: audio.slice(0, 2001) } }),
+    bare({ audio: { transcript: 'lights are on.', data: audio.slice(2001) } }),
+  ], true);
+  await expect(page.getByRole('article', { name: 'Home Concierge response' })).toContainText('Your living room lights are on.');
+  await expect.poll(() => page.evaluate(() => window.__hjemVoice.outputStarts)).toBeGreaterThan(0);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Start voice message', exact: true })).toBeEnabled();
+});
+
 test('denied microphone permission leaves text chat usable', async ({ page }) => {
   await startConcierge(page, true);
   await page.getByRole('button', { name: 'Start voice message', exact: true }).click();

@@ -126,10 +126,8 @@ export class VoiceCompletionStream {
     try { value = JSON.parse(data); } catch { throw protocolError('invalid event JSON'); }
     if (!record(value)) throw protocolError('invalid event object');
     if (value.error != null) throw new Error('The voice model could not finish this response. Please try again.');
-    if (value.id != null) {
-      if (typeof value.id !== 'string' || !value.id || (this.id && value.id !== this.id)) throw protocolError('invalid response id');
-      this.id = value.id;
-    }
+    // Only the first response id is kept; providers may vary it per chunk.
+    if (typeof value.id === 'string' && value.id && !this.id) this.id = value.id;
     if (value.usage != null) {
       if (!record(value.usage)) throw protocolError('invalid usage');
       for (const key of ['prompt_tokens', 'completion_tokens', 'total_tokens', 'cost']) {
@@ -141,8 +139,9 @@ export class VoiceCompletionStream {
       }
       this.usage = value.usage;
     }
-    if (!array(value.choices) || value.choices.length > 1 || (!value.choices.length && value.usage == null))
-      throw protocolError('invalid choices');
+    // Keep-alive, usage-only or other metadata events may omit choices.
+    if (value.choices == null) return;
+    if (!array(value.choices) || value.choices.length > 1) throw protocolError('invalid choices');
     for (const choice of value.choices) {
       if (!record(choice)) throw protocolError('invalid choice');
       if (choice.error != null || choice.finish_reason === 'error')
@@ -163,8 +162,9 @@ export class VoiceCompletionStream {
       const tools = array(delta.tool_calls) ? delta.tool_calls : [];
       // Repeated finish/usage and audio id/expiry trailers are metadata, not new
       // output. Actual text, audio or tool changes must stop at finish_reason.
-      if (this.terminal && (delta.content || audio?.transcript || audio?.data || tools.length))
-        throw protocolError('output after finish_reason');
+      // Late transcript or audio is harmless and is kept. New tool calls after
+      // the model declared it was finished are not trusted.
+      if (this.terminal && tools.length) throw protocolError('tool call after finish_reason');
       if (typeof delta.content === 'string') this.text += delta.content;
       if (typeof audio?.transcript === 'string') this.transcript += audio.transcript;
       if (typeof audio?.data === 'string' && audio.data) this.audio(audio.data);

@@ -53,6 +53,9 @@ describe('voice SSE completion boundaries', () => {
     ['empty audio delta', event(delta({ content: 'Done', audio: { data: '', transcript: '' } }, 'stop'))],
     ['[DONE] without any finish_reason (OpenRouter gpt-audio)', event(delta({ audio: { transcript: 'Done' } }))],
     ['finish chunk without a delta', event(delta({ content: 'Done' })) + event({ choices: [{ index: 0, finish_reason: 'stop' }] })],
+    ['late transcript after finish_reason', event(delta({ content: 'Do' }, 'stop')) + event(delta({ content: 'ne' }))],
+    ['event without choices', event({ id: 'x' }) + event(delta({ content: 'Done' }))],
+    ['changing chunk ids', event({ id: 'a', choices: [{ delta: { content: 'Do' } }] }) + event({ id: 'b', choices: [{ delta: { content: 'ne' } }] })],
     ['audio metadata trailer', event(delta({ content: 'Done' }, 'stop')) + event(delta({ audio: { expires_at: 1794770000 } }))],
   ])('accepts the compatible response variant: %s', async (_name, text) => {
     const { VoiceCompletionStream } = await import('./concierge-voice-api');
@@ -147,9 +150,6 @@ describe('voice SSE completion boundaries', () => {
     event(delta({ tool_calls: [{ index: 0, id: 'call', type: 'function', function: { name: 'home_status', arguments: '{' } }] }, 'tool_calls')) + done,
     event(delta({ tool_calls: [{ index: 1, id: 'call', type: 'function', function: { name: 'home_status', arguments: '{}' } }] }, 'tool_calls')) + done,
     event(delta({ tool_calls: [{ index: 0, id: 'call', type: 'function', function: { name: 'home_status', arguments: '[]' } }] }, 'tool_calls')) + done,
-    event(delta({ content: 'Done' }, 'stop')) + event(delta({ content: 'Too late' }, 'stop')) + done,
-    event(delta({ content: 'Done' }, 'stop')) + event(delta({ audio: { data: 'AA==' } })) + done,
-    event(delta({ content: 'Done' }, 'stop')) + event(delta({ audio: { transcript: 'Too late' } })) + done,
     event(delta({ content: 'Done' }, 'stop')) + event(delta({ tool_calls: [{ index: 0, id: 'late' }] })) + done,
     event(delta({ content: 'Done' }, 'stop')) + done + event(delta({ content: 'After done' })),
     event({ choices: [{ index: 0, delta: {} }, { index: 1, delta: {} }] }) + done,
