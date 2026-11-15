@@ -11,7 +11,7 @@ Start with the interactive demo home, then connect your own Home Assistant in Se
 - Search devices and filter by room or pinned favourites.
 - Choose Light, Dark, or System appearance, or switch with the header toggle.
 - Toggle lights, switches, fans, and input booleans; adjust supported light brightness.
-- Set supported thermostat temperatures, operate covers, and play or pause media.
+- Set supported thermostat temperatures, operate covers, and control music playback, tracks, volume, and mute.
 - Run existing Home Assistant scenes and view sensor readings.
 - Receive live state changes, connection feedback, and automatic reconnection after an interrupted session.
 
@@ -50,6 +50,12 @@ Install the browser needed by the end-to-end tests with `npx playwright install 
 The token stays in memory for the current session; enter it again after restarting or reloading the app. Only the server URL, favourites, and appearance preference are stored locally. Disconnecting clears the client’s token. Hjem connects directly to your server using the [Home Assistant WebSocket API](https://developers.home-assistant.io/docs/api/websocket/) and does not need an intermediary service.
 
 Use HTTPS for remote access. An HTTP address uses an unencrypted WebSocket connection, so reserve it for a trusted local network. The server must be reachable from the device running Hjem. If you use a reverse proxy, it must forward WebSocket connections to `/api/websocket`. An HTTPS browser preview cannot connect to an HTTP server because browsers block mixed content.
+
+## Sonos
+
+Add your speakers to the [Sonos integration in Home Assistant](https://www.home-assistant.io/integrations/sonos/). Hjem then discovers their media-player entities alongside your other devices; no separate Sonos account or connection is needed in Hjem.
+
+Speaker cards show the current track and artist, with play/pause, previous/next track, volume, and mute controls when the speaker supports them. The demo includes a Sonos speaker with simulated controls. Music selection, queues, and speaker grouping remain in the Sonos app or Home Assistant for this first version.
 
 ## Phone and tablet
 

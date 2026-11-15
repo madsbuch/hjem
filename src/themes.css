@@ -363,6 +363,32 @@ html[data-theme='dark'] .play-button {
   background: #d6e2bd;
   color: #2c4935;
 }
+html[data-theme='dark'] .platform-label {
+  color: #dce8ca;
+}
+html[data-theme='dark'] .media-icon-button {
+  color: #d8e5c8;
+}
+html[data-theme='dark'] .media-icon-button:hover:not(:disabled) {
+  background: #3c5a43;
+}
+html[data-theme='dark'] .volume-caption {
+  color: #c4d6b2;
+}
+html[data-theme='dark'] .volume-mute.muted {
+  color: #f2ce8e;
+}
+html[data-theme='dark'] .media_player .volume-range {
+  background: #6d865f;
+}
+html[data-theme='dark'] .media_player .volume-range::-webkit-slider-thumb {
+  background: #d8e3bd;
+  border-color: #f0f3dc;
+}
+html[data-theme='dark'] .media_player .volume-range::-moz-range-thumb {
+  background: #d8e3bd;
+  border-color: #f0f3dc;
+}
 html[data-theme='dark'] .cover-value,
 html[data-theme='dark'] .sensor-reading {
   color: #c7d7b1;

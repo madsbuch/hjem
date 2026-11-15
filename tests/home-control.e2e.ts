@@ -16,8 +16,8 @@ async function openConnection(page: Page) {
   await expect(page.getByRole('dialog')).toBeVisible();
 }
 
-async function mockHomeAssistant(page: Page) {
-  await page.addInitScript(() => {
+async function mockHomeAssistant(page: Page, includeMedia = false) {
+  await page.addInitScript((includeMedia) => {
     type Entity = {
       entity_id: string;
       state: string;
@@ -46,15 +46,39 @@ async function mockHomeAssistant(page: Page) {
         attributes: { friendly_name: 'Focus time' },
       },
     ];
+    if (includeMedia) states.push(
+      {
+        entity_id: 'media_player.speaker',
+        state: 'playing',
+        attributes: {
+          friendly_name: 'Office Sonos',
+          media_title: 'A quiet morning',
+          media_artist: 'Home playlist',
+          volume_level: 0.32,
+          is_volume_muted: false,
+          supported_features: 1 | 4 | 8 | 16 | 32 | 16384,
+        },
+      },
+      {
+        entity_id: 'media_player.basic',
+        state: 'playing',
+        attributes: {
+          friendly_name: 'Basic player',
+          media_title: 'A radio station',
+          supported_features: 1 | 16384,
+        },
+      },
+    );
     const server = {
       commands: [] as Record<string, any>[],
       sockets: [] as MockWebSocket[],
       offline: false,
       rejectActions: false,
-      changeState(entityId: string, state: string) {
+      changeState(entityId: string, state: string, attributes: Record<string, unknown> = {}) {
         const entity = states.find((item) => item.entity_id === entityId)!;
         Object.assign(entity, {
           state,
+          attributes: { ...entity.attributes, ...attributes },
           last_updated: new Date().toISOString(),
         });
         for (const socket of server.sockets.filter(
@@ -142,7 +166,7 @@ async function mockHomeAssistant(page: Page) {
       }
     }
     Object.assign(window, { WebSocket: MockWebSocket, __ha: server });
-  });
+  }, includeMedia);
 }
 
 async function connectMock(page: Page) {
@@ -458,4 +482,106 @@ test('system appearance follows live device changes and manual choices override 
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await page.emulateMedia({ colorScheme: 'light' });
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+});
+
+test('demo speaker supports volume, mute, tracks, and playback', async ({ page }) => {
+  await page.goto('/');
+  const speaker = page.getByRole('article', { name: 'Living room speaker', exact: true });
+  const volume = speaker.getByRole('slider', { name: 'Living room speaker volume' });
+  await expect(volume).toHaveValue('32');
+  await volume.focus();
+  await page.keyboard.press('End');
+  await expect(volume).toHaveValue('100');
+  await volume.focus();
+  await page.keyboard.press('Home');
+  await expect(volume).toHaveValue('0');
+  await volume.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(volume).toHaveValue('1');
+  await speaker.getByRole('button', { name: 'Mute Living room speaker', exact: true }).click();
+  await expect(speaker.getByRole('button', { name: 'Unmute Living room speaker', exact: true })).toBeVisible();
+  await speaker.getByRole('button', { name: 'Unmute Living room speaker', exact: true }).click();
+  await expect(speaker.getByRole('button', { name: 'Mute Living room speaker', exact: true })).toBeVisible();
+  const title = speaker.locator('.track-title');
+  const originalTitle = await title.textContent();
+  await speaker.getByRole('button', { name: 'Next track on Living room speaker' }).click();
+  await expect(title).not.toHaveText(originalTitle!);
+  await speaker.getByRole('button', { name: 'Previous track on Living room speaker' }).click();
+  await expect(title).toHaveText(originalTitle!);
+  await speaker.getByRole('button', { name: 'Pause Living room speaker', exact: true }).click();
+  await expect(speaker.getByRole('button', { name: 'Play Living room speaker', exact: true })).toBeVisible();
+  await speaker.getByRole('button', { name: 'Play Living room speaker', exact: true }).click();
+  await expect(speaker.getByRole('button', { name: 'Pause Living room speaker', exact: true })).toBeVisible();
+});
+
+test('live speaker sends Home Assistant volume, mute, track, and playback service payloads', async ({ page }) => {
+  await mockHomeAssistant(page, true);
+  await page.goto('/');
+  await connectMock(page);
+  const speaker = page.getByRole('article', { name: 'Office Sonos', exact: true });
+  const volume = speaker.getByRole('slider', { name: 'Office Sonos volume' });
+  await expect(volume).toHaveValue('32');
+  await volume.focus();
+  await page.keyboard.press('End');
+  await expect(volume).toBeEnabled();
+  await volume.focus();
+  await page.keyboard.press('Home');
+  await expect(volume).toBeEnabled();
+  await volume.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(volume).toBeEnabled();
+  await speaker.getByRole('button', { name: 'Mute Office Sonos', exact: true }).click();
+  await expect(speaker.getByRole('button', { name: 'Mute Office Sonos', exact: true })).toBeEnabled();
+  await page.evaluate(() => (window as any).__ha.changeState('media_player.speaker', 'playing', { is_volume_muted: true, volume_level: 0.01 }));
+  await speaker.getByRole('button', { name: 'Unmute Office Sonos', exact: true }).click();
+  await expect(speaker.getByRole('button', { name: 'Next track on Office Sonos' })).toBeEnabled();
+  await speaker.getByRole('button', { name: 'Next track on Office Sonos' }).click();
+  await expect(speaker.getByRole('button', { name: 'Previous track on Office Sonos' })).toBeEnabled();
+  await speaker.getByRole('button', { name: 'Previous track on Office Sonos' }).click();
+  await expect(speaker.getByRole('button', { name: 'Pause Office Sonos', exact: true })).toBeEnabled();
+  await speaker.getByRole('button', { name: 'Pause Office Sonos', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => (window as any).__ha.commands
+    .filter((command: any) => command.type === 'call_service')
+    .map(({ domain, service, service_data, target }: any) => ({ domain, service, service_data, target }))))
+    .toEqual([
+      { domain: 'media_player', service: 'volume_set', service_data: { volume_level: 1 }, target: { entity_id: 'media_player.speaker' } },
+      { domain: 'media_player', service: 'volume_set', service_data: { volume_level: 0 }, target: { entity_id: 'media_player.speaker' } },
+      { domain: 'media_player', service: 'volume_set', service_data: { volume_level: 0.01 }, target: { entity_id: 'media_player.speaker' } },
+      { domain: 'media_player', service: 'volume_mute', service_data: { is_volume_muted: true }, target: { entity_id: 'media_player.speaker' } },
+      { domain: 'media_player', service: 'volume_mute', service_data: { is_volume_muted: false }, target: { entity_id: 'media_player.speaker' } },
+      { domain: 'media_player', service: 'media_next_track', service_data: {}, target: { entity_id: 'media_player.speaker' } },
+      { domain: 'media_player', service: 'media_previous_track', service_data: {}, target: { entity_id: 'media_player.speaker' } },
+      { domain: 'media_player', service: 'media_play_pause', service_data: {}, target: { entity_id: 'media_player.speaker' } },
+    ]);
+  await page.evaluate(() => (window as any).__ha.changeState('media_player.speaker', 'paused', { volume_level: 0.44 }));
+  await expect(volume).toHaveValue('44');
+  await expect(speaker.getByRole('button', { name: 'Play Office Sonos', exact: true })).toBeVisible();
+});
+
+test('speaker controls respect capabilities, service failures, and offline state', async ({ page }) => {
+  await mockHomeAssistant(page, true);
+  await page.goto('/');
+  await connectMock(page);
+  const basic = page.getByRole('article', { name: 'Basic player', exact: true });
+  for (const control of [
+    basic.getByRole('slider', { name: 'Basic player volume' }),
+    basic.getByRole('button', { name: 'Mute Basic player', exact: true }),
+    basic.getByRole('button', { name: 'Previous track on Basic player' }),
+    basic.getByRole('button', { name: 'Next track on Basic player' }),
+  ]) {
+    if (await control.count()) await expect(control).toBeDisabled();
+  }
+  await expect(basic.getByRole('button', { name: 'Pause Basic player', exact: true })).toBeEnabled();
+  const speaker = page.getByRole('article', { name: 'Office Sonos', exact: true });
+  const volume = speaker.getByRole('slider', { name: 'Office Sonos volume' });
+  await page.evaluate(() => { (window as any).__ha.rejectActions = true; });
+  await volume.focus();
+  await page.keyboard.press('End');
+  await expect(page.getByRole('alert')).toContainText('Device rejected the action');
+  await expect(volume).toHaveValue('32');
+  await page.evaluate(() => (window as any).__ha.disconnect());
+  await expect(volume).toBeDisabled();
+  await expect(speaker.getByRole('button', { name: 'Mute Office Sonos', exact: true })).toBeDisabled();
+  await expect(speaker.getByRole('button', { name: 'Next track on Office Sonos' })).toBeDisabled();
+  await expect(speaker.getByRole('button', { name: 'Pause Office Sonos', exact: true })).toBeDisabled();
 });

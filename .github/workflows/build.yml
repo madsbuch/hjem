@@ -126,6 +126,8 @@ jobs:
         with:
           workspaces: src-tauri
           key: android
+          # Preserve completed Rust dependency builds if APK lint/signing fails.
+          cache-on-failure: true
       - run: npm ci
       - name: Configure Android tools
         run: |

@@ -16,6 +16,7 @@ export interface HassDevice {
 }
 export interface HassEntityRegistryEntry {
   entity_id: string;
+  platform?: string;
   area_id: string | null;
   device_id: string | null;
   hidden_by?: string | null;

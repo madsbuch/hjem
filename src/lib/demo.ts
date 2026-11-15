@@ -32,7 +32,12 @@ export const demoSnapshot: HassSnapshot = {
     ['cover.bedroom', 'bedroom'],
     ['sensor.hallway_temperature', 'hallway'],
     ['binary_sensor.front_door', 'hallway'],
-  ].map(([entity_id, area_id]) => ({ entity_id, area_id, device_id: null })),
+  ].map(([entity_id, area_id]) => ({
+    entity_id,
+    area_id,
+    device_id: null,
+    ...(entity_id === 'media_player.speaker' ? { platform: 'sonos' } : {}),
+  })),
   entities: [
     entity('light.living_pendant', 'Pendant lights', 'on', {
       brightness: 178,
@@ -54,7 +59,10 @@ export const demoSnapshot: HassSnapshot = {
     entity('media_player.speaker', 'Living room speaker', 'playing', {
       media_title: 'A slower kind of Sunday',
       media_artist: 'Your favourite playlist',
-      supported_features: 1 | 16384 | 16,
+      supported_features: 1 | 4 | 8 | 16 | 32 | 16384,
+      volume_level: 0.32,
+      is_volume_muted: false,
+      demo_track: 0,
     }),
     entity('light.kitchen', 'Kitchen lights', 'off', {
       brightness: 204,
@@ -136,6 +144,45 @@ export function applyDemoService(
       if (service === 'stop_cover') return e;
       if (service === 'media_play_pause')
         return { ...e, state: e.state === 'playing' ? 'paused' : 'playing' };
+      if (service === 'volume_set')
+        return {
+          ...e,
+          attributes: {
+            ...e.attributes,
+            volume_level: Math.max(0, Math.min(1, Number(data.volume_level))),
+          },
+        };
+      if (service === 'volume_mute')
+        return {
+          ...e,
+          attributes: {
+            ...e.attributes,
+            is_volume_muted: Boolean(data.is_volume_muted),
+          },
+        };
+      if (
+        service === 'media_next_track' ||
+        service === 'media_previous_track'
+      ) {
+        const tracks = [
+          'A slower kind of Sunday',
+          'Light through the window',
+          'Somewhere to stay',
+        ];
+        const index =
+          (Number(e.attributes.demo_track || 0) +
+            (service === 'media_next_track' ? 1 : -1) +
+            tracks.length) %
+          tracks.length;
+        return {
+          ...e,
+          attributes: {
+            ...e.attributes,
+            media_title: tracks[index],
+            demo_track: index,
+          },
+        };
+      }
       return {
         ...e,
         state:

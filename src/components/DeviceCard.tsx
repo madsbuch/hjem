@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Lightbulb,
   Power,
@@ -9,6 +9,10 @@ import {
   Music2,
   Pause,
   Play,
+  SkipBack,
+  SkipForward,
+  Volume2,
+  VolumeX,
   Blinds,
   ChevronUp,
   ChevronDown,
@@ -46,6 +50,7 @@ interface Props {
   onAction: ServiceAction;
   disabled: boolean;
   pending: boolean;
+  platform?: string;
 }
 
 export function DeviceCard({
@@ -57,6 +62,7 @@ export function DeviceCard({
   onAction,
   disabled,
   pending,
+  platform,
 }: Props) {
   const domain = domainOf(entity);
   const active = isActive(entity);
@@ -69,13 +75,27 @@ export function DeviceCard({
   const [level, setLevel] = useState(brightness);
   const position = Number(entity.attributes.current_position ?? 0);
   const [coverPosition, setCoverPosition] = useState(position);
+  const rawVolume = Number(entity.attributes.volume_level);
+  const volumeKnown =
+    entity.attributes.volume_level != null && Number.isFinite(rawVolume);
+  const volume = volumeKnown
+    ? Math.round(Math.min(1, Math.max(0, rawVolume)) * 100)
+    : 0;
+  const [volumeLevel, setVolumeLevel] = useState(volume);
+  const latestVolume = useRef(volume);
+  latestVolume.current = volume;
+  const muted = entity.attributes.is_volume_muted === true;
+  const canSetVolume = supports(entity, 4);
+  const canMute = supports(entity, 8);
   useEffect(() => setLevel(brightness), [brightness]);
   useEffect(() => setCoverPosition(position), [position]);
+  useEffect(() => setVolumeLevel(volume), [volume]);
   const action = (service: string, data?: Record<string, unknown>) => {
     void onAction(entity, service, data).then((success) => {
       if (!success) {
         setLevel(brightness);
         setCoverPosition(position);
+        setVolumeLevel(latestVolume.current);
       }
     });
   };
@@ -242,20 +262,85 @@ export function DeviceCard({
           <p className="track-artist">
             {entity.attributes.media_artist || status}
           </p>
+          {(canSetVolume || canMute) && (
+            <div className="media-volume">
+              <div className="volume-caption">
+                <span>Volume</span>
+                <span>{muted ? 'Muted' : volumeKnown ? `${volumeLevel}%` : '—'}</span>
+              </div>
+              <div className="volume-row">
+                {canMute && (
+                  <button
+                    className={`media-icon-button volume-mute ${muted ? 'muted' : ''}`}
+                    disabled={locked}
+                    aria-label={`${muted ? 'Unmute' : 'Mute'} ${name}`}
+                    aria-pressed={muted}
+                    onClick={() => action('volume_mute', { is_volume_muted: !muted })}
+                  >
+                    {muted ? <VolumeX size={17} /> : <Volume2 size={17} />}
+                  </button>
+                )}
+                {canSetVolume && (
+                  <input
+                    className="device-range volume-range"
+                    type="range"
+                    min="0"
+                    max="100"
+                    step="1"
+                    value={volumeLevel}
+                    disabled={locked}
+                    aria-label={`${name} volume`}
+                    aria-valuetext={`${volumeLevel}%${muted ? ', muted' : ''}`}
+                    onChange={(event) => setVolumeLevel(Number(event.target.value))}
+                    onPointerUp={(event) => action('volume_set', {
+                      volume_level: Number(event.currentTarget.value) / 100,
+                    })}
+                    onPointerCancel={() => setVolumeLevel(latestVolume.current)}
+                    onKeyUp={(event) => {
+                      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) {
+                        action('volume_set', { volume_level: Number(event.currentTarget.value) / 100 });
+                      }
+                    }}
+                  />
+                )}
+              </div>
+            </div>
+          )}
           <div className="media-controls">
-            <span className="device-status">{status}</span>
-            <button
-              className="play-button"
-              disabled={locked || !mediaCanToggle}
-              aria-label={`${entity.state === 'playing' ? 'Pause' : 'Play'} ${name}`}
-              onClick={() => action('media_play_pause')}
-            >
-              {entity.state === 'playing' ? (
-                <Pause size={18} fill="currentColor" />
-              ) : (
-                <Play size={18} fill="currentColor" />
-              )}
-            </button>
+            <div className="media-meta">
+              <span className="device-status">{status}</span>
+              {platform === 'sonos' && <span className="platform-label">Sonos</span>}
+            </div>
+            <div className="transport-controls">
+              <button
+                className="media-icon-button"
+                disabled={locked || !supports(entity, 16)}
+                aria-label={`Previous track on ${name}`}
+                onClick={() => action('media_previous_track')}
+              >
+                <SkipBack size={17} fill="currentColor" />
+              </button>
+              <button
+                className="play-button"
+                disabled={locked || !mediaCanToggle}
+                aria-label={`${entity.state === 'playing' ? 'Pause' : 'Play'} ${name}`}
+                onClick={() => action('media_play_pause')}
+              >
+                {entity.state === 'playing' ? (
+                  <Pause size={18} fill="currentColor" />
+                ) : (
+                  <Play size={18} fill="currentColor" />
+                )}
+              </button>
+              <button
+                className="media-icon-button"
+                disabled={locked || !supports(entity, 32)}
+                aria-label={`Next track on ${name}`}
+                onClick={() => action('media_next_track')}
+              >
+                <SkipForward size={17} fill="currentColor" />
+              </button>
+            </div>
           </div>
         </>
       ) : domain === 'cover' ? (

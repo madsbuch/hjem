@@ -885,8 +885,9 @@ input[type='range'] {
 }
 .media-controls {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
+  gap: 7px;
   margin-top: auto;
   padding-top: 9px;
 }
@@ -895,13 +896,99 @@ input[type='range'] {
   color: #a0b394;
 }
 .play-button {
-  width: 27px;
-  height: 27px;
+  width: 34px;
+  height: 34px;
   display: grid;
   place-items: center;
   background: #d5dfc3;
   color: #455c40;
   border-radius: 50%;
+}
+.media_player .device-top {
+  margin-bottom: 12px;
+}
+.media_player .sound-wave {
+  height: 25px;
+  margin: 12px 0 7px;
+}
+.media_player .sound-wave i {
+  max-height: 25px;
+}
+.media-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.platform-label {
+  color: #dce6cc;
+  font-size: 7px;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+}
+.transport-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  width: 100%;
+}
+.media-icon-button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  background: transparent;
+  color: #d2dfc5;
+}
+.media-icon-button:hover:not(:disabled) {
+  background: #486052;
+}
+.media-volume {
+  width: 100%;
+  margin-top: 14px;
+}
+.volume-caption {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: #c1d0b4;
+  font-size: 8px;
+  line-height: 1.5;
+}
+.volume-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+}
+.volume-mute {
+  width: 28px;
+  height: 32px;
+  margin-left: -5px;
+}
+.volume-mute.muted {
+  color: #f0d39c;
+}
+.media_player .volume-range {
+  min-width: 0;
+  flex: 1;
+  margin: 7px 0;
+  background: #6d8366;
+}
+.media_player .volume-range::-webkit-slider-thumb {
+  background: #d2deba;
+  border-color: #edf1df;
+}
+.media_player .volume-range::-moz-range-thumb {
+  background: #d2deba;
+  border-color: #edf1df;
 }
 .cover-value {
   font-size: 29px;
@@ -1811,7 +1898,20 @@ input[type='range'] {
     height: 34px;
   }
   .media-controls {
-    padding-top: 16px;
+    padding-top: 9px;
+  }
+  .transport-controls {
+    gap: 5px;
+  }
+  .media-icon-button {
+    width: 36px;
+    height: 36px;
+  }
+  .volume-mute {
+    width: 30px;
+  }
+  .volume-caption {
+    font-size: 9px;
   }
   .cover-controls button {
     height: 35px;

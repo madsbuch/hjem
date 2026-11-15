@@ -644,6 +644,11 @@ export default function App() {
                     key={entity.entity_id}
                     entity={entity}
                     room={roomName(entity)}
+                    platform={
+                      snapshot.registry.find(
+                        (item) => item.entity_id === entity.entity_id,
+                      )?.platform
+                    }
                     unit={unit}
                     favourite={favourites.includes(entity.entity_id)}
                     onFavourite={() => toggleFavourite(entity.entity_id)}
