@@ -3,5 +3,15 @@
   "identifier": "default",
   "description": "Basic window functionality for the local Hjem interface.",
   "windows": ["main"],
-  "permissions": ["core:default", "launcher:default"]
+  "permissions": [
+    "core:default",
+    "launcher:default",
+    "allow-concierge-get-settings",
+    "allow-concierge-save-settings",
+    "allow-concierge-clear-key",
+    "allow-concierge-test-key",
+    "allow-concierge-list-models",
+    "allow-concierge-request",
+    "allow-concierge-cancel"
+  ]
 }

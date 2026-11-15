@@ -90,6 +90,9 @@ jobs:
           # distribution signing/notarization can be configured separately.
           APPLE_SIGNING_IDENTITY: '-'
           APPIMAGE_EXTRACT_AND_RUN: '1'
+      - name: Test native settings and request controls
+        if: matrix.name == 'linux'
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib --locked
       - uses: actions/upload-artifact@v7
         with:
           name: hjem-${{ matrix.name }}

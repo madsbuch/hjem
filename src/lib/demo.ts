@@ -74,6 +74,7 @@ export const demoSnapshot: HassSnapshot = {
       supported_color_modes: ['brightness'],
     }),
     entity('cover.bedroom', 'Bedroom blinds', 'open', {
+      device_class: 'blind',
       current_position: 70,
       supported_features: 15,
     }),
@@ -144,6 +145,8 @@ export function applyDemoService(
       if (service === 'stop_cover') return e;
       if (service === 'media_play_pause')
         return { ...e, state: e.state === 'playing' ? 'paused' : 'playing' };
+      if (service === 'media_play') return { ...e, state: 'playing' };
+      if (service === 'media_pause') return { ...e, state: 'paused' };
       if (service === 'volume_set')
         return {
           ...e,

@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
   House,
   LayoutGrid,
-  Sparkles,
   Settings,
   Search,
   ArrowUpRight,
@@ -11,13 +10,9 @@ import {
   Moon,
   Monitor,
   Coffee,
-  Leaf,
   Wifi,
   WifiOff,
   X,
-  Lightbulb,
-  Thermometer,
-  ChevronRight,
   Star,
   Sofa,
   CookingPot,
@@ -28,7 +23,7 @@ import {
   SlidersHorizontal,
   Heart,
   PlugZap,
-  CircleHelp,
+  MessageCircle,
 } from 'lucide-react';
 import {
   HomeAssistantClient,
@@ -48,10 +43,12 @@ import {
   visibleEntities,
 } from './lib/entities';
 import { DeviceCard } from './components/DeviceCard';
-import { RoomIllustration } from './components/RoomIllustration';
 import { useTheme, type Theme } from './lib/useTheme';
 import { AppLauncher } from './components/AppLauncher';
 import { useLauncher } from './lib/useLauncher';
+import { useConcierge } from './lib/useConcierge';
+import { ConciergeChat } from './components/ConciergeChat';
+import { ConciergeSettings } from './components/ConciergeSettings';
 import {
   launchApp,
   openHomeSettings,
@@ -59,12 +56,12 @@ import {
   type LauncherApp,
 } from './lib/launcher';
 
-type Page = 'home' | 'apps' | 'rooms' | 'scenes' | 'settings';
+type Page = 'home' | 'apps' | 'rooms' | 'concierge' | 'settings';
 const navigation = [
   { id: 'home', label: 'Overview', Icon: House },
   { id: 'apps', label: 'Apps', Icon: LayoutGrid },
   { id: 'rooms', label: 'Rooms', Icon: Sofa },
-  { id: 'scenes', label: 'Scenes', Icon: Sparkles },
+  { id: 'concierge', label: 'Concierge', Icon: MessageCircle },
   { id: 'settings', label: 'Settings', Icon: Settings },
 ] as const;
 const sceneIcons = [Sun, Moon, ArrowUpRight, Coffee];
@@ -82,7 +79,7 @@ const errorMessage = (error: unknown) =>
     : 'Something went wrong. Please try again.';
 
 export default function App() {
-  const { theme, resolvedTheme, setTheme } = useTheme();
+  const { theme, setTheme } = useTheme();
   const launcher = useLauncher();
   const launching = useRef(false);
   const [page, setPage] = useState<Page>('home');
@@ -308,6 +305,17 @@ export default function App() {
     }
   }
 
+  const concierge = useConcierge({
+    sessionId: `${mode}:${sessionVersion.current}`,
+    snapshot,
+    demo: mode === 'demo',
+    connected: status === 'connected',
+    apps: launcher.apps,
+    appsPreview: launcher.preview,
+    action: act,
+    launch: launchApp,
+  });
+
   const entities = visibleEntities(snapshot);
   const scenes = snapshot.entities.filter(
     (entity) =>
@@ -333,14 +341,6 @@ export default function App() {
       `${nameOf(entity)} ${roomName(entity)}`
         .toLowerCase()
         .includes(query.toLowerCase()),
-  );
-  const lightsOn = entities.filter(
-    (entity) => domainOf(entity) === 'light' && entity.state === 'on',
-  ).length;
-  const climate = entities.find(
-    (entity) =>
-      domainOf(entity) === 'climate' &&
-      entity.attributes.current_temperature != null,
   );
   const weather = snapshot.entities.find(
     (entity) => domainOf(entity) === 'weather',
@@ -420,9 +420,15 @@ export default function App() {
             <strong>
               {mode === 'demo' ? 'Our home' : snapshot.locationName}
             </strong>
-            <span>Your everyday, simplified</span>
           </div>
         </div>
+        <button
+          className={`connection-pill sidebar-connection ${mode === 'live' && status !== 'connected' ? 'offline' : ''}`}
+          onClick={openConnection}
+        >
+          <i />
+          {connectionLabel}
+        </button>
         <span className="nav-label">YOUR SPACE</span>
         <nav aria-label="Main navigation">
           {navigation.map(({ id, label, Icon }) => (
@@ -464,39 +470,6 @@ export default function App() {
       </aside>
 
       <div className="main-shell">
-        <header className="topbar">
-          <div className="breadcrumb">
-            <House size={16} />
-            <span>{snapshot.locationName}</span>
-            <ChevronRight size={13} />
-            <strong>
-              {navigation.find((item) => item.id === page)?.label}
-            </strong>
-          </div>
-          <div className="topbar-actions">
-            <button
-              className={`connection-pill ${mode === 'live' && status !== 'connected' ? 'offline' : ''}`}
-              onClick={openConnection}
-            >
-              <i />
-              {connectionLabel}
-            </button>
-            <button
-              className="profile-button"
-              onClick={() =>
-                setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')
-              }
-              aria-label={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} mode`}
-              title={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} mode`}
-            >
-              {resolvedTheme === 'dark' ? (
-                <Sun size={18} />
-              ) : (
-                <Moon size={18} />
-              )}
-            </button>
-          </div>
-        </header>
         <main>
           {mode === 'live' && status !== 'connected' && (
             <div className="offline-banner" role="status">
@@ -523,7 +496,13 @@ export default function App() {
                     {greeting}
                     <span className="greeting-dot">.</span>
                   </h1>
-                  <p>Welcome to your little corner of calm.</p>
+                  <button
+                    className={`connection-pill mobile-connection ${mode === 'live' && status !== 'connected' ? 'offline' : ''}`}
+                    onClick={openConnection}
+                  >
+                    <i />
+                    {connectionLabel}
+                  </button>
                 </div>
                 <div className="home-at-a-glance">
                   <time
@@ -555,60 +534,13 @@ export default function App() {
                 </div>
               </section>
               <AppLauncher {...launcherProps} compact />
-              <section className="welcome-card">
-                <div className="welcome-copy">
-                  <span className="hero-eyebrow">
-                    <span />
-                    {mode === 'demo'
-                      ? 'A LITTLE LOOK AT WHAT’S POSSIBLE'
-                      : 'YOUR HOME, AT A GLANCE'}
-                  </span>
-                  <h2>
-                    Home feels
-                    <br />
-                    better together.
-                  </h2>
-                  <p>
-                    A softer light. The right temperature.
-                    <br />
-                    The little things, just how you like them.
-                  </p>
-                  <div className="home-stats">
-                    <span>
-                      <Lightbulb size={16} />
-                      {lightsOn} {lightsOn === 1 ? 'light' : 'lights'} on
-                    </span>
-                    {climate && (
-                      <span>
-                        <Thermometer size={16} />
-                        {climate.attributes.current_temperature}
-                        {unit} inside
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <RoomIllustration />
-                <span className="hero-corner">
-                  {mode === 'demo'
-                    ? 'EXPLORE YOUR DEMO HOME'
-                    : 'CONNECTED WITH HOME ASSISTANT'}
-                  <Leaf size={13} />
-                </span>
-              </section>
               {scenes.length > 0 && (
                 <section className="quick-scenes">
                   <div className="section-heading">
-                    <h2>A moment for everything</h2>
-                    <button
-                      className="text-button"
-                      onClick={() => navigate('scenes')}
-                    >
-                      All scenes
-                      <ArrowRight size={15} />
-                    </button>
+                    <h2>A whole mood</h2>
                   </div>
                   <div className="scenes-grid">
-                    {scenes.slice(0, 4).map((entity, index) => (
+                    {scenes.map((entity, index) => (
                       <SceneButton
                         key={entity.entity_id}
                         entity={entity}
@@ -668,10 +600,9 @@ export default function App() {
                 <div>
                   <h2>
                     {room === 'all'
-                      ? 'Your home, at your fingertips'
+                      ? 'Home controls'
                       : rooms.find((area) => area.area_id === room)?.name}
                   </h2>
-                  <p>Little adjustments. A big difference.</p>
                 </div>
                 <label className="search">
                   <Search size={17} />
@@ -772,45 +703,6 @@ export default function App() {
             </section>
           )}
 
-          {page === 'scenes' && (
-            <>
-              <section className="page-intro">
-                <div>
-                  <span className="eyebrow date-label">SET THE FEELING</span>
-                  <h1>One tap. A whole mood.</h1>
-                  <p>Your Home Assistant scenes, ready when you are.</p>
-                </div>
-                <Sparkles className="intro-icon" size={34} strokeWidth={1.3} />
-              </section>
-              <div className="scenes-page-grid">
-                {scenes.map((entity, index) => (
-                  <SceneButton
-                    key={entity.entity_id}
-                    entity={entity}
-                    index={index}
-                  />
-                ))}
-              </div>
-              {scenes.length === 0 && (
-                <div className="empty-state">
-                  <Sparkles size={32} />
-                  <h3>Your next favourite moment.</h3>
-                  <p>
-                    Create a scene in Home Assistant and reconnect to see it
-                    here.
-                  </p>
-                </div>
-              )}
-              <div className="help-note">
-                <CircleHelp size={18} />
-                <p>
-                  Scenes bring several devices together. Create and edit them in
-                  Home Assistant, then activate them here.
-                </p>
-              </div>
-            </>
-          )}
-
           {page === 'apps' && (
             <>
               <section className="page-intro">
@@ -831,6 +723,30 @@ export default function App() {
             </>
           )}
 
+          {page === 'concierge' && (
+            <>
+              <ConciergeChat
+                messages={concierge.messages}
+                busy={concierge.busy}
+                status={concierge.status}
+                configured={
+                  concierge.settings.hasApiKey && !!concierge.settings.model
+                }
+                model={concierge.settings.model}
+                onSend={(text) => void concierge.send(text)}
+                onStop={concierge.stop}
+                onClear={concierge.clear}
+                onOpenSettings={() => navigate('settings')}
+              />
+              {concierge.usage?.cost != null && (
+                <p className="concierge-usage">
+                  Last turn: ${concierge.usage.cost.toFixed(4)} reported by
+                  OpenRouter
+                </p>
+              )}
+            </>
+          )}
+
           {page === 'settings' && (
             <>
               <section className="page-intro">
@@ -846,6 +762,12 @@ export default function App() {
                 />
               </section>
               <div className="settings-grid">
+                <ConciergeSettings
+                  settings={concierge.settings}
+                  onChange={concierge.setSettings}
+                  disabled={concierge.busy}
+                  initialError={concierge.settingsError}
+                />
                 <section className="settings-card">
                   <span className="settings-icon">
                     <Wifi size={25} />
@@ -936,10 +858,10 @@ export default function App() {
                   <span className="settings-icon">
                     <Moon size={25} />
                   </span>
-                  <h2>A softer kind of screen</h2>
+                  <h2>Appearance</h2>
                   <p>
-                    Find the light that feels right. Follow your device, or make
-                    yourself comfortable in light or dark.
+                    System follows your device’s light and dark schedule,
+                    including sunset and sunrise when enabled on the tablet.
                   </p>
                   <div
                     className="theme-options"

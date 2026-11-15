@@ -10,10 +10,11 @@ Start with the interactive demo home, then connect your own Home Assistant in Se
 - Open installed Android apps from a searchable app drawer and pin favourites to the home screen.
 - Browse rooms using your Home Assistant areas and device assignments.
 - Search devices and filter by room or pinned favourites.
-- Choose Light, Dark, or System appearance, or switch with the header toggle.
+- Choose Light, Dark, or System appearance in Settings. Changes animate smoothly; System follows the device’s appearance schedule.
+- Ask Home Concierge to inspect your home, adjust devices, control Sonos, or open tablet apps.
 - Toggle lights, switches, fans, and input booleans; adjust supported light brightness.
 - Set supported thermostat temperatures, operate covers, and control music playback, tracks, volume, and mute.
-- Run existing Home Assistant scenes and view sensor readings.
+- Run existing Home Assistant scenes from “A whole mood” on the home screen and view sensor readings.
 - Receive live state changes, connection feedback, and automatic reconnection after an interrupted session.
 
 Controls follow the capabilities each entity reports. Hidden and disabled registry entities are excluded. Devices without an area appear together as unassigned. Cameras, lock controls, and Home Assistant administration are outside the current scope.
@@ -66,6 +67,16 @@ To use Hjem as the tablet's home screen, choose **Settings → Choose default ho
 
 The browser, desktop, and iOS versions show clearly labeled sample app shortcuts for exploring the layout. They do not enumerate or launch installed apps. The native launcher uses Android's scoped package visibility for launcher activities; it does not request broad access to every installed package. Work profiles, widgets, and notification badges are outside this first version.
 
+## Home Concierge
+
+In **Settings → Home Concierge**, enter your OpenRouter API key and choose one of three recommended models: Claude Haiku 5.5 for quick, low-cost home controls, GPT-6.1 Terra for multi-step requests, or Claude Sonnet 5.5 for more involved tasks. Save the settings, then open **Concierge**. Choose **Use another model** to enter any other model ID; **Check model** verifies its tool support against the live catalogue. These recommendations were checked against [OpenRouter’s catalogue](https://openrouter.ai/models?supported_parameters=tools) on November 15, 2026. **Test key** checks OpenRouter authentication without buying a model completion; chat requests use your OpenRouter credits.
+
+On native platforms, the key is saved in Hjem's private app configuration file and used by Rust. The settings API returns only whether a key exists; it never returns the saved key to the web interface. This is private file storage, not OS keychain encryption. Android automatic backup is disabled. In the browser preview, the key lives only in memory until reload; the model choice is saved locally. **Remove key** clears the key.
+
+Home Concierge can read current device states and apps, adjust supported lights, switches, thermostats, blinds, and media players, activate requested scenes, and open Android apps. It must discover a device or app before acting, validates actions and ranges locally, and cannot call arbitrary Home Assistant services. Browser app shortcuts remain simulated, as do device controls in demo mode. Messages and the home/app information needed for a request go to OpenRouter and the selected model provider. Home Assistant tokens never enter the conversation.
+
+The loop follows the patterns in Tally's `assistant.ts`/`assistantRunner.ts` and Learn Polish's `agent.rs`/`ai.rs`: paired tool requests/results, visible progress, sequential execution, and preserved partial outcomes. Provider reasoning details are preserved privately between tool rounds without appearing in the chat. A turn is limited to six model requests, up to 8,192 output tokens per request, and twelve tool calls. Stop cancels pending model requests and prevents new actions; a device command already sent may still finish. Unconfirmed actions are not automatically replayed. Runs and conversations survive switching Hjem pages, but the chat is session-only and clears on restart, a changed home connection, or a model change.
+
 ## Phone and tablet
 
 The interface adapts to narrow phone screens and wider tablets. Android project files are included under `src-tauri/gen/android`; platform builds still require the Android SDK, NDK, Java, and Rust targets described in the [Tauri mobile prerequisites](https://v2.tauri.app/start/prerequisites/#configure-for-mobile-targets).
@@ -88,7 +99,7 @@ npm run ios
 
 The shared `src-tauri/Info.plist` includes a local-network permission explanation and support for local network connections. Allow local-network access when prompted. See the [Tauri development guide](https://v2.tauri.app/develop/) for device selection and platform tooling.
 
-Real Home Assistant hardware and physical mobile devices have not yet been tested with this project. The included demo and automated tests exercise the interface and a simulated Home Assistant connection.
+Real Home Assistant hardware and physical mobile devices have not yet been tested with this project. The included demo and automated tests exercise the interface and simulated Home Assistant/OpenRouter connections. The Android launcher has also been checked in an isolated emulator with real app discovery, Clock launching, and Home-button navigation. No paid OpenRouter calls are made by the test suite.
 
 ## Project layout
 

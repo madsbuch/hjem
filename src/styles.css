@@ -107,7 +107,7 @@ input[type='range'] {
   color: var(--amber);
 }
 .home-selector {
-  margin: 39px 0 35px;
+  margin: 39px 0 12px;
   display: flex;
   gap: 11px;
   align-items: center;
@@ -225,24 +225,13 @@ input[type='range'] {
   margin-left: 232px;
 }
 .topbar {
-  height: 79px;
+  height: 64px;
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   border-bottom: 1px solid var(--border);
   padding: 0 42px;
   background: rgba(255, 255, 255, 0.55);
-}
-.breadcrumb {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 11px;
-  color: #98a094;
-}
-.breadcrumb strong {
-  font-weight: 500;
-  color: #596b5c;
 }
 .topbar-actions {
   display: flex;
@@ -266,6 +255,15 @@ input[type='range'] {
   height: 5px;
   background: #8ba270;
   border-radius: 100%;
+}
+.sidebar-connection {
+  width: fit-content;
+  margin: 0 4px 28px;
+  font-size: 9px;
+  padding: 5px 9px;
+}
+.mobile-connection {
+  display: none;
 }
 .connection-pill.offline {
   color: #986347;
@@ -1586,8 +1584,21 @@ input[type='range'] {
   .brand img {
     width: 43px;
   }
+  .sidebar-connection {
+    margin: 22px 0 12px;
+    width: 100%;
+    white-space: normal;
+    justify-content: center;
+    font-size: 8px;
+    line-height: 1.4;
+    gap: 4px;
+    padding: 6px 5px;
+  }
+  .sidebar-connection i {
+    flex-shrink: 0;
+  }
   .sidebar nav {
-    margin-top: 50px;
+    margin-top: 8px;
     gap: 15px;
   }
   .nav-item {
@@ -1641,6 +1652,10 @@ input[type='range'] {
   }
 }
 @media (max-width: 700px) {
+  .mobile-connection {
+    display: flex;
+    margin-top: 10px;
+  }
   .sidebar {
     display: none;
   }
@@ -1652,25 +1667,6 @@ input[type='range'] {
     padding: 0 22px;
     padding-top: env(safe-area-inset-top);
     height: calc(65px + env(safe-area-inset-top));
-  }
-  .breadcrumb {
-    gap: 8px;
-    font-size: 10px;
-  }
-  .breadcrumb > svg:first-child {
-    color: #6a8060;
-    width: 20px;
-    height: 20px;
-  }
-  .breadcrumb > span {
-    max-width: 125px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .breadcrumb > strong,
-  .breadcrumb > svg:nth-of-type(2) {
-    display: none;
   }
   .topbar-actions {
     gap: 12px;
@@ -1684,7 +1680,7 @@ input[type='range'] {
     height: 29px;
   }
   .main-shell main {
-    padding: 27px 20px 90px;
+    padding: calc(27px + env(safe-area-inset-top)) 20px 90px;
   }
   .page-intro {
     margin-bottom: 23px;

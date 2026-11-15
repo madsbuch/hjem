@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-concierge-clear-key"
+description = "Enables the concierge_clear_key command without any pre-configured scope."
+commands.allow = ["concierge_clear_key"]
+
+[[permission]]
+identifier = "deny-concierge-clear-key"
+description = "Denies the concierge_clear_key command without any pre-configured scope."
+commands.deny = ["concierge_clear_key"]

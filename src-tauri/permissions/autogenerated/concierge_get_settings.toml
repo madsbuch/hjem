@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-concierge-get-settings"
+description = "Enables the concierge_get_settings command without any pre-configured scope."
+commands.allow = ["concierge_get_settings"]
+
+[[permission]]
+identifier = "deny-concierge-get-settings"
+description = "Denies the concierge_get_settings command without any pre-configured scope."
+commands.deny = ["concierge_get_settings"]

@@ -1,0 +1,196 @@
+import { expect, test, type Page } from '@playwright/test';
+
+type Colours = { background: string; card: string; text: string };
+type Capture = { before: Colours; frames: Colours[] };
+
+async function openAppearance(page: Page) {
+  const mobile = page.getByRole('navigation', { name: 'Mobile navigation' });
+  const navigation = (await mobile.isVisible())
+    ? mobile
+    : page.getByRole('navigation', { name: 'Main navigation' });
+  await navigation
+    .getByRole('button', { name: 'Settings', exact: true })
+    .click();
+  await expect(
+    page.getByRole('group', { name: 'Appearance', exact: true }),
+  ).toBeVisible();
+}
+
+function option(page: Page, name: 'Light' | 'Dark' | 'System') {
+  return page
+    .getByRole('group', { name: 'Appearance', exact: true })
+    .getByRole('button', { name, exact: true });
+}
+
+/** Sample actual rendered colours from the mutation frame, avoiding driver timing. */
+async function watchThemeChange(page: Page) {
+  await page.evaluate(() => {
+    const root = document.documentElement;
+    const card = document.querySelector('.appearance-card')!;
+    const read = () => ({
+      background: getComputedStyle(root).backgroundColor,
+      card: getComputedStyle(card).backgroundColor,
+      text: getComputedStyle(card).color,
+    });
+    const before = read();
+    (
+      window as typeof window & { themeCapture: Promise<Capture> }
+    ).themeCapture = new Promise((resolve, reject) => {
+      const timeout = window.setTimeout(() => {
+        observer.disconnect();
+        reject(new Error('No theme change was observed.'));
+      }, 5000);
+      const observer = new MutationObserver(() => {
+        observer.disconnect();
+        const frames: Colours[] = [];
+        const started = performance.now();
+        const sample = () => {
+          frames.push(read());
+          if (performance.now() - started < 450) requestAnimationFrame(sample);
+          else {
+            window.clearTimeout(timeout);
+            resolve({ before, frames });
+          }
+        };
+        requestAnimationFrame(sample);
+      });
+      observer.observe(root, {
+        attributes: true,
+        attributeFilter: ['data-theme'],
+      });
+    });
+  });
+}
+
+async function capturedTheme(page: Page): Promise<Capture> {
+  return page.evaluate(
+    () =>
+      (window as typeof window & { themeCapture: Promise<Capture> })
+        .themeCapture,
+  );
+}
+
+function expectFade(capture: Capture) {
+  const after = capture.frames.at(-1)!;
+  for (const property of ['background', 'card', 'text'] as const) {
+    expect(after[property]).not.toBe(capture.before[property]);
+    expect(
+      capture.frames.some(
+        (frame) =>
+          frame[property] !== capture.before[property] &&
+          frame[property] !== after[property],
+      ),
+    ).toBe(true);
+  }
+}
+
+test('saved appearance applies on initial load without a theme animation', async ({
+  page,
+}) => {
+  await page.emulateMedia({
+    colorScheme: 'light',
+    reducedMotion: 'no-preference',
+  });
+  await page.addInitScript(() =>
+    localStorage.setItem('hjem.theme', JSON.stringify('dark')),
+  );
+  await page.goto('/');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  const initial = await page.evaluate(() => ({
+    background: getComputedStyle(document.documentElement).backgroundColor,
+    transitions: document.documentElement
+      .getAnimations()
+      .filter((animation) => animation instanceof CSSTransition).length,
+  }));
+  expect(initial.background).toBe('rgb(20, 29, 25)');
+  expect(initial.transitions).toBe(0);
+  await expect(page.locator('html')).not.toHaveClass(/theme-changing/);
+});
+
+test('manual appearance changes fade surfaces and rapid choices settle on the latest theme', async ({
+  page,
+}) => {
+  await page.emulateMedia({
+    colorScheme: 'light',
+    reducedMotion: 'no-preference',
+  });
+  await page.goto('/');
+  await openAppearance(page);
+  await watchThemeChange(page);
+  await option(page, 'Dark').click();
+  expectFade(await capturedTheme(page));
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(page.locator('html')).not.toHaveClass(/theme-changing/);
+
+  await watchThemeChange(page);
+  await page.evaluate(async () => {
+    const choose = (name: string) => {
+      const button = [
+        ...document.querySelectorAll<HTMLButtonElement>('.theme-option'),
+      ].find((item) => item.textContent?.trim() === name)!;
+      button.click();
+    };
+    choose('Light');
+    await new Promise((resolve) => setTimeout(resolve, 45));
+    choose('Dark');
+    await new Promise((resolve) => setTimeout(resolve, 45));
+    choose('Light');
+  });
+  const rapid = await capturedTheme(page);
+  expect(rapid.frames.at(-1)?.background).toBe('rgb(248, 249, 245)');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await expect(option(page, 'Light')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('html')).not.toHaveClass(/theme-changing/);
+});
+
+test('System appearance fades when the device changes its colour scheme', async ({
+  page,
+}) => {
+  await page.emulateMedia({
+    colorScheme: 'light',
+    reducedMotion: 'no-preference',
+  });
+  await page.goto('/');
+  await openAppearance(page);
+  await expect(option(page, 'System')).toHaveAttribute('aria-pressed', 'true');
+  await watchThemeChange(page);
+  await page.emulateMedia({ colorScheme: 'dark' });
+  expectFade(await capturedTheme(page));
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await watchThemeChange(page);
+  await page.emulateMedia({ colorScheme: 'light' });
+  expectFade(await capturedTheme(page));
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+});
+
+test('reduced motion applies manual and system themes immediately', async ({
+  page,
+}) => {
+  await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' });
+  await page.goto('/');
+  await openAppearance(page);
+  await watchThemeChange(page);
+  await option(page, 'Dark').click();
+  const manual = await capturedTheme(page);
+  expect(
+    manual.frames.every(
+      (frame) =>
+        frame.background === 'rgb(20, 29, 25)' &&
+        frame.card === 'rgb(32, 44, 37)',
+    ),
+  ).toBe(true);
+  await expect(page.locator('html')).not.toHaveClass(/theme-changing/);
+  await option(page, 'System').click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await watchThemeChange(page);
+  await page.emulateMedia({ colorScheme: 'dark' });
+  const system = await capturedTheme(page);
+  expect(
+    system.frames.every(
+      (frame) =>
+        frame.background === 'rgb(20, 29, 25)' &&
+        frame.card === 'rgb(32, 44, 37)',
+    ),
+  ).toBe(true);
+  await expect(page.locator('html')).not.toHaveClass(/theme-changing/);
+});

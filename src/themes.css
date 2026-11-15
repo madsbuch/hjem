@@ -2,6 +2,39 @@
 html {
   color-scheme: light;
 }
+
+/* Only theme changes enable this fade; normal interactions keep their own timing. */
+html.theme-changing,
+html.theme-changing *,
+html.theme-changing *::before,
+html.theme-changing *::after,
+html.theme-changing *::placeholder,
+html.theme-changing dialog::backdrop {
+  transition-property:
+    background-color, color, border-color, outline-color, text-decoration-color,
+    box-shadow, fill, stroke, filter, opacity, transform !important;
+  transition-duration: 240ms !important;
+  transition-timing-function: ease-in-out !important;
+  transition-delay: 0ms !important;
+}
+
+/* Keep geometry stable when the dark palette adds a visible outline. */
+.welcome-card,
+.toast {
+  border: 1px solid transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.theme-changing,
+  html.theme-changing *,
+  html.theme-changing *::before,
+  html.theme-changing *::after,
+  html.theme-changing *::placeholder,
+  html.theme-changing dialog::backdrop {
+    transition: none !important;
+  }
+}
+
 .theme-options {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -45,20 +78,6 @@ html {
 .appearance-card {
   grid-column: 1 / -1;
 }
-.theme-toggle {
-  width: 36px;
-  height: 36px;
-  display: inline-grid;
-  place-items: center;
-  border: 1px solid var(--border);
-  border-radius: 50%;
-  color: #607357;
-  background: #f7f9f1;
-}
-.theme-toggle:hover {
-  background: #eaf0e2;
-}
-
 html[data-theme='dark'] {
   color-scheme: dark;
   color: #e8ede2;
@@ -94,17 +113,12 @@ html[data-theme='dark'] .home-avatar {
 html[data-theme='dark'] .home-selector div > span,
 html[data-theme='dark'] .nav-label,
 html[data-theme='dark'] .sidebar-footer,
-html[data-theme='dark'] .breadcrumb,
 html[data-theme='dark'] .eyebrow,
 html[data-theme='dark'] .page-intro p,
 html[data-theme='dark'] .weather span,
 html[data-theme='dark'] .section-heading p,
 html[data-theme='dark'] .main-footer {
   color: #a5b4a8;
-}
-html[data-theme='dark'] .breadcrumb strong,
-html[data-theme='dark'] .breadcrumb > svg:first-child {
-  color: #c3d1b7;
 }
 html[data-theme='dark'] .nav-item {
   color: #b0bdaf;
@@ -148,11 +162,6 @@ html[data-theme='dark'] .connection-pill.offline {
 }
 html[data-theme='dark'] .connection-pill.offline i {
   background: #e1ba85;
-}
-html[data-theme='dark'] .profile-button {
-  background: #34432e;
-  border-color: #253329;
-  color: #d5e0bc;
 }
 html[data-theme='dark'] .weather {
   color: #dcc58a;
@@ -549,20 +558,7 @@ html[data-theme='dark'] .theme-option[aria-pressed='true'] {
   box-shadow: inset 0 0 0 1px #adc593;
   color: #f0f5e2;
 }
-html[data-theme='dark'] .theme-toggle {
-  background: #2b3b2c;
-  border-color: #4b6041;
-  color: #d4dfb9;
-}
-html[data-theme='dark'] .theme-toggle:hover {
-  background: #3a4f32;
-}
-
 @media (max-width: 700px) {
-  .theme-toggle {
-    width: 32px;
-    height: 32px;
-  }
   .theme-options {
     gap: 8px;
   }

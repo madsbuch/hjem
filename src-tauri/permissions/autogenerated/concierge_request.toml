@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-concierge-request"
+description = "Enables the concierge_request command without any pre-configured scope."
+commands.allow = ["concierge_request"]
+
+[[permission]]
+identifier = "deny-concierge-request"
+description = "Denies the concierge_request command without any pre-configured scope."
+commands.deny = ["concierge_request"]
