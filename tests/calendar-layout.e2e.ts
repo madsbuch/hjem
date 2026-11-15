@@ -61,6 +61,16 @@ test('compact calendar allows a held peek and returns to the current time after 
   await expect(scroll).toBeVisible();
   const agenda = await calendar.locator('.calendar-agenda').boundingBox();
   expect(agenda!.height).toBeLessThanOrEqual(264);
+  expect(
+    await page
+      .locator('.home-music .track-title')
+      .evaluate((el) => el.getBoundingClientRect().height),
+  ).toBeGreaterThanOrEqual(16);
+  expect(
+    await page
+      .locator('.home-music .track-artist')
+      .evaluate((el) => el.getBoundingClientRect().height),
+  ).toBeGreaterThanOrEqual(12);
   await page.waitForTimeout(120);
   const initial = await scroll.evaluate((el) => el.scrollTop);
   const target = await scroll.evaluate((el) =>
