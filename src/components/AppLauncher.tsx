@@ -286,7 +286,7 @@ export function AppLauncher({
             {query
               ? 'Try another app name.'
               : onlyPinned
-                ? 'Pin an app to keep it on your home screen.'
+                ? 'Pin an app to find it in your favourites.'
                 : 'Refresh to find apps installed on this device.'}
           </p>
           {(query || onlyPinned) && (

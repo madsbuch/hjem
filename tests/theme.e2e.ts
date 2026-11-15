@@ -36,7 +36,9 @@ async function watchThemeChange(page: Page) {
     (
       window as typeof window & { themeCapture: Promise<Capture> }
     ).themeCapture = new Promise((resolve, reject) => {
+      let finished = false;
       const timeout = window.setTimeout(() => {
+        finished = true;
         observer.disconnect();
         reject(new Error('No theme change was observed.'));
       }, 5000);
@@ -45,9 +47,26 @@ async function watchThemeChange(page: Page) {
         const frames: Colours[] = [];
         const started = performance.now();
         const sample = () => {
+          if (finished) return;
           frames.push(read());
-          if (performance.now() - started < 450) requestAnimationFrame(sample);
+          const previous = frames.at(-2);
+          const stable =
+            previous &&
+            Object.keys(previous).every(
+              (key) =>
+                previous[key as keyof Colours] ===
+                frames.at(-1)![key as keyof Colours],
+            );
+          // Under CI load rapid clicks can be spaced farther apart than their
+          // timers request. Wait for the latest fade and one settled paint.
+          if (
+            performance.now() - started < 450 ||
+            root.classList.contains('theme-changing') ||
+            !stable
+          )
+            requestAnimationFrame(sample);
           else {
+            finished = true;
             window.clearTimeout(timeout);
             resolve({ before, frames });
           }

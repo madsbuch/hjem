@@ -36,11 +36,13 @@ const isRecommended = (id: string) =>
 export function ConciergeSettings({
   settings,
   onChange,
+  onBusyChange,
   disabled,
   initialError,
 }: {
   settings: SettingsValue;
   onChange: (settings: SettingsValue) => void;
+  onBusyChange: (pending: boolean) => void;
   disabled: boolean;
   initialError: string;
 }) {
@@ -63,6 +65,7 @@ export function ConciergeSettings({
   }, [settings.model]);
   const locked = disabled || !!busy;
   async function run(label: string, action: () => Promise<void>) {
+    onBusyChange(true);
     setBusy(label);
     setError('');
     setFeedback('');
@@ -72,6 +75,7 @@ export function ConciergeSettings({
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setBusy('');
+      onBusyChange(false);
     }
   }
   function save(event: FormEvent) {
@@ -246,7 +250,10 @@ export function ConciergeSettings({
           <button
             type="button"
             className="secondary-button"
-            disabled={locked || !settings.hasApiKey}
+            disabled={locked || !settings.hasApiKey || !!key.trim()}
+            title={
+              key.trim() ? 'Save the new key before testing it' : undefined
+            }
             onClick={() =>
               void run('test', async () => {
                 await testConciergeKey();

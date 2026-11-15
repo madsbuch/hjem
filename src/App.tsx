@@ -47,6 +47,8 @@ import { useTheme, type Theme } from './lib/useTheme';
 import { AppLauncher } from './components/AppLauncher';
 import { useLauncher } from './lib/useLauncher';
 import { useConcierge } from './lib/useConcierge';
+import { useCalendar } from './lib/useCalendar';
+import { CalendarToday } from './components/CalendarToday';
 import { ConciergeChat } from './components/ConciergeChat';
 import { ConciergeSettings } from './components/ConciergeSettings';
 import {
@@ -56,11 +58,11 @@ import {
   type LauncherApp,
 } from './lib/launcher';
 
-type Page = 'home' | 'apps' | 'rooms' | 'concierge' | 'settings';
+type Page = 'home' | 'apps' | 'controls' | 'concierge' | 'settings';
 const navigation = [
   { id: 'home', label: 'Overview', Icon: House },
   { id: 'apps', label: 'Apps', Icon: LayoutGrid },
-  { id: 'rooms', label: 'Rooms', Icon: Sofa },
+  { id: 'controls', label: 'Controls', Icon: SlidersHorizontal },
   { id: 'concierge', label: 'Concierge', Icon: MessageCircle },
   { id: 'settings', label: 'Settings', Icon: Settings },
 ] as const;
@@ -316,7 +318,17 @@ export default function App() {
     launch: launchApp,
   });
 
+  const calendar = useCalendar({
+    client: client.current,
+    status,
+    mode,
+    snapshot,
+    now,
+  });
   const entities = visibleEntities(snapshot);
+  const speakers = entities.filter(
+    (entity) => domainOf(entity) === 'media_player',
+  );
   const scenes = snapshot.entities.filter(
     (entity) =>
       domainOf(entity) === 'scene' &&
@@ -361,6 +373,24 @@ export default function App() {
         : status === 'reconnecting'
           ? 'Reconnecting…'
           : 'Home offline';
+
+  const renderDevice = (entity: HassEntity) => (
+    <DeviceCard
+      key={entity.entity_id}
+      entity={entity}
+      room={roomName(entity)}
+      platform={
+        snapshot.registry.find((item) => item.entity_id === entity.entity_id)
+          ?.platform
+      }
+      unit={unit}
+      favourite={favourites.includes(entity.entity_id)}
+      onFavourite={() => toggleFavourite(entity.entity_id)}
+      onAction={act}
+      disabled={!canControl}
+      pending={pending.has(entity.entity_id)}
+    />
+  );
 
   const SceneButton = ({
     entity,
@@ -533,7 +563,28 @@ export default function App() {
                   )}
                 </div>
               </section>
-              <AppLauncher {...launcherProps} compact />
+              <div className="home-overview-grid">
+                <section className="home-music" aria-label="Music controls">
+                  <div className="section-heading">
+                    <h2>Music</h2>
+                  </div>
+                  {speakers.length ? (
+                    <div className="devices-grid music-grid">
+                      {speakers.map(renderDevice)}
+                    </div>
+                  ) : (
+                    <div className="home-section-empty">
+                      Your Sonos speakers and other media players will appear
+                      here when available in Home Assistant.
+                    </div>
+                  )}
+                </section>
+                <CalendarToday
+                  calendar={calendar}
+                  snapshot={snapshot}
+                  now={now}
+                />
+              </div>
               {scenes.length > 0 && (
                 <section className="quick-scenes">
                   <div className="section-heading">
@@ -553,15 +604,16 @@ export default function App() {
             </>
           )}
 
-          {page === 'rooms' && (
+          {page === 'controls' && (
             <>
               <section className="page-intro">
                 <div>
-                  <span className="eyebrow date-label">
-                    ROOM TO FEEL AT HOME
-                  </span>
-                  <h1>Every room. Your way.</h1>
-                  <p>Find a space and make it feel just right.</p>
+                  <span className="eyebrow date-label">YOUR DEVICES</span>
+                  <h1>Home controls</h1>
+                  <p>
+                    Lights, temperature, blinds, and more. Filter by room or
+                    find a device.
+                  </p>
                 </div>
                 <span className="count-pill">{rooms.length} rooms</span>
               </section>
@@ -594,13 +646,13 @@ export default function App() {
             </>
           )}
 
-          {(page === 'home' || page === 'rooms') && (
+          {page === 'controls' && (
             <section className="devices-section">
               <div className="section-heading device-section-heading">
                 <div>
                   <h2>
                     {room === 'all'
-                      ? 'Home controls'
+                      ? 'All devices'
                       : rooms.find((area) => area.area_id === room)?.name}
                   </h2>
                 </div>
@@ -653,26 +705,7 @@ export default function App() {
                   <span>Pinned</span>
                 </button>
               </div>
-              <div className="devices-grid">
-                {shown.map((entity) => (
-                  <DeviceCard
-                    key={entity.entity_id}
-                    entity={entity}
-                    room={roomName(entity)}
-                    platform={
-                      snapshot.registry.find(
-                        (item) => item.entity_id === entity.entity_id,
-                      )?.platform
-                    }
-                    unit={unit}
-                    favourite={favourites.includes(entity.entity_id)}
-                    onFavourite={() => toggleFavourite(entity.entity_id)}
-                    onAction={act}
-                    disabled={!canControl}
-                    pending={pending.has(entity.entity_id)}
-                  />
-                ))}
-              </div>
+              <div className="devices-grid">{shown.map(renderDevice)}</div>
               {shown.length === 0 && (
                 <div className="empty-state">
                   <Search size={30} />
@@ -711,7 +744,7 @@ export default function App() {
                     A PLACE FOR YOUR EVERYDAY
                   </span>
                   <h1>Your apps. Right at home.</h1>
-                  <p>Open an app, or pin it to keep it close.</p>
+                  <p>Open an app, or pin it to your favourites.</p>
                 </div>
                 <LayoutGrid
                   className="intro-icon"
@@ -729,6 +762,7 @@ export default function App() {
                 messages={concierge.messages}
                 busy={concierge.busy}
                 status={concierge.status}
+                settingsPending={concierge.settingsBusy}
                 configured={
                   concierge.settings.hasApiKey && !!concierge.settings.model
                 }
@@ -765,7 +799,8 @@ export default function App() {
                 <ConciergeSettings
                   settings={concierge.settings}
                   onChange={concierge.setSettings}
-                  disabled={concierge.busy}
+                  onBusyChange={concierge.setSettingsBusy}
+                  disabled={concierge.busy || concierge.settingsBusy}
                   initialError={concierge.settingsError}
                 />
                 <section className="settings-card">
@@ -817,7 +852,7 @@ export default function App() {
                   <button
                     className="secondary-button"
                     onClick={() => {
-                      navigate('home');
+                      navigate('controls');
                       setOnlyFavourites(true);
                     }}
                   >
@@ -905,18 +940,6 @@ export default function App() {
               </div>
             </>
           )}
-
-          <footer className="main-footer">
-            <span>
-              <img src="/brand/logo.svg" alt="" />
-              Less managing. More living.
-            </span>
-            <span>
-              {mode === 'demo'
-                ? 'Demo home · Sample devices'
-                : 'Connected with Home Assistant'}
-            </span>
-          </footer>
         </main>
       </div>
 

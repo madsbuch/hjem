@@ -351,3 +351,52 @@ describe('server addresses', () => {
     }
   });
 });
+
+it('reads calendar events through a response-returning service without mutating devices', async () => {
+  const { client, connection, socket, snapshots } = setup();
+  await authenticate(socket);
+  await initialSnapshot(socket);
+  await connection;
+  const start = '2026-11-15T00:00:00Z';
+  const end = '2026-11-16T00:00:00Z';
+  const request = client.getCalendarEvents(['calendar.family'], start, end);
+  expect(socket.sent.at(-1)).toMatchObject({
+    type: 'call_service',
+    domain: 'calendar',
+    service: 'get_events',
+    target: { entity_id: ['calendar.family'] },
+    service_data: { start_date_time: start, end_date_time: end },
+    return_response: true,
+  });
+  socket.answer('call_service', {
+    response: {
+      'calendar.family': {
+        events: [
+          {
+            summary: 'Dinner',
+            start: '2026-11-15T18:00:00Z',
+            end: '2026-11-15T19:00:00Z',
+          },
+        ],
+      },
+    },
+  });
+  expect(await request).toEqual([
+    expect.objectContaining({
+      summary: 'Dinner',
+      entityId: 'calendar.family',
+      allDay: false,
+    }),
+  ]);
+  expect(snapshots.at(-1)?.entities[0].state).toBe('off');
+  const failed = client.getCalendarEvents(['calendar.family'], start, end);
+  socket.answer('call_service', 'Calendar unavailable', false);
+  await expect(failed).rejects.toThrow('Calendar unavailable');
+  await expect(
+    client.getCalendarEvents(['light.kitchen'], start, end),
+  ).rejects.toThrow('calendar entity');
+  client.disconnect();
+  await expect(
+    client.getCalendarEvents(['calendar.family'], start, end),
+  ).rejects.toThrow('Reconnect');
+});

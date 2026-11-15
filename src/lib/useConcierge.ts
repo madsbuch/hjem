@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import type { ConciergeMessage } from '../components/ConciergeChat';
 import {
   ConciergeRunError,
@@ -31,6 +37,17 @@ export function useConcierge(context: ConciergeContext) {
   latest.current = context;
   const [messages, setMessages] = useState<ConciergeMessage[]>([]);
   const [busy, setBusy] = useState(false);
+  const [settingsBusy, setSettingsBusyState] = useState(false);
+  const pendingSettings = useRef(0);
+  const setSettingsBusy = useCallback((pending: boolean) => {
+    // Keep the guard synchronous, including navigation before React repaints.
+    // A counter also covers overlapping settings operations from a remount.
+    pendingSettings.current = Math.max(
+      0,
+      pendingSettings.current + (pending ? 1 : -1),
+    );
+    setSettingsBusyState(pendingSettings.current > 0);
+  }, []);
   const [status, setStatus] = useState('');
   const [settings, setSettings] = useState<ConciergeSettings>({
     hasApiKey: false,
@@ -40,6 +57,9 @@ export function useConcierge(context: ConciergeContext) {
   const [usage, setUsage] = useState<AgentUsage | null>(null);
   const history = useRef<WireMessage[]>([]);
   const currentRun = useRef<AbortController | null>(null);
+  const generation = useRef(0);
+  const latestModel = useRef(settings.model);
+  latestModel.current = settings.model;
   const mounted = useRef(true);
   const add = (role: ConciergeMessage['role'], text: string) => {
     if (mounted.current)
@@ -67,18 +87,28 @@ export function useConcierge(context: ConciergeContext) {
     return () => {
       cancelled = true;
       mounted.current = false;
+      generation.current++;
       currentRun.current?.abort();
+      currentRun.current = null;
     };
   }, []);
-  useEffect(() => {
-    currentRun.current?.abort();
+  useLayoutEffect(() => {
+    // Invalidate the old run before aborting it: its catch/finally handlers may
+    // settle after a new home or model has already started a conversation.
+    generation.current++;
+    const previousRun = currentRun.current;
+    currentRun.current = null;
+    previousRun?.abort();
     history.current = [];
     setMessages([]);
     setUsage(null);
+    setBusy(false);
+    setStatus('');
   }, [context.sessionId, settings.model]);
 
   async function send(text: string) {
-    if (currentRun.current || !text.trim()) return;
+    if (currentRun.current || pendingSettings.current > 0 || !text.trim())
+      return;
     if (!settings.hasApiKey || !settings.model) {
       add(
         'error',
@@ -93,6 +123,14 @@ export function useConcierge(context: ConciergeContext) {
     const controller = new AbortController();
     currentRun.current = controller;
     const homeSession = latest.current.sessionId;
+    const runGeneration = generation.current;
+    const runModel = settings.model;
+    const isCurrentRun = () =>
+      mounted.current &&
+      currentRun.current === controller &&
+      generation.current === runGeneration &&
+      latest.current.sessionId === homeSession &&
+      latestModel.current === runModel;
     setBusy(true);
     setStatus('Thinking about your home…');
     setUsage(null);
@@ -118,8 +156,7 @@ export function useConcierge(context: ConciergeContext) {
         executeTool: createConciergeExecutor(() => latest.current),
         signal: controller.signal,
         onEvent(event) {
-          if (!mounted.current || latest.current.sessionId !== homeSession)
-            return;
+          if (!isCurrentRun()) return;
           if (event.type === 'text') add('assistant', event.text);
           if (event.type === 'usage')
             setUsage({
@@ -161,17 +198,15 @@ export function useConcierge(context: ConciergeContext) {
           }
         },
       });
-      if (latest.current.sessionId === homeSession) {
+      if (isCurrentRun()) {
         history.current = result.messages;
         setUsage(result.usage);
       }
     } catch (error) {
-      if (latest.current.sessionId === homeSession) {
+      if (isCurrentRun()) {
         if (error instanceof ConciergeRunError)
           history.current = error.messages;
         else history.current = wire;
-      }
-      if (latest.current.sessionId === homeSession)
         add(
           error instanceof ConciergeRunError && error.aborted
             ? 'activity'
@@ -180,17 +215,21 @@ export function useConcierge(context: ConciergeContext) {
             ? error.message
             : 'Home Concierge could not complete this request.',
         );
+      }
     } finally {
-      if (currentRun.current === controller) currentRun.current = null;
-      if (mounted.current) {
-        setBusy(false);
-        setStatus('');
+      if (currentRun.current === controller) {
+        currentRun.current = null;
+        if (mounted.current && generation.current === runGeneration) {
+          setBusy(false);
+          setStatus('');
+        }
       }
     }
   }
   const stop = () => currentRun.current?.abort();
   const clear = () => {
     if (!currentRun.current) {
+      generation.current++;
       history.current = [];
       setMessages([]);
       setUsage(null);
@@ -199,6 +238,8 @@ export function useConcierge(context: ConciergeContext) {
   return {
     messages,
     busy,
+    settingsBusy,
+    setSettingsBusy,
     status,
     settings,
     setSettings,

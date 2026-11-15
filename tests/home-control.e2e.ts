@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 
 async function navigate(
   page: Page,
-  name: 'Overview' | 'Rooms' | 'Apps' | 'Settings',
+  name: 'Overview' | 'Controls' | 'Apps' | 'Settings',
 ) {
   const mobile = page.getByRole('navigation', { name: 'Mobile navigation' });
   const nav = (await mobile.isVisible())
@@ -100,6 +100,13 @@ async function mockHomeAssistant(page: Page, includeMedia = false) {
             },
           });
       },
+      addCalendar() {
+        states.push({
+          entity_id: 'calendar.family',
+          state: 'off',
+          attributes: { friendly_name: 'Family' },
+        });
+      },
       addScene(entityId: string, name: string) {
         states.push({
           entity_id: entityId,
@@ -165,6 +172,44 @@ async function mockHomeAssistant(page: Page, includeMedia = false) {
               location_name: 'Test home',
               unit_system: { temperature: '°C' },
             };
+          if (
+            command.type === 'call_service' &&
+            command.domain === 'calendar'
+          ) {
+            const from = new Date(command.service_data.start_date_time);
+            const to = new Date(command.service_data.end_date_time);
+            const dateOnly = (date: Date) =>
+              `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+            const at = (hour: number) => {
+              const date = new Date(from);
+              date.setHours(hour);
+              return date.toISOString();
+            };
+            result = {
+              response: {
+                'calendar.family': {
+                  events: [
+                    {
+                      summary: 'Family day',
+                      start: dateOnly(from),
+                      end: dateOnly(to),
+                    },
+                    {
+                      summary: 'Lunch at home',
+                      start: at(12),
+                      end: at(13),
+                      location: 'Kitchen',
+                    },
+                    {
+                      summary: 'Tomorrow appointment',
+                      start: to.toISOString(),
+                      end: at(26),
+                    },
+                  ],
+                },
+              },
+            };
+          }
           const success = !(
             server.rejectActions && command.type === 'call_service'
           );
@@ -205,6 +250,7 @@ test('demo lights, keyboard brightness, and temperature controls update their st
   page,
 }) => {
   await page.goto('/');
+  await navigate(page, 'Controls');
   const pendant = page.getByRole('article', {
     name: 'Pendant lights',
     exact: true,
@@ -236,11 +282,11 @@ test('demo lights, keyboard brightness, and temperature controls update their st
   await expect(climate.locator('.temperature-display')).toHaveText('21°C');
 });
 
-test('rooms, search, pins, and persistent preferences work together', async ({
+test('controls, room search, pins, and persistent preferences work together', async ({
   page,
 }) => {
   await page.goto('/');
-  await navigate(page, 'Rooms');
+  await navigate(page, 'Controls');
   await page
     .getByRole('button', { name: 'Kitchen 2 devices · 0 active' })
     .click();
@@ -261,25 +307,37 @@ test('rooms, search, pins, and persistent preferences work together', async ({
     page.getByRole('article', { name: 'Coffee machine', exact: true }),
   ).toBeVisible();
   await page.reload();
+  await navigate(page, 'Controls');
   await page.getByRole('button', { name: 'Pinned', exact: true }).click();
   await expect(page.getByRole('article')).toHaveCount(5);
 });
 
-test('overview keeps scenes together without the removed menu, hero, or breadcrumbs', async ({
+test('overview keeps moods and music together and device controls on their own page', async ({
   page,
 }) => {
   await page.goto('/');
+  await expect(page.locator('.sidebar .connection-pill')).toHaveText(
+    'Demo home',
+  );
+  await expect(
+    page.getByRole('region', { name: 'Today’s calendar' }),
+  ).toBeVisible();
+  await expect(page.locator('.main-shell > header, .topbar')).toHaveCount(0);
+  await expect(page.locator('.device-card:not(.media_player)')).toHaveCount(0);
+  await expect(
+    page.getByRole('textbox', { name: 'Find a device' }),
+  ).toHaveCount(0);
+  await expect(page.locator('.app-launcher')).toHaveCount(0);
+  await expect(page.getByText(/sample (app )?previews/i)).toHaveCount(0);
   await expect(
     page.getByRole('heading', { name: 'A whole mood', exact: true }),
   ).toBeVisible();
   await expect(
-    page
-      .getByRole('navigation')
-      .getByRole('button', {
-        name: 'Scenes',
-        exact: true,
-        includeHidden: true,
-      }),
+    page.getByRole('navigation').getByRole('button', {
+      name: 'Scenes',
+      exact: true,
+      includeHidden: true,
+    }),
   ).toHaveCount(0);
   await expect(
     page.getByRole('heading', { name: /Home feels\s*better together/i }),
@@ -304,13 +362,17 @@ test('overview keeps scenes together without the removed menu, hero, or breadcru
     'Good night activated in your demo home',
   );
   await expect(
+    page.getByRole('button', { name: 'Play Living room speaker' }),
+  ).toBeVisible();
+  await navigate(page, 'Controls');
+  await expect(
     page.getByRole('switch', { name: 'Toggle Pendant lights' }),
   ).not.toBeChecked();
   await expect(
     page.getByRole('switch', { name: 'Toggle Reading lamp' }),
   ).not.toBeChecked();
   await expect(
-    page.getByRole('button', { name: 'Play Living room speaker' }),
+    page.getByRole('textbox', { name: 'Find a device' }),
   ).toBeVisible();
 });
 
@@ -397,6 +459,7 @@ test('live Home Assistant service calls, events, and offline controls work end t
   await mockHomeAssistant(page);
   await page.goto('/');
   await connectMock(page);
+  await navigate(page, 'Controls');
   await expect(page.getByRole('article')).toHaveCount(2);
   const office = page.getByRole('switch', { name: 'Toggle Office light' });
   await expect(office).toBeChecked();
@@ -427,7 +490,7 @@ test('live Home Assistant service calls, events, and offline controls work end t
   );
   await expect(office).not.toBeChecked();
   await page.evaluate(() => (window as any).__ha.disconnect());
-  await expect(page.locator('.connection-pill:visible')).toHaveText(
+  await expect(page.locator('.sidebar .connection-pill')).toHaveText(
     'Reconnecting…',
   );
   await expect(office).toBeDisabled();
@@ -452,6 +515,7 @@ test('live service failures stay visible and editing connection settings keeps t
   await mockHomeAssistant(page);
   await page.goto('/');
   await connectMock(page);
+  await navigate(page, 'Controls');
   await page.evaluate(() => {
     (window as any).__ha.rejectActions = true;
   });
@@ -472,12 +536,13 @@ test('live service failures stay visible and editing connection settings keeps t
   await page.getByLabel('Home Assistant address', { exact: true }).fill('');
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.getByRole('button', { name: 'Close connection settings' }).click();
+  await navigate(page, 'Controls');
   await expect(
     page.getByRole('switch', { name: 'Toggle Office light' }),
   ).toBeEnabled();
 });
 
-test('overview, rooms, apps, settings, and connection dialog fit the viewport', async ({
+test('overview, controls, apps, settings, and connection dialog fit the viewport', async ({
   page,
 }) => {
   const browserErrors: string[] = [];
@@ -485,7 +550,7 @@ test('overview, rooms, apps, settings, and connection dialog fit the viewport', 
   await page.goto('/');
   for (const destination of [
     'Overview',
-    'Rooms',
+    'Controls',
     'Apps',
     'Settings',
   ] as const) {
@@ -834,7 +899,7 @@ test('speaker controls respect capabilities, service failures, and offline state
   ).toBeDisabled();
 });
 
-test('app search, pinned apps, and the everyday dock persist across refresh', async ({
+test('app search and pinned app preferences persist across refresh', async ({
   page,
 }) => {
   await page.goto('/');
@@ -857,20 +922,28 @@ test('app search, pinned apps, and the everyday dock persist across refresh', as
   await expect(
     page.getByRole('button', { name: 'Unpin Photos', exact: true }),
   ).toBeVisible();
-  await navigate(page, 'Overview');
-  const dock = page.getByRole('region', {
-    name: 'Your everyday apps',
-    exact: true,
-  });
+  await page
+    .getByRole('button', { name: 'Unpin YouTube', exact: true })
+    .click();
+  const pinnedFilter = page
+    .getByRole('group', { name: 'Show apps' })
+    .getByRole('button', { name: 'Pinned', exact: true });
+  await pinnedFilter.click();
   await expect(
-    dock.getByRole('button', { name: 'Open Photos', exact: true }),
+    page.getByRole('button', { name: 'Open Photos', exact: true }),
   ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Open YouTube', exact: true }),
+  ).toHaveCount(0);
   await page.reload();
+  await navigate(page, 'Apps');
+  await pinnedFilter.click();
   await expect(
-    dock.getByRole('button', { name: 'Open Photos', exact: true }),
+    page.getByRole('button', { name: 'Open Photos', exact: true }),
   ).toBeVisible();
-  await dock.getByRole('button', { name: 'All apps', exact: true }).click();
-  await expect(search).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Open YouTube', exact: true }),
+  ).toHaveCount(0);
   await expect(
     page.getByRole('button', { name: 'Unpin Photos', exact: true }),
   ).toBeVisible();
@@ -901,15 +974,13 @@ test('browser app launches and Android home settings give honest preview feedbac
   await expect(defaultHome).toBeDisabled();
 });
 
-test('dark mode app launcher and dock fit the phone and tablet viewport', async ({
+test('dark mode apps and overview fit the phone and tablet viewport', async ({
   page,
 }) => {
   await page.emulateMedia({ colorScheme: 'dark' });
   await page.goto('/');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  await expect(
-    page.getByRole('heading', { name: 'Your everyday apps', exact: true }),
-  ).toBeVisible();
+  await expect(page.locator('.app-launcher')).toHaveCount(0);
   for (const destination of ['Apps', 'Overview'] as const) {
     await navigate(page, destination);
     if (destination === 'Apps') {
@@ -938,4 +1009,55 @@ test('dark mode app launcher and dock fit the phone and tablet viewport', async 
       expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(320);
     }
   }
+});
+
+test('today’s calendar reads real Home Assistant events and recovers from refresh failures', async ({
+  page,
+}) => {
+  await mockHomeAssistant(page);
+  await page.goto('/');
+  await page.evaluate(() => (window as any).__ha.addCalendar());
+  await connectMock(page);
+  const calendar = page.getByRole('region', { name: 'Today’s calendar' });
+  await expect(calendar.getByText('Family day', { exact: true })).toBeVisible();
+  await expect(calendar.getByText('All day', { exact: true })).toBeVisible();
+  await expect(
+    calendar.getByText('Lunch at home', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    calendar.getByRole('article', { name: /Lunch at home.*Kitchen/ }),
+  ).toBeVisible();
+  await expect(calendar.getByText('Tomorrow appointment')).toHaveCount(0);
+  await expect(calendar.getByText('Sample events')).toHaveCount(0);
+  const command = await page.evaluate(() =>
+    (window as any).__ha.commands.find(
+      (item: any) => item.domain === 'calendar',
+    ),
+  );
+  expect(command).toMatchObject({
+    domain: 'calendar',
+    service: 'get_events',
+    return_response: true,
+    target: { entity_id: ['calendar.family'] },
+  });
+  await page.evaluate(() => {
+    (window as any).__ha.rejectActions = true;
+  });
+  await page.getByRole('button', { name: 'Refresh calendar' }).click();
+  await expect(calendar.getByRole('alert')).toContainText('Could not refresh');
+  await page.evaluate(() => {
+    (window as any).__ha.rejectActions = false;
+  });
+  await page.getByRole('button', { name: 'Refresh calendar' }).click();
+  await expect(
+    calendar.getByText('Lunch at home', { exact: true }),
+  ).toBeVisible();
+  await expect(calendar.getByRole('alert')).toHaveCount(0);
+  await page.evaluate(() => (window as any).__ha.disconnect());
+  await expect(calendar.getByRole('alert')).toContainText(
+    'Calendar is offline',
+  );
+  await expect(
+    calendar.getByText('Lunch at home', { exact: true }),
+  ).toHaveCount(0);
 });

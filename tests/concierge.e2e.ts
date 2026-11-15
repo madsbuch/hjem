@@ -133,7 +133,7 @@ async function mockOpenRouter(page: Page, onChat?: ChatHandler) {
 
 async function navigate(
   page: Page,
-  name: 'Overview' | 'Settings' | 'Concierge',
+  name: 'Overview' | 'Controls' | 'Settings' | 'Concierge',
 ) {
   const mobile = page.getByRole('navigation', { name: 'Mobile navigation' });
   const navigation = (await mobile.isVisible())
@@ -214,6 +214,13 @@ test('settings check a custom model and key, and keep browser keys out of storag
   ).toBeVisible();
   expect(mock.keyTests).toBe(1);
   expect(mock.authorization).toEqual([`Bearer ${fakeKey}`]);
+  await page
+    .getByLabel('OpenRouter API key', { exact: true })
+    .fill('replacement-not-saved');
+  await expect(
+    page.getByRole('button', { name: 'Test key', exact: true }),
+  ).toBeDisabled();
+  await page.getByLabel('OpenRouter API key', { exact: true }).fill('');
   await page.getByRole('button', { name: 'Check model', exact: true }).click();
   await expect(
     page.getByText('Test tool model is available and supports tools.', {
@@ -324,7 +331,7 @@ test('a model tool call receives real demo state before the answer is shown', as
   await expect(
     log.getByText('Checking your home · done', { exact: true }),
   ).toBeVisible();
-  await navigate(page, 'Overview');
+  await navigate(page, 'Controls');
   await expect(
     page.getByRole('switch', { name: 'Toggle Pendant lights', exact: true }),
   ).toBeChecked();
@@ -371,7 +378,7 @@ test('requested device changes execute against the demo and show tool progress',
     entity_id: 'light.living_pendant',
     service: 'turn_off',
   });
-  await navigate(page, 'Overview');
+  await navigate(page, 'Controls');
   await expect(
     page.getByRole('switch', { name: 'Toggle Pendant lights', exact: true }),
   ).not.toBeChecked();
@@ -423,7 +430,7 @@ test('Stop prevents an action from a late model response', async ({ page }) => {
     ).toBeVisible();
     release();
     await expect.poll(() => releasedResponse).toBe(true);
-    await navigate(page, 'Overview');
+    await navigate(page, 'Controls');
     await expect(
       page.getByRole('switch', { name: 'Toggle Pendant lights', exact: true }),
     ).toBeChecked();
@@ -533,7 +540,7 @@ for (const [status, message] of [
       page.getByRole('button', { name: 'Stop concierge', exact: true }),
     ).toHaveCount(0);
     expect(mock.requests).toHaveLength(1);
-    await navigate(page, 'Overview');
+    await navigate(page, 'Controls');
     await expect(
       page.getByRole('switch', { name: 'Toggle Pendant lights', exact: true }),
     ).toBeChecked();

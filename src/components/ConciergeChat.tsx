@@ -31,6 +31,7 @@ export interface ConciergeMessage {
 export interface ConciergeChatProps {
   messages: ConciergeMessage[];
   busy: boolean;
+  settingsPending?: boolean;
   status: string;
   configured: boolean;
   model: string;
@@ -50,6 +51,7 @@ const suggestions = [
 export function ConciergeChat({
   messages,
   busy,
+  settingsPending = false,
   status,
   configured,
   model,
@@ -61,7 +63,8 @@ export function ConciergeChat({
   const [draft, setDraft] = useState('');
   const input = useRef<HTMLTextAreaElement>(null);
   const newest = useRef<HTMLDivElement>(null);
-  const canSend = configured && !busy && draft.trim().length > 0;
+  const canSend =
+    configured && !busy && !settingsPending && draft.trim().length > 0;
 
   useEffect(() => {
     if (!input.current) return;
@@ -122,7 +125,7 @@ export function ConciergeChat({
               setDraft('');
               input.current?.focus();
             }}
-            disabled={busy}
+            disabled={busy || settingsPending}
             aria-label="New conversation"
           >
             <Plus size={17} />
@@ -198,7 +201,7 @@ export function ConciergeChat({
                     <button
                       key={text}
                       onClick={() => onSend(text)}
-                      disabled={busy}
+                      disabled={busy || settingsPending}
                     >
                       <Icon size={19} strokeWidth={1.7} />
                       <span>{text}</span>
@@ -276,7 +279,7 @@ export function ConciergeChat({
                   ? 'What can I help with at home?'
                   : 'Set up Concierge in Settings to send a message.'
               }
-              disabled={!configured}
+              disabled={!configured || settingsPending}
               rows={1}
             />
             {busy ? (
@@ -303,9 +306,11 @@ export function ConciergeChat({
           </div>
           <div className="concierge-compose-hint">
             <span>
-              {configured
-                ? 'A little help, right here at home.'
-                : 'Add an OpenRouter key and choose a model in Settings.'}
+              {settingsPending
+                ? 'Updating concierge settings…'
+                : configured
+                  ? 'A little help, right here at home.'
+                  : 'Add an OpenRouter key and choose a model in Settings.'}
             </span>
             <span className="concierge-keyboard-hint">
               Enter to send · Shift + Enter for a new line

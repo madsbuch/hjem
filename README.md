@@ -2,12 +2,13 @@
 
 **A little more at home.**
 
-Hjem means “home” in Danish. It is a Tauri 2 home screen for an Android tablet, bringing favourite apps, Home Assistant controls, and Sonos together. Its home-control interface also runs on phones and desktops. A forest-green house mark, amber doorway, and warm ivory interface give everyday controls a calm, familiar place to live.
+Hjem means “home” in Danish. It is a Tauri 2 home screen for an Android tablet, with today’s calendar, Home Assistant scenes, and music on its home screen. Separate Controls and Apps pages keep devices and installed apps within reach. Its home-control interface also runs on phones and desktops. A forest-green house mark, amber doorway, and warm ivory interface give everyday controls a calm, familiar place to live.
 
 Start with the interactive demo home, then connect your own Home Assistant in Settings.
 
-- Pin favourite devices for quick access.
-- Open installed Android apps from a searchable app drawer and pin favourites to the home screen.
+- See today’s Home Assistant calendar events, including all-day events.
+- Open Controls to browse rooms, adjust devices, and pin favourites.
+- Open installed Android apps from a searchable app drawer and pin favourites in the app drawer.
 - Browse rooms using your Home Assistant areas and device assignments.
 - Search devices and filter by room or pinned favourites.
 - Choose Light, Dark, or System appearance in Settings. Changes animate smoothly; System follows the device’s appearance schedule.
@@ -53,6 +54,10 @@ The token stays in memory for the current session; enter it again after restarti
 
 Use HTTPS for remote access. An HTTP address uses an unencrypted WebSocket connection, so reserve it for a trusted local network. The server must be reachable from the device running Hjem. If you use a reverse proxy, it must forward WebSocket connections to `/api/websocket`. An HTTPS browser preview cannot connect to an HTTP server because browsers block mixed content.
 
+## Today’s calendar
+
+Music and the calendar share the top of the home screen, with the full-width mood buttons below. The calendar shows all 24 hours, events sized by duration, overlapping events side by side, and a thicker current-time line that updates every minute. The compact calendar scrolls through the day and glides back to the current-time line shortly after release; reduced-motion settings make the return instant. All-day events sit above the timeline. The home screen reads today’s events from visible, enabled Home Assistant calendar entities using `calendar.get_events`. The day runs from local midnight to the next local midnight on the tablet, including daylight-saving changes. Events refresh when the connection or calendars change, when Hjem returns to the foreground, every five minutes, and on demand. Calendar events are read only; Hjem does not create or change them. Add your preferred calendar integration in Home Assistant to make it appear here. Demo mode uses labeled sample events.
+
 ## Sonos
 
 Add your speakers to the [Sonos integration in Home Assistant](https://www.home-assistant.io/integrations/sonos/). Hjem then discovers their media-player entities alongside your other devices; no separate Sonos account or connection is needed in Hjem.
@@ -61,7 +66,7 @@ Speaker cards show the current track and artist, with play/pause, previous/next 
 
 ## Android home screen and apps
 
-On Android, Hjem lists launchable apps in the current profile, using their names and icons from Android. Open **Apps** to search, launch, or pin an app to the dashboard. The list refreshes when you return to Hjem, and pinned choices stay on this device. Apps work independently of your Home Assistant connection.
+On Android, Hjem lists launchable apps in the current profile, using their names and icons from Android. Open **Apps** to search, launch, or pin an app in the drawer’s Pinned view. The list refreshes when you return to Hjem, and pinned choices stay on this device. Apps work independently of your Home Assistant connection.
 
 To use Hjem as the tablet's home screen, choose **Settings → Choose default home app**, then select **Hjem** in Android's settings. Hjem never changes the default automatically. You can choose your previous launcher from the same Android setting.
 

@@ -1,3 +1,5 @@
+import { parseCalendarEvents, type HassCalendarEvent } from './calendar';
+
 export interface HassEntity {
   entity_id: string;
   state: string;
@@ -164,6 +166,34 @@ export class HomeAssistantClient {
       target: { entity_id: entityId },
       service_data: data,
     });
+  }
+
+  async getCalendarEvents(
+    entityIds: string[],
+    start: string,
+    end: string,
+  ): Promise<HassCalendarEvent[]> {
+    if (!this.ready)
+      throw new Error('Reconnect to Home Assistant to load your calendar.');
+    const ids = [...new Set(entityIds)];
+    if (!ids.length) return [];
+    if (ids.some((id) => !/^calendar\.[a-z0-9_]+$/.test(id)))
+      throw new Error('A calendar entity is required.');
+    if (
+      !Number.isFinite(Date.parse(start)) ||
+      !Number.isFinite(Date.parse(end)) ||
+      Date.parse(end) <= Date.parse(start)
+    )
+      throw new Error('A valid calendar date range is required.');
+    const result = await this.command({
+      type: 'call_service',
+      domain: 'calendar',
+      service: 'get_events',
+      target: { entity_id: ids },
+      service_data: { start_date_time: start, end_date_time: end },
+      return_response: true,
+    });
+    return parseCalendarEvents(result, ids, start, end);
   }
 
   private openSocket(): void {
