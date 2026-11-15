@@ -383,6 +383,126 @@
   margin-top: 4px;
 }
 
+.launcher-open,
+.launcher-dock-app {
+  -webkit-touch-callout: none;
+  user-select: none;
+  touch-action: pan-x pan-y;
+}
+.launcher-app-options {
+  width: min(400px, calc(100vw - 32px));
+  max-height: calc(100dvh - 40px);
+  margin: auto;
+  padding: 0;
+  overflow: auto;
+  border: 1px solid #d8dfe7;
+  border-radius: 20px;
+  background: #f8fafc;
+  color: #2f3d4d;
+  box-shadow: 0 24px 80px #15243433;
+}
+.launcher-app-options::backdrop {
+  background: #14213166;
+  backdrop-filter: blur(4px);
+}
+.launcher-options-content {
+  padding: 24px;
+}
+.launcher-options-heading {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+}
+.launcher-options-heading > div {
+  min-width: 0;
+}
+.launcher-options-heading p {
+  color: #62748a;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.launcher-options-heading h2 {
+  font-size: 22px;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+.launcher-options-description {
+  color: #59697b;
+  font-size: 13px;
+  line-height: 1.7;
+  margin: 20px 0;
+}
+.launcher-options-actions {
+  display: grid;
+  gap: 8px;
+}
+.launcher-options-actions button,
+.launcher-options-cancel {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 12px 15px;
+  border-radius: 10px;
+  background: #e9eef4;
+  color: #354a63;
+  font-size: 14px;
+  text-align: left;
+}
+.launcher-options-actions button:hover:not(:disabled) {
+  background: #dfe7f0;
+}
+.launcher-options-actions .launcher-uninstall {
+  color: #a14735;
+}
+.launcher-options-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.launcher-options-cancel {
+  justify-content: center;
+  margin-top: 18px;
+  width: 100%;
+  background: transparent;
+  border: 1px solid #c7d2df;
+}
+.launcher-options-cancel:hover {
+  background: #e9eef4;
+}
+.launcher-options-error {
+  margin-top: 14px;
+  color: #a14735;
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+html[data-theme='dark'] .launcher-app-options {
+  background: #20272f;
+  border-color: #405165;
+  color: #dbe5f0;
+  box-shadow: 0 24px 80px #0006;
+}
+html[data-theme='dark'] .launcher-options-heading p,
+html[data-theme='dark'] .launcher-options-description {
+  color: #afbed0;
+}
+html[data-theme='dark'] .launcher-options-actions button {
+  background: #2d3a4a;
+  color: #d1dfef;
+}
+html[data-theme='dark'] .launcher-options-actions button:hover:not(:disabled),
+html[data-theme='dark'] .launcher-options-cancel:hover {
+  background: #394a5e;
+}
+html[data-theme='dark'] .launcher-options-cancel {
+  color: #d1dfef;
+  border-color: #516780;
+}
+html[data-theme='dark'] .launcher-options-actions .launcher-uninstall,
+html[data-theme='dark'] .launcher-options-error {
+  color: #f1b09e;
+}
+
 html[data-theme='dark'] .launcher-heading p,
 html[data-theme='dark'] .launcher-summary {
   color: #a5b3c2;

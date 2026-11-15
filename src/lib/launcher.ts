@@ -40,6 +40,18 @@ export async function launchApp(packageName: string): Promise<void> {
   return invoke<void>('plugin:launcher|launch_app', { packageName });
 }
 
+export async function uninstallApp(packageName: string): Promise<void> {
+  if (!isTauri())
+    throw new Error('App management is available in Hjem for Android.');
+  await invoke<unknown>('plugin:launcher|uninstall_app', { packageName });
+}
+
+export async function openAppInfo(packageName: string): Promise<void> {
+  if (!isTauri())
+    throw new Error('App management is available in Hjem for Android.');
+  await invoke<unknown>('plugin:launcher|open_app_info', { packageName });
+}
+
 export async function openHomeSettings(): Promise<void> {
   if (!isTauri())
     throw new Error(

@@ -1,5 +1,10 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { useSyncExternalStore } from 'react';
+import {
+  normalizeCalendarUrl,
+  parseFeed,
+  type CalendarFeed,
+} from './calendar-feed-types';
 
 export type Theme = 'system' | 'light' | 'dark';
 export type PinScope = 'demo' | 'android';
@@ -27,6 +32,7 @@ export interface StorageSnapshot {
   favourites: Favourites[];
   selectedSpeakers: SelectedSpeaker[];
   legacyImportComplete: boolean;
+  calendarFeeds: CalendarFeed[];
 }
 interface LegacyPreferences {
   serverUrl?: string;
@@ -74,6 +80,7 @@ export function parseStorageSnapshot(value: unknown): StorageSnapshot {
     !array(value.pinnedApps) ||
     !array(value.favourites) ||
     !array(value.selectedSpeakers) ||
+    !array(value.calendarFeeds) ||
     typeof value.legacyImportComplete !== 'boolean'
   )
     throw unreadable();
@@ -96,6 +103,7 @@ export function parseStorageSnapshot(value: unknown): StorageSnapshot {
     serverUrl: value.serverUrl,
     theme: value.theme,
     legacyImportComplete: value.legacyImportComplete,
+    calendarFeeds: value.calendarFeeds.map(parseFeed),
     pinnedApps: value.pinnedApps.map((item) => {
       if (
         !record(item) ||
@@ -134,6 +142,7 @@ const emptySnapshot = (): StorageSnapshot => ({
   favourites: [],
   selectedSpeakers: [],
   legacyImportComplete: false,
+  calendarFeeds: [],
 });
 let snapshot = emptySnapshot();
 let initialized: Promise<void> | undefined;
@@ -273,4 +282,42 @@ export const saveSelectedSpeaker = (scope: string, entityId: string | null) =>
       ...current.selectedSpeakers.filter((item) => item.scope !== scope),
       { scope, entityId },
     ],
+  }));
+
+export async function addCalendarFeed(
+  name: string,
+  input: string,
+): Promise<void> {
+  const url = normalizeCalendarUrl(input);
+  const trimmed = name.trim();
+  if (!trimmed || trimmed.length > 100)
+    throw new Error('Enter a calendar name of up to 100 characters.');
+  const operation = writes
+    .catch(() => {})
+    .then(async () => {
+      if (snapshot.calendarFeeds.some((feed) => feed.url === url))
+        throw new Error('This calendar link is already added.');
+      const feed = isTauri()
+        ? parseFeed(
+            await nativeStorage('calendar_add_feed', { name: trimmed, url }),
+          )
+        : {
+            id:
+              Math.max(0, ...snapshot.calendarFeeds.map((item) => item.id)) + 1,
+            name: trimmed,
+            url,
+          };
+      snapshot = {
+        ...snapshot,
+        calendarFeeds: [...snapshot.calendarFeeds, feed],
+      };
+      emit();
+    });
+  writes = operation;
+  return operation;
+}
+export const removeCalendarFeed = (id: number) =>
+  change('calendar_remove_feed', { id }, (current) => ({
+    ...current,
+    calendarFeeds: current.calendarFeeds.filter((feed) => feed.id !== id),
   }));

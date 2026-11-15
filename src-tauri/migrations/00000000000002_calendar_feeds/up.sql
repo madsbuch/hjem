@@ -1,0 +1,5 @@
+CREATE TABLE calendar_feeds (
+    id INTEGER PRIMARY KEY AUTOINCREMENT CHECK (id > 0 AND id <= 2147483647),
+    name TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 120),
+    url TEXT NOT NULL UNIQUE CHECK (length(url) BETWEEN 1 AND 8192)
+);

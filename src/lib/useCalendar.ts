@@ -9,6 +9,8 @@ import {
   demoCalendarEvents,
   type HassCalendarEvent,
 } from './calendar';
+import { loadCalendarFeed } from './calendar-subscriptions';
+import { useStorage } from './storage';
 
 export function useCalendar({
   client,
@@ -24,16 +26,21 @@ export function useCalendar({
   now?: Date;
 }) {
   const day = calendarDay(now);
-  const calendars = snapshot.entities.filter((entity) => {
-    const registry = snapshot.registry.find(
-      (item) => item.entity_id === entity.entity_id,
-    );
-    return (
-      entity.entity_id.startsWith('calendar.') &&
-      !registry?.hidden_by &&
-      !registry?.disabled_by
-    );
-  });
+  const { calendarFeeds } = useStorage();
+  const demo = mode === 'demo' && calendarFeeds.length === 0;
+  const calendars =
+    mode === 'demo'
+      ? []
+      : snapshot.entities.filter((entity) => {
+          const registry = snapshot.registry.find(
+            (item) => item.entity_id === entity.entity_id,
+          );
+          return (
+            entity.entity_id.startsWith('calendar.') &&
+            !registry?.hidden_by &&
+            !registry?.disabled_by
+          );
+        });
   const available = calendars.filter(
     (entity) => entity.state !== 'unavailable' && entity.state !== 'unknown',
   );
@@ -46,8 +53,9 @@ export function useCalendar({
       ])
       .sort(),
   );
-  const calendarCount = calendars.length;
-  const unavailableCount = calendarCount - available.length;
+  const feedKey = JSON.stringify(calendarFeeds);
+  const calendarCount = calendars.length + calendarFeeds.length;
+  const unavailableCount = calendars.length - available.length;
   const [revision, setRevision] = useState(0);
   const [state, setState] = useState<{
     events: HassCalendarEvent[];
@@ -55,58 +63,69 @@ export function useCalendar({
     error: string;
   }>({ events: [], loading: false, error: '' });
   useEffect(() => {
-    if (mode === 'demo') {
+    if (demo) {
       setState({ events: [], loading: false, error: '' });
-      return;
-    }
-    if (status !== 'connected' || !client) {
-      setState({
-        events: [],
-        loading: false,
-        error:
-          'Calendar is offline. Reconnect to Home Assistant to see today’s events.',
-      });
-      return;
-    }
-    const ids = available.map((entity) => entity.entity_id);
-    if (!ids.length) {
-      setState({
-        events: [],
-        loading: false,
-        error: unavailableCount
-          ? 'Your calendars are currently unavailable in Home Assistant.'
-          : '',
-      });
       return;
     }
     let active = true;
     let fetching = false;
+    const previous = new Map<string, HassCalendarEvent[]>();
     const load = async () => {
       if (fetching || !active) return;
       fetching = true;
-      setState((previous) => ({ ...previous, loading: true, error: '' }));
-      try {
-        const events = await client.getCalendarEvents(ids, day.start, day.end);
-        if (active)
-          setState({
-            events,
-            loading: false,
-            error: unavailableCount
-              ? 'Some calendars are unavailable. Showing events from the others.'
-              : '',
-          });
-      } catch (cause) {
-        if (active)
-          setState((previous) => ({
-            ...previous,
-            loading: false,
-            error: `Could not refresh today’s calendar. ${cause instanceof Error ? cause.message : 'Please try again.'}`,
-          }));
-      } finally {
-        fetching = false;
+      setState((current) => ({ ...current, loading: true, error: '' }));
+      const errors: string[] = [];
+      const tasks: {
+        key: string;
+        name: string;
+        load: () => Promise<HassCalendarEvent[]>;
+      }[] = calendarFeeds.map((feed) => ({
+        key: `feed:${feed.id}`,
+        name: feed.name,
+        load: () => loadCalendarFeed(feed, day),
+      }));
+      if (mode === 'live') {
+        if (status !== 'connected' || !client)
+          errors.push(
+            'Calendar is offline. Reconnect to Home Assistant to see its events.',
+          );
+        else {
+          if (available.length)
+            tasks.push({
+              key: 'home-assistant',
+              name: 'Home Assistant',
+              load: () =>
+                client.getCalendarEvents(
+                  available.map((item) => item.entity_id),
+                  day.start,
+                  day.end,
+                ),
+            });
+          if (unavailableCount)
+            errors.push('Some calendars are unavailable in Home Assistant.');
+        }
       }
+      await Promise.all(
+        tasks.map(async (task) => {
+          try {
+            previous.set(task.key, await task.load());
+          } catch (cause) {
+            errors.push(
+              `${task.name}: Could not refresh. ${cause instanceof Error ? cause.message : 'Please try again.'}`,
+            );
+          }
+        }),
+      );
+      if (active)
+        setState({
+          events: [...previous.values()]
+            .flat()
+            .sort((a, b) => a.start.localeCompare(b.start)),
+          loading: false,
+          error: errors.join(' '),
+        });
+      fetching = false;
     };
-    // Clear the previous home/day before loading a new scope.
     setState({ events: [], loading: true, error: '' });
     void load();
     const timer = window.setInterval(() => void load(), 5 * 60_000);
@@ -125,7 +144,9 @@ export function useCalendar({
     client,
     status,
     mode,
+    demo,
     calendarKey,
+    feedKey,
     unavailableCount,
     day.start,
     day.end,
@@ -133,9 +154,9 @@ export function useCalendar({
   ]);
   return {
     ...state,
-    events: mode === 'demo' ? demoCalendarEvents(day) : state.events,
-    calendarCount: mode === 'demo' ? 1 : calendarCount,
-    demo: mode === 'demo',
+    events: demo ? demoCalendarEvents(day) : state.events,
+    calendarCount: demo ? 1 : calendarCount,
+    demo,
     day,
     refresh: () => setRevision((value) => value + 1),
   };

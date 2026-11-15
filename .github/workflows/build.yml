@@ -96,7 +96,9 @@ jobs:
           APPIMAGE_EXTRACT_AND_RUN: '1'
       - name: Test native settings and request controls
         if: matrix.name == 'linux'
-        run: cargo test --manifest-path src-tauri/Cargo.toml --lib --locked
+        run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --lib --locked
+          cargo test --manifest-path src-tauri/Cargo.toml --package tauri-plugin-launcher --lib --locked
       - uses: actions/upload-artifact@v7
         with:
           name: hjem-${{ matrix.name }}

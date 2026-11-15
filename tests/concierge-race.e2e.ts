@@ -44,7 +44,7 @@ test('native model saves block new requests and clear previous provider history'
       async invoke(command: string, args: Record<string, any> = {}) {
         if (command === 'storage_load') return {
           serverUrl: '', connection: null, theme: 'system', pinnedApps: [],
-          favourites: [], selectedSpeakers: [], legacyImportComplete: true,
+          favourites: [], selectedSpeakers: [], legacyImportComplete: true, calendarFeeds: [],
         };
         if (command === 'plugin:launcher|get_status')
           return { supported: false, isDefaultHome: false };

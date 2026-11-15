@@ -7,12 +7,14 @@ use diesel::connection::SimpleConnection;
 use diesel::prelude::*;
 use diesel::sqlite::{Sqlite, SqliteConnection};
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
+use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs::{self, File, OpenOptions};
 use std::io::Read;
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
+use std::time::Duration;
 use tauri::{AppHandle, Manager, State};
 
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
@@ -21,6 +23,9 @@ const WEB_IMPORT: &str = "web-preferences-v1";
 const LEGACY_LIMIT: u64 = 16 * 1024;
 const LEGACY_BYTES: usize = 16 * 1024;
 const MAX_SCOPES: usize = 128;
+const MAX_CALENDAR_FEEDS: i64 = 64;
+const CALENDAR_BYTES: usize = 2 * 1024 * 1024;
+const CALENDAR_LENGTH: u64 = 2 * 1024 * 1024;
 type Result<T> = std::result::Result<T, StorageError>;
 
 #[derive(Debug)]
@@ -94,6 +99,16 @@ pub struct SelectedSpeaker {
     entity_id: Option<String>,
 }
 
+#[derive(Serialize, Queryable, Selectable)]
+#[serde(rename_all = "camelCase")]
+#[diesel(table_name = calendar_feeds)]
+#[diesel(check_for_backend(Sqlite))]
+pub struct CalendarFeed {
+    id: i32,
+    name: String,
+    url: String,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StorageSnapshot {
@@ -103,6 +118,7 @@ pub struct StorageSnapshot {
     pinned_apps: Vec<PinnedApps>,
     favourites: Vec<Favourites>,
     selected_speakers: Vec<SelectedSpeaker>,
+    calendar_feeds: Vec<CalendarFeed>,
     legacy_import_complete: bool,
 }
 
@@ -266,6 +282,56 @@ impl Database {
         self.connection.transaction(read_snapshot)
     }
 
+    fn add_calendar_feed(&mut self, name: String, url: String) -> Result<CalendarFeed> {
+        let name = name.trim();
+        if name.is_empty() || name.len() > 120 || name.chars().any(char::is_control) {
+            return Err(error("Give this calendar a name of 1–120 characters."));
+        }
+        let url = normalize_calendar_url(&url)?;
+        self.connection.transaction(|connection| {
+            let count = calendar_feeds::table
+                .count()
+                .get_result::<i64>(connection)?;
+            if count >= MAX_CALENDAR_FEEDS {
+                return Err(error(
+                    "You can subscribe to up to 64 calendars. Remove one before adding another.",
+                ));
+            }
+            if calendar_feeds::table
+                .filter(calendar_feeds::url.eq(&url))
+                .select(calendar_feeds::id)
+                .first::<i32>(connection)
+                .optional()?
+                .is_some()
+            {
+                return Err(error("This calendar link is already subscribed."));
+            }
+            diesel::insert_into(calendar_feeds::table)
+                .values((calendar_feeds::name.eq(name), calendar_feeds::url.eq(&url)))
+                .execute(connection)?;
+            Ok(calendar_feeds::table
+                .filter(calendar_feeds::url.eq(&url))
+                .select(CalendarFeed::as_select())
+                .first(connection)?)
+        })
+    }
+
+    fn remove_calendar_feed(&mut self, id: i32) -> Result<()> {
+        validate_calendar_id(id)?;
+        diesel::delete(calendar_feeds::table.find(id)).execute(&mut self.connection)?;
+        Ok(())
+    }
+
+    fn calendar_url(&mut self, id: i32) -> Result<String> {
+        validate_calendar_id(id)?;
+        calendar_feeds::table
+            .find(id)
+            .select(calendar_feeds::url)
+            .first::<String>(&mut self.connection)
+            .optional()?
+            .ok_or_else(|| error("This calendar subscription no longer exists."))
+    }
+
     fn save_connection(&mut self, connection: SavedConnection) -> Result<()> {
         let server = normalize_server(&connection.server_url)?;
         validate_token(&connection.token)?;
@@ -421,6 +487,10 @@ fn read_snapshot(connection: &mut SqliteConnection) -> Result<StorageSnapshot> {
         pinned_apps: pinned,
         favourites: favourite_lists,
         selected_speakers: speakers,
+        calendar_feeds: calendar_feeds::table
+            .order(calendar_feeds::id)
+            .select(CalendarFeed::as_select())
+            .load(connection)?,
         legacy_import_complete: import_complete(connection, WEB_IMPORT)?,
     })
 }
@@ -681,10 +751,262 @@ pub fn storage_import_legacy(
     with_database(&app, &state, |database| database.import_legacy(legacy))
 }
 
+fn validate_calendar_id(id: i32) -> Result<()> {
+    if id <= 0 {
+        Err(error("Choose a valid calendar subscription."))
+    } else {
+        Ok(())
+    }
+}
+
+fn calendar_url_allowed(url: &reqwest::Url) -> bool {
+    matches!(url.scheme(), "http" | "https")
+        && url.host_str().is_some()
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.fragment().is_none()
+}
+
+fn normalize_calendar_url(input: &str) -> Result<String> {
+    let input = input.trim();
+    if input.is_empty() || input.len() > 8192 || input.chars().any(char::is_control) {
+        return Err(error("Enter a valid calendar subscription link."));
+    }
+    let address = match input.split_once("://") {
+        Some((scheme, rest)) if scheme.eq_ignore_ascii_case("webcal") => format!("https://{rest}"),
+        _ => input.to_owned(),
+    };
+    let url = reqwest::Url::parse(&address)
+        .map_err(|_| error("Enter a complete http://, https://, or webcal:// calendar link."))?;
+    if !calendar_url_allowed(&url) {
+        return Err(error("Use an http://, https://, or webcal:// calendar link without a username, password, or fragment."));
+    }
+    Ok(url.into())
+}
+
+fn calendar_client() -> std::result::Result<reqwest::Client, String> {
+    static CLIENT: OnceLock<std::result::Result<reqwest::Client, String>> = OnceLock::new();
+    CLIENT
+        .get_or_init(|| {
+            reqwest::Client::builder()
+                .connect_timeout(Duration::from_secs(10))
+                .timeout(Duration::from_secs(30))
+                .referer(false)
+                .redirect(reqwest::redirect::Policy::custom(|attempt| {
+                    let downgrade = attempt.previous().last().is_some_and(|previous| {
+                        previous.scheme() == "https" && attempt.url().scheme() == "http"
+                    });
+                    if attempt.previous().len() >= 5
+                        || !calendar_url_allowed(attempt.url())
+                        || downgrade
+                    {
+                        attempt.error("This calendar redirect is unsupported.")
+                    } else {
+                        attempt.follow()
+                    }
+                }))
+                .user_agent(concat!("Hjem/", env!("CARGO_PKG_VERSION")))
+                .build()
+                .map_err(|_| "The calendar connection could not be prepared.".into())
+        })
+        .clone()
+}
+
+#[tauri::command]
+pub fn calendar_add_feed(
+    app: AppHandle,
+    state: State<'_, DatabaseState>,
+    name: String,
+    url: String,
+) -> std::result::Result<CalendarFeed, String> {
+    with_database(&app, &state, |database| {
+        database.add_calendar_feed(name, url)
+    })
+}
+
+#[tauri::command]
+pub fn calendar_remove_feed(
+    app: AppHandle,
+    state: State<'_, DatabaseState>,
+    id: i32,
+) -> std::result::Result<(), String> {
+    with_database(&app, &state, |database| database.remove_calendar_feed(id))
+}
+
+#[tauri::command]
+pub async fn calendar_fetch_feed(
+    app: AppHandle,
+    state: State<'_, DatabaseState>,
+    id: i32,
+) -> std::result::Result<String, String> {
+    let url = with_database(&app, &state, |database| database.calendar_url(id))?;
+    fetch_calendar(&url).await
+}
+
+async fn fetch_calendar(url: &str) -> std::result::Result<String, String> {
+    // Revalidate persisted URLs before every fetch. Never echo provider errors
+    // or private subscription links, which often contain access tokens.
+    let url = normalize_calendar_url(url).map_err(|failure| failure.to_string())?;
+    let response = calendar_client()?
+        .get(url)
+        .header(
+            reqwest::header::ACCEPT,
+            "text/calendar, text/plain;q=0.9, */*;q=0.1",
+        )
+        .send()
+        .await
+        .map_err(|failure| {
+            if failure.is_timeout() {
+                "This calendar took too long to respond. Please retry."
+            } else {
+                "This calendar could not be reached. Check the link and your connection."
+            }
+            .to_owned()
+        })?;
+    if !response.status().is_success() {
+        return Err(match response.status().as_u16() {
+            401 | 403 => "This calendar link is not authorized. Use a private subscription link from your calendar provider.",
+            404 | 410 => "This calendar link no longer exists. Check the subscription link.",
+            429 => "This calendar is temporarily rate limited. Please try again shortly.",
+            _ => "This calendar could not be loaded. Please try again shortly.",
+        }.into());
+    }
+    if response
+        .content_length()
+        .is_some_and(|length| length > CALENDAR_LENGTH)
+    {
+        return Err("This calendar is larger than the 2 MiB limit.".into());
+    }
+    let mut bytes = Vec::new();
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|_| "This calendar download was interrupted. Please retry.")?;
+        if bytes.len().saturating_add(chunk.len()) > CALENDAR_BYTES {
+            return Err("This calendar is larger than the 2 MiB limit.".into());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    String::from_utf8(bytes).map_err(|_| "This calendar is not valid UTF-8 text.".into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use diesel::migration::MigrationSource;
     use serde_json::json;
+
+    #[test]
+    fn calendar_subscriptions_survive_restart_and_removal_does_not_reuse_ids() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("hjem.sqlite3");
+        let legacy = directory.path().join("missing.json");
+        let mut database = Database::open(&path, &legacy).unwrap();
+        let first = database
+            .add_calendar_feed(
+                " Family ".into(),
+                "webcal://calendar.example/private.ics?token=synthetic-secret".into(),
+            )
+            .unwrap();
+        assert_eq!(first.name, "Family");
+        assert_eq!(
+            first.url,
+            "https://calendar.example/private.ics?token=synthetic-secret"
+        );
+        assert!(database
+            .add_calendar_feed("Duplicate".into(), first.url.clone())
+            .is_err());
+        let id = first.id;
+        drop(database);
+        let mut reopened = Database::open(&path, &legacy).unwrap();
+        let feeds = reopened.snapshot().unwrap().calendar_feeds;
+        assert_eq!(feeds.len(), 1);
+        assert_eq!(feeds[0].id, id);
+        assert_eq!(feeds[0].name, "Family");
+        assert_eq!(reopened.calendar_url(id).unwrap(), first.url);
+        reopened.remove_calendar_feed(id).unwrap();
+        assert!(reopened.calendar_url(id).is_err());
+        let next = reopened
+            .add_calendar_feed("Work".into(), "https://calendar.example/work.ics".into())
+            .unwrap();
+        assert!(next.id > id);
+        reopened.remove_calendar_feed(next.id).unwrap();
+        drop(reopened);
+        assert!(Database::open(&path, &legacy)
+            .unwrap()
+            .snapshot()
+            .unwrap()
+            .calendar_feeds
+            .is_empty());
+    }
+
+    #[test]
+    fn calendar_migration_upgrades_existing_database_without_resetting_preferences() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("hjem.sqlite3");
+        let mut connection = SqliteConnection::establish(path.to_str().unwrap()).unwrap();
+        assert!(connection.applied_migrations().unwrap().is_empty());
+        let migrations = MIGRATIONS.migrations().unwrap();
+        connection.run_migration(migrations[0].as_ref()).unwrap();
+        set_theme(&mut connection, Theme::Dark).unwrap();
+        drop(connection);
+        let mut database = Database::open(&path, &directory.path().join("missing.json")).unwrap();
+        assert_eq!(database.snapshot().unwrap().theme, Theme::Dark);
+        assert!(database.snapshot().unwrap().calendar_feeds.is_empty());
+        database
+            .add_calendar_feed(
+                "Upgraded".into(),
+                "https://calendar.example/feed.ics".into(),
+            )
+            .unwrap();
+        assert_eq!(database.snapshot().unwrap().calendar_feeds.len(), 1);
+    }
+
+    #[test]
+    fn calendar_links_validate_schemes_credentials_fragments_and_bounds() {
+        assert_eq!(
+            normalize_calendar_url(" WEBCAL://calendar.example/calendar.ics?key=private%2Ftoken ")
+                .unwrap(),
+            "https://calendar.example/calendar.ics?key=private%2Ftoken"
+        );
+        assert_eq!(
+            normalize_calendar_url("http://homeassistant.local:8123/calendar.ics?key=test")
+                .unwrap(),
+            "http://homeassistant.local:8123/calendar.ics?key=test"
+        );
+        for address in [
+            "file:///private-calendar",
+            "javascript:alert(1)",
+            "https://user:secret@calendar.example/feed.ics",
+            "https://calendar.example/feed.ics#secret",
+            "calendar.example/feed.ics",
+            "https://calendar.example/feed.ics\nsecret",
+        ] {
+            let failure = normalize_calendar_url(address).unwrap_err().to_string();
+            assert!(!failure.contains("secret"));
+        }
+        assert!(
+            normalize_calendar_url(&format!("https://calendar.example/{}", "a".repeat(8192)))
+                .is_err()
+        );
+        assert!(validate_calendar_id(0).is_err());
+        assert!(validate_calendar_id(-1).is_err());
+        let directory = tempfile::tempdir().unwrap();
+        let mut database = Database::open(
+            &directory.path().join("hjem.sqlite3"),
+            &directory.path().join("missing.json"),
+        )
+        .unwrap();
+        assert!(database
+            .add_calendar_feed(" ".into(), "https://calendar.example/feed.ics".into())
+            .is_err());
+        assert!(database
+            .add_calendar_feed(
+                "Calendar\nName".into(),
+                "https://calendar.example/feed.ics".into()
+            )
+            .is_err());
+        assert!(database.snapshot().unwrap().calendar_feeds.is_empty());
+    }
 
     #[test]
     fn database_restart_preserves_credentials_preferences_order_and_empty_scopes() {

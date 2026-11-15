@@ -25,12 +25,16 @@ export async function nativeStorage(
     pinnedApps: [],
     favourites: [],
     selectedSpeakers: [],
+    calendarFeeds: [],
     legacyImportComplete: true,
     ...initial,
   };
   let failedCommand = '';
   let concierge = { hasApiKey: false, model: '' };
   const commands: string[] = [];
+  const feedResponses = new Map<string, string | Error>();
+  const feedFetches: number[] = [];
+  let nextFeedId = Math.max(0, ...snapshot.calendarFeeds.map((feed) => feed.id)) + 1;
   await page.exposeFunction(
     '__hjemStorageInvoke',
     (command: string, raw: unknown = {}) => {
@@ -39,7 +43,26 @@ export async function nativeStorage(
         throw new Error('Could not save settings. Please try again.');
       if (!record(raw)) throw new Error('Expected structured IPC arguments');
       if (command === 'storage_load') return structuredClone(snapshot);
-      if (command === 'storage_save_connection') {
+      if (command === 'calendar_add_feed') {
+        if (typeof raw.name !== 'string' || typeof raw.url !== 'string')
+          throw new Error('Missing calendar name or URL');
+        if (snapshot.calendarFeeds.some((feed) => feed.url === raw.url))
+          throw new Error('This calendar link is already added.');
+        const feed = { id: nextFeedId++, name: raw.name, url: raw.url };
+        snapshot = parseStorageSnapshot({ ...snapshot, calendarFeeds: [...snapshot.calendarFeeds, feed] });
+        return structuredClone(feed);
+      } else if (command === 'calendar_remove_feed') {
+        if (typeof raw.id !== 'number') throw new Error('Missing calendar ID');
+        snapshot = { ...snapshot, calendarFeeds: snapshot.calendarFeeds.filter((feed) => feed.id !== raw.id) };
+      } else if (command === 'calendar_fetch_feed') {
+        if (typeof raw.id !== 'number') throw new Error('Missing calendar ID');
+        const feed = snapshot.calendarFeeds.find((item) => item.id === raw.id);
+        if (!feed) throw new Error('This calendar is no longer saved.');
+        feedFetches.push(feed.id);
+        const response = feedResponses.get(feed.url);
+        if (response instanceof Error) throw response;
+        return response ?? 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Hjem//Test fixture//EN\r\nEND:VCALENDAR\r\n';
+      } else if (command === 'storage_save_connection') {
         if (!record(raw.connection)) throw new Error('Missing connection');
         snapshot = parseStorageSnapshot({
           ...snapshot,
@@ -113,6 +136,13 @@ export async function nativeStorage(
       return structuredClone(snapshot);
     },
     commands,
+    feedFetches,
+    setFeedResponse(url: string, text: string) {
+      feedResponses.set(url, text);
+    },
+    setFeedError(url: string, message: string) {
+      feedResponses.set(url, new Error(message));
+    },
     fail(command: string) {
       failedCommand = command;
     },

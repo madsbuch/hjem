@@ -119,7 +119,7 @@ export function CalendarToday({
           <p className="calendar-empty">
             {calendar.calendarCount
               ? 'Nothing scheduled today'
-              : 'Add a calendar in Home Assistant to see today’s events here.'}
+              : 'Add a calendar link in Settings or a calendar in Home Assistant.'}
           </p>
         )}
         {allDay.length > 0 && (
@@ -191,9 +191,12 @@ export function CalendarToday({
               ))}
               <div className="calendar-timed-events">
                 {timed.map(({ event, start, end, lane, columns }) => {
-                  const calendarName = snapshot.entities.find(
+                  const attribute = snapshot.entities.find(
                     (entity) => entity.entity_id === event.entityId,
                   )?.attributes.friendly_name;
+                  const calendarName =
+                    event.calendarName ??
+                    (typeof attribute === 'string' ? attribute : '');
                   const ended =
                     calendarDate(event.end).getTime() <= now.getTime();
                   const detail = [

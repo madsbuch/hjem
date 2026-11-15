@@ -47,3 +47,10 @@ diesel::table! {
 diesel::table! {
     import_status (migration) { migration -> Text, }
 }
+diesel::table! {
+    calendar_feeds (id) {
+        id -> Integer,
+        name -> Text,
+        url -> Text,
+    }
+}

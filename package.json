@@ -15,8 +15,10 @@
     "ios": "tauri ios dev"
   },
   "dependencies": {
+    "@js-temporal/polyfill": "^0.5.1",
     "@tauri-apps/api": "^2.12.4",
     "@tauri-apps/plugin-barcode-scanner": "^2.5.3",
+    "ical.js": "^2.2.1",
     "jsqr": "^1.4.0",
     "lucide-react": "^0.468.0",
     "react": "^19.3.0",

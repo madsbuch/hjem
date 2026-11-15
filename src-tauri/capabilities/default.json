@@ -23,6 +23,9 @@
     "allow-storage-set-pinned-apps",
     "allow-storage-set-favourites",
     "allow-storage-set-selected-speaker",
-    "allow-storage-import-legacy"
+    "allow-storage-import-legacy",
+    "allow-calendar-add-feed",
+    "allow-calendar-remove-feed",
+    "allow-calendar-fetch-feed"
   ]
 }

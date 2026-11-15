@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-calendar-remove-feed"
+description = "Enables the calendar_remove_feed command without any pre-configured scope."
+commands.allow = ["calendar_remove_feed"]
+
+[[permission]]
+identifier = "deny-calendar-remove-feed"
+description = "Denies the calendar_remove_feed command without any pre-configured scope."
+commands.deny = ["calendar_remove_feed"]

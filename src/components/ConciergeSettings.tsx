@@ -49,7 +49,7 @@ export function ConciergeSettings({
   const [key, setKey] = useState('');
   const [model, setModel] = useState(settings.model || recommendedModels[0].id);
   const [custom, setCustom] = useState(
-    !!settings.model && !isRecommended(settings.model),
+    settings.model.length > 0 && !isRecommended(settings.model),
   );
   const [customModel, setCustomModel] = useState(
     isRecommended(settings.model) ? '' : settings.model,
@@ -59,11 +59,11 @@ export function ConciergeSettings({
   const [error, setError] = useState(initialError);
   useEffect(() => {
     setModel(settings.model || recommendedModels[0].id);
-    setCustom(!!settings.model && !isRecommended(settings.model));
+    setCustom(settings.model.length > 0 && !isRecommended(settings.model));
     if (settings.model && !isRecommended(settings.model))
       setCustomModel(settings.model);
   }, [settings.model]);
-  const locked = disabled || !!busy;
+  const locked = disabled || busy.length > 0;
   async function run(label: string, action: () => Promise<void>) {
     onBusyChange(true);
     setBusy(label);
@@ -250,7 +250,7 @@ export function ConciergeSettings({
           <button
             type="button"
             className="secondary-button"
-            disabled={locked || !settings.hasApiKey || !!key.trim()}
+            disabled={locked || !settings.hasApiKey || key.trim().length > 0}
             title={
               key.trim() ? 'Save the new key before testing it' : undefined
             }

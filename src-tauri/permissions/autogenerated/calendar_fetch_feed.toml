@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-calendar-fetch-feed"
+description = "Enables the calendar_fetch_feed command without any pre-configured scope."
+commands.allow = ["calendar_fetch_feed"]
+
+[[permission]]
+identifier = "deny-calendar-fetch-feed"
+description = "Denies the calendar_fetch_feed command without any pre-configured scope."
+commands.deny = ["calendar_fetch_feed"]

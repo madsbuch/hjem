@@ -6,7 +6,7 @@ Hjem means “home” in Danish. It is a Tauri 2 home screen for an Android tabl
 
 Start with the interactive demo home, then connect your own Home Assistant in Settings.
 
-- See today’s Home Assistant calendar events, including all-day events.
+- See today’s events from iCal/ICS subscription links and Home Assistant, including all-day and recurring events.
 - Open Controls to browse rooms, adjust devices, and pin favourites.
 - Open installed Android apps from a searchable app drawer and pin favourites in the app drawer.
 - Browse rooms using your Home Assistant areas and device assignments.
@@ -58,7 +58,13 @@ Use HTTPS for remote access. An HTTP address uses an unencrypted WebSocket conne
 
 ## Today’s calendar
 
-Music and the calendar share the top of the home screen, with the full-width mood buttons below. The calendar shows all 24 hours, events sized by duration, overlapping events side by side, and a thicker current-time line that updates every minute. The compact calendar scrolls through the day and glides back to the current-time line shortly after release; reduced-motion settings make the return instant. All-day events sit above the timeline. The home screen reads today’s events from visible, enabled Home Assistant calendar entities using `calendar.get_events`. The day runs from local midnight to the next local midnight on the tablet, including daylight-saving changes. Events refresh when the connection or calendars change, when Hjem returns to the foreground, every five minutes, and on demand. Calendar events are read only; Hjem does not create or change them. Add your preferred calendar integration in Home Assistant to make it appear here. Demo mode uses labeled sample events.
+In **Settings → Calendars**, add a name and an iCal/ICS subscription link for each calendar. HTTPS, HTTP, and `webcal://` links are accepted. Multiple calendars merge into today’s view and work without a Home Assistant connection. Hjem saves links in SQLite; no Google account login is required on the shared tablet. Use the check button to verify a feed and the remove button to unsubscribe.
+
+For Google Calendar, open its settings on your own device, select a calendar, choose **Integrate calendar**, and copy its **Secret address in iCal format**. Paste that address into Hjem. Keep private feed links private: they grant read access to the calendar. See [Google’s iCal instructions](https://support.google.com/calendar/answer/37648). Ordinary Google Calendar web-page links are not subscription feeds.
+
+Linked calendars are read only and refresh every five minutes, when Hjem returns to the foreground, and when you select Refresh. Recurrence rules, exclusions, moved/cancelled occurrences, time zones, daylight-saving changes, and all-day events are supported. A failed feed shows an error while other feeds continue to load. Downloads are limited to 2 MiB and 30 seconds, and parsing runs in a bounded worker so a malformed feed cannot freeze the interface. Native apps download directly; browser previews require the feed provider to allow browser access and keep subscriptions only until reload.
+
+Music and the calendar share the top of the home screen, with the full-width mood buttons below. The calendar shows all 24 hours, events sized by duration, overlapping events side by side, and a thicker current-time line that updates every minute. The compact calendar scrolls through the day and glides back to the current-time line shortly after release; reduced-motion settings make the return instant. All-day events sit above the timeline. The home screen reads today’s events from visible, enabled Home Assistant calendar entities using `calendar.get_events`. The day runs from local midnight to the next local midnight on the tablet, including daylight-saving changes. Events refresh when the connection or calendars change, when Hjem returns to the foreground, every five minutes, and on demand. Calendar events are read only; Hjem does not create or change them. Add your preferred calendar integration in Home Assistant to make it appear here. Demo mode uses sample events only when no calendar links are configured.
 
 ## Sonos
 
@@ -68,7 +74,7 @@ Speaker cards show the current track and artist, with play/pause, previous/next 
 
 ## Android home screen and apps
 
-On Android, Hjem lists launchable apps in the current profile, using their names and icons from Android. Open **Apps** to search, launch, or pin an app in the drawer’s Pinned view. The list refreshes when you return to Hjem, and pinned choices stay on this device. Apps work independently of your Home Assistant connection.
+On Android, Hjem lists launchable apps in the current profile, using their names and icons from Android. Open **Apps** to search, launch, or pin an app in the drawer’s Pinned view. The list refreshes when you return to Hjem, and pinned choices stay on this device. Apps work independently of your Home Assistant connection. Hold an app to open its options: **App info** opens Android’s settings for that app, and **Uninstall app** opens Android’s uninstall confirmation. You can cancel there; Hjem refreshes the app list when you return. Right-click and Shift+F10 also open the options menu.
 
 To use Hjem as the tablet's home screen, choose **Settings → Choose default home app**, then select **Hjem** in Android's settings. Hjem never changes the default automatically. You can choose your previous launcher from the same Android setting.
 
@@ -116,7 +122,7 @@ Real Home Assistant hardware and physical mobile devices have not yet been teste
 
 ## Persisted settings and types
 
-All durable native settings use SQLite through Diesel: Home Assistant credentials, theme, favourites, selected speakers, app pins, and Concierge credentials/model. Embedded migrations run before the interface opens. Existing browser preferences and the old Concierge JSON file are imported once, transactionally, and removed only after a successful import. An unreadable database or failed migration displays a retryable error without resetting saved data. Chat history and fetched device/calendar state remain session data.
+All durable native settings use SQLite through Diesel: Home Assistant credentials, calendar subscriptions, theme, favourites, selected speakers, app pins, and Concierge credentials/model. Embedded migrations run before the interface opens. Existing browser preferences and the old Concierge JSON file are imported once, transactionally, and removed only after a successful import. An unreadable database or failed migration displays a retryable error without resetting saved data. Chat history and fetched device/calendar state remain session data.
 
 TypeScript runs in strict mode, external payloads are validated from `unknown`, and Rust forbids unsafe code. The build also rejects TypeScript type assertions, `any`, non-null assertions, and Rust casts.
 

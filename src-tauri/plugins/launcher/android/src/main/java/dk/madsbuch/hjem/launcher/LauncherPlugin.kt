@@ -9,6 +9,7 @@ import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.util.Base64
@@ -105,6 +106,55 @@ class LauncherPlugin(private val activity: Activity) : Plugin(activity) {
                 invoke.reject("Android could not open this app. It may be disabled or restricted.")
             }
         }
+    }
+
+    private fun openPackageScreen(invoke: Invoke, action: String, failureMessage: String) {
+        val args = try {
+            invoke.parseArgs(LaunchAppArgs::class.java)
+        } catch (_: Exception) {
+            invoke.reject("Choose an installed app to manage.")
+            return
+        }
+        activity.runOnUiThread {
+            try {
+                if (args.packageName.isBlank() || args.packageName == activity.packageName) {
+                    invoke.reject("Choose an installed app to manage.")
+                    return@runOnUiThread
+                }
+                // Re-query the current profile. Stale UI data must not target an
+                // uninstalled, disabled, hidden, or non-launchable package.
+                val target = launchableApps(args.packageName).firstOrNull()?.activityInfo
+                if (target == null || target.packageName != args.packageName) {
+                    invoke.reject("This app is no longer available. Refresh your apps and try again.")
+                    return@runOnUiThread
+                }
+                val packageUri = Uri.fromParts("package", target.packageName, null)
+                activity.startActivity(Intent(action, packageUri))
+                // Android owns the confirmation and result. Opening this screen
+                // does not imply that an uninstall has been accepted/completed.
+                invoke.resolve()
+            } catch (_: Exception) {
+                invoke.reject(failureMessage)
+            }
+        }
+    }
+
+    @Command
+    fun uninstallApp(invoke: Invoke) {
+        openPackageScreen(
+            invoke,
+            Intent.ACTION_DELETE,
+            "Android could not open the uninstall confirmation. This app may be protected or restricted."
+        )
+    }
+
+    @Command
+    fun openAppInfo(invoke: Invoke) {
+        openPackageScreen(
+            invoke,
+            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            "Android could not open App info for this app."
+        )
     }
 
     @Command

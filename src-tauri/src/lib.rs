@@ -22,6 +22,9 @@ pub fn run() {
         .manage(database::DatabaseState::default())
         .invoke_handler(tauri::generate_handler![
             qr_scanner_native,
+            database::calendar_add_feed,
+            database::calendar_remove_feed,
+            database::calendar_fetch_feed,
             database::storage_load,
             database::storage_save_connection,
             database::storage_clear_connection,

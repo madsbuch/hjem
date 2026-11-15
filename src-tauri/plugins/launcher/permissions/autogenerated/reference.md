@@ -1,12 +1,14 @@
 ## Default Permission
 
-List launchable Android apps, open a chosen app, and open the home-app chooser.
+List launchable Android apps, open a chosen app or its system App info/uninstall confirmation, and open the home-app chooser.
 
 #### This default permission set includes the following:
 
 - `allow-get-status`
 - `allow-list-apps`
 - `allow-launch-app`
+- `allow-uninstall-app`
+- `allow-open-app-info`
 - `allow-open-home-settings`
 - `allow-register-listener`
 - `allow-remove-listener`
@@ -101,6 +103,32 @@ Denies the list_apps command without any pre-configured scope.
 <tr>
 <td>
 
+`launcher:allow-open-app-info`
+
+</td>
+<td>
+
+Enables the open_app_info command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`launcher:deny-open-app-info`
+
+</td>
+<td>
+
+Denies the open_app_info command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `launcher:allow-open-home-settings`
 
 </td>
@@ -172,6 +200,32 @@ Enables the remove_listener command without any pre-configured scope.
 <td>
 
 Denies the remove_listener command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`launcher:allow-uninstall-app`
+
+</td>
+<td>
+
+Enables the uninstall_app command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`launcher:deny-uninstall-app`
+
+</td>
+<td>
+
+Denies the uninstall_app command without any pre-configured scope.
 
 </td>
 </tr>

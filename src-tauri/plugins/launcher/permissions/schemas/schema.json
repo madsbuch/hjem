@@ -331,6 +331,18 @@
           "markdownDescription": "Denies the list_apps command without any pre-configured scope."
         },
         {
+          "description": "Enables the open_app_info command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-open-app-info",
+          "markdownDescription": "Enables the open_app_info command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the open_app_info command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-open-app-info",
+          "markdownDescription": "Denies the open_app_info command without any pre-configured scope."
+        },
+        {
           "description": "Enables the open_home_settings command without any pre-configured scope.",
           "type": "string",
           "const": "allow-open-home-settings",
@@ -367,10 +379,22 @@
           "markdownDescription": "Denies the remove_listener command without any pre-configured scope."
         },
         {
-          "description": "List launchable Android apps, open a chosen app, and open the home-app chooser.\n#### This default permission set includes:\n\n- `allow-get-status`\n- `allow-list-apps`\n- `allow-launch-app`\n- `allow-open-home-settings`\n- `allow-register-listener`\n- `allow-remove-listener`",
+          "description": "Enables the uninstall_app command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-uninstall-app",
+          "markdownDescription": "Enables the uninstall_app command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the uninstall_app command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-uninstall-app",
+          "markdownDescription": "Denies the uninstall_app command without any pre-configured scope."
+        },
+        {
+          "description": "List launchable Android apps, open a chosen app or its system App info/uninstall confirmation, and open the home-app chooser.\n#### This default permission set includes:\n\n- `allow-get-status`\n- `allow-list-apps`\n- `allow-launch-app`\n- `allow-uninstall-app`\n- `allow-open-app-info`\n- `allow-open-home-settings`\n- `allow-register-listener`\n- `allow-remove-listener`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "List launchable Android apps, open a chosen app, and open the home-app chooser.\n#### This default permission set includes:\n\n- `allow-get-status`\n- `allow-list-apps`\n- `allow-launch-app`\n- `allow-open-home-settings`\n- `allow-register-listener`\n- `allow-remove-listener`"
+          "markdownDescription": "List launchable Android apps, open a chosen app or its system App info/uninstall confirmation, and open the home-app chooser.\n#### This default permission set includes:\n\n- `allow-get-status`\n- `allow-list-apps`\n- `allow-launch-app`\n- `allow-uninstall-app`\n- `allow-open-app-info`\n- `allow-open-home-settings`\n- `allow-register-listener`\n- `allow-remove-listener`"
         }
       ]
     }

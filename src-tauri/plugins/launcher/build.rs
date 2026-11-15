@@ -4,6 +4,8 @@ const COMMANDS: &[&str] = &[
     "get_status",
     "list_apps",
     "launch_app",
+    "uninstall_app",
+    "open_app_info",
     "open_home_settings",
     "register_listener",
     "remove_listener",

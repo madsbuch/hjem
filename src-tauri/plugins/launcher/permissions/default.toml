@@ -1,5 +1,5 @@
 "$schema" = "schemas/schema.json"
 
 [default]
-description = "List launchable Android apps, open a chosen app, and open the home-app chooser."
-permissions = ["allow-get-status", "allow-list-apps", "allow-launch-app", "allow-open-home-settings", "allow-register-listener", "allow-remove-listener"]
+description = "List launchable Android apps, open a chosen app or its system App info/uninstall confirmation, and open the home-app chooser."
+permissions = ["allow-get-status", "allow-list-apps", "allow-launch-app", "allow-uninstall-app", "allow-open-app-info", "allow-open-home-settings", "allow-register-listener", "allow-remove-listener"]

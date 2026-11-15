@@ -1,20 +1,23 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   ArrowRight,
   CalendarDays,
   CirclePlay,
   Grid2X2,
   Images,
+  Info,
   LoaderCircle,
   Music2,
   Pin,
   RefreshCw,
   Search,
   Smartphone,
+  Trash2,
   Globe2,
   X,
 } from 'lucide-react';
-import type { LauncherApp } from '../lib/launcher';
+import { openAppInfo, uninstallApp, type LauncherApp } from '../lib/launcher';
 
 interface AppLauncherProps {
   apps: LauncherApp[];
@@ -70,6 +73,149 @@ function AppGlyph({ app }: { app: LauncherApp }) {
   );
 }
 
+function AppButton({ app, compact, onLaunch, onOptions }: {
+  app: LauncherApp;
+  compact: boolean;
+  onLaunch: (app: LauncherApp) => void;
+  onOptions: (app: LauncherApp) => void;
+}) {
+  const press = useRef<{ pointerId: number; x: number; y: number; timer: number } | null>(null);
+  const suppressClick = useRef(false);
+  const cancelPress = () => {
+    if (press.current) window.clearTimeout(press.current.timer);
+    press.current = null;
+  };
+  useEffect(() => {
+    document.addEventListener('scroll', cancelPress, true);
+    window.addEventListener('blur', cancelPress);
+    return () => {
+      cancelPress();
+      document.removeEventListener('scroll', cancelPress, true);
+      window.removeEventListener('blur', cancelPress);
+    };
+  }, []);
+
+  return (
+    <button
+      className={compact ? 'launcher-dock-app' : 'launcher-open'}
+      aria-label={`Open ${app.name}`}
+      aria-haspopup="dialog"
+      title={`Open ${app.name}. Hold for app options.`}
+      onPointerDown={(event) => {
+        cancelPress();
+        suppressClick.current = false;
+        if (!event.isPrimary || event.button !== 0) return;
+        press.current = {
+          pointerId: event.pointerId, x: event.clientX, y: event.clientY,
+          timer: window.setTimeout(() => {
+            press.current = null;
+            suppressClick.current = true;
+            onOptions(app);
+          }, 500),
+        };
+      }}
+      onPointerMove={(event) => {
+        const current = press.current;
+        if (current && current.pointerId === event.pointerId &&
+          Math.hypot(event.clientX - current.x, event.clientY - current.y) > 10) cancelPress();
+      }}
+      onPointerUp={cancelPress}
+      onPointerCancel={cancelPress}
+      onPointerLeave={cancelPress}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        cancelPress();
+        suppressClick.current = true;
+        onOptions(app);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) {
+          event.preventDefault();
+          cancelPress();
+          onOptions(app);
+        }
+      }}
+      onClick={(event) => {
+        if (suppressClick.current && event.detail !== 0) {
+          event.preventDefault();
+          suppressClick.current = false;
+          return;
+        }
+        onLaunch(app);
+      }}
+    >
+      <AppGlyph app={app} />
+      <span className={compact ? undefined : 'launcher-app-name'}>{app.name}</span>
+    </button>
+  );
+}
+
+function AppOptions({ app, preview, onClose }: {
+  app: LauncherApp;
+  preview: boolean;
+  onClose: () => void;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const active = useRef(true);
+  const previousFocus = useRef(document.activeElement);
+  const titleId = useId();
+  const descriptionId = useId();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    const modal = dialog.current;
+    if (!modal) return;
+    active.current = true;
+    modal.showModal();
+    return () => {
+      active.current = false;
+      modal.close();
+      if (previousFocus.current instanceof HTMLElement && previousFocus.current.isConnected)
+        previousFocus.current.focus({ preventScroll: true });
+    };
+  }, []);
+  const run = async (action: (packageName: string) => Promise<void>) => {
+    if (preview || pending) return;
+    setPending(true);
+    setError('');
+    try {
+      await action(app.packageName);
+      if (active.current) onClose();
+    } catch (cause: unknown) {
+      if (active.current) setError(cause instanceof Error ? cause.message :
+        typeof cause === 'string' ? cause : 'Could not open Android app settings. Please try again.');
+    } finally {
+      if (active.current) setPending(false);
+    }
+  };
+  return createPortal(
+    <dialog ref={dialog} className="launcher-app-options" aria-labelledby={titleId}
+      aria-describedby={descriptionId} onCancel={(event) => { event.preventDefault(); onClose(); }}
+      onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div className="launcher-options-content">
+        <div className="launcher-options-heading">
+          <AppGlyph app={app} />
+          <div><p>App options</p><h2 id={titleId}>{app.name}</h2></div>
+        </div>
+        <p id={descriptionId} className="launcher-options-description">
+          {preview ? 'This is a sample app. App management is available on Android.' :
+            'Manage this app in Android settings. Android will ask you to confirm before uninstalling.'}
+        </p>
+        <div className="launcher-options-actions" aria-busy={pending}>
+          <button disabled={preview || pending} onClick={() => void run(openAppInfo)}>
+            <Info size={20} /> App info
+          </button>
+          <button className="launcher-uninstall" disabled={preview || pending} onClick={() => void run(uninstallApp)}>
+            <Trash2 size={20} /> Uninstall app
+          </button>
+        </div>
+        {error && <p className="launcher-options-error" role="alert">{error}</p>}
+        <button className="launcher-options-cancel" onClick={onClose} autoFocus>Cancel</button>
+      </div>
+    </dialog>, document.body,
+  );
+}
+
 export function AppLauncher({
   apps,
   pinned,
@@ -84,6 +230,7 @@ export function AppLauncher({
 }: AppLauncherProps) {
   const [query, setQuery] = useState('');
   const [onlyPinned, setOnlyPinned] = useState(false);
+  const [optionsApp, setOptionsApp] = useState<LauncherApp | null>(null);
   const pinnedApps = pinned.flatMap((id) => {
     const app = apps.find((candidate) => candidate.packageName === id);
     return app ? [app] : [];
@@ -207,14 +354,7 @@ export function AppLauncher({
           <ul className="launcher-dock">
             {pinnedApps.map((app) => (
               <li key={app.packageName}>
-                <button
-                  className="launcher-dock-app"
-                  onClick={() => onLaunch(app)}
-                  aria-label={`Open ${app.name}`}
-                >
-                  <AppGlyph app={app} />
-                  <span>{app.name}</span>
-                </button>
+                <AppButton app={app} compact onLaunch={onLaunch} onOptions={setOptionsApp} />
               </li>
             ))}
             <li>
@@ -251,14 +391,7 @@ export function AppLauncher({
                 className={`launcher-tile ${isPinned ? 'is-pinned' : ''}`}
                 key={app.packageName}
               >
-                <button
-                  className="launcher-open"
-                  onClick={() => onLaunch(app)}
-                  aria-label={`Open ${app.name}`}
-                >
-                  <AppGlyph app={app} />
-                  <span className="launcher-app-name">{app.name}</span>
-                </button>
+                <AppButton app={app} compact={false} onLaunch={onLaunch} onOptions={setOptionsApp} />
                 <button
                   className={`launcher-pin ${isPinned ? 'selected' : ''}`}
                   onClick={() => onTogglePin(app.packageName)}
@@ -302,6 +435,8 @@ export function AppLauncher({
           )}
         </div>
       )}
+      {optionsApp && <AppOptions key={optionsApp.packageName} app={optionsApp} preview={preview}
+        onClose={() => setOptionsApp(null)} />}
     </section>
   );
 }

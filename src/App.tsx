@@ -53,6 +53,7 @@ import { useLauncher } from './lib/useLauncher';
 import { useConcierge } from './lib/useConcierge';
 import { useCalendar } from './lib/useCalendar';
 import { CalendarToday } from './components/CalendarToday';
+import { CalendarSettings } from './components/CalendarSettings';
 import { ConciergeChat } from './components/ConciergeChat';
 import { ConciergeSettings } from './components/ConciergeSettings';
 import {
@@ -815,7 +816,8 @@ export default function App() {
                 status={concierge.status}
                 settingsPending={concierge.settingsBusy}
                 configured={
-                  concierge.settings.hasApiKey && !!concierge.settings.model
+                  concierge.settings.hasApiKey &&
+                  concierge.settings.model.length > 0
                 }
                 model={concierge.settings.model}
                 onSend={(text) => void concierge.send(text)}
@@ -847,6 +849,7 @@ export default function App() {
                 />
               </section>
               <div className="settings-grid">
+                <CalendarSettings />
                 <ConciergeSettings
                   settings={concierge.settings}
                   onChange={concierge.setSettings}

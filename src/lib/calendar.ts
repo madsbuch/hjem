@@ -6,6 +6,7 @@ export interface HassCalendarEvent {
   end: string;
   allDay: boolean;
   location?: string;
+  calendarName?: string;
 }
 
 export function calendarDate(value: string): Date {
@@ -29,7 +30,7 @@ export function calendarDay(now: Date) {
 }
 
 const record = (value: unknown): value is Record<string, unknown> =>
-  !!value && typeof value === 'object' && !Array.isArray(value);
+  value !== null && typeof value === 'object' && !Array.isArray(value);
 export function parseCalendarEvents(
   result: unknown,
   entityIds: string[],
