@@ -896,7 +896,6 @@ export default function App() {
                   concierge.settings.hasApiKey &&
                   concierge.settings.model.length > 0
                 }
-                model={concierge.settings.model}
                 onSend={(text) => void concierge.send(text)}
                 onSendVoice={concierge.sendVoice}
                 voiceSessionKey={concierge.voiceSessionKey}

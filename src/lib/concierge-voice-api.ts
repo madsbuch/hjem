@@ -6,7 +6,7 @@ export const CONCIERGE_VOICE_SAMPLE_RATE = 24_000;
 const REQUEST_LIMIT = 8 * 1024 * 1024;
 const STREAM_LIMIT = 24 * 1024 * 1024;
 const AUDIO_LIMIT = 2 * 1024 * 1024;
-const PROTOCOL_ERROR = 'OpenRouter returned an incomplete or unreadable voice response. No actions from this response were run.';
+const PROTOCOL_ERROR = 'The voice reply was unreadable, so nothing was changed. Please try again.';
 const record = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 const array = (value: unknown): value is unknown[] => Array.isArray(value);
@@ -15,7 +15,7 @@ const base64 = (value: unknown): value is string => typeof value === 'string' &&
 const stopped = () => new DOMException('Stopped.', 'AbortError');
 // Only locally defined field/stage names belong in diagnostics. Never include
 // provider payloads: they can contain the recording, transcript or tool arguments.
-const protocolError = (detail: string) => new Error(`${PROTOCOL_ERROR} Detail: ${detail}.`);
+const protocolError = (detail: string) => new Error(`${PROTOCOL_ERROR} (${detail})`);
 
 function voiceBody(body: Record<string, unknown>): Record<string, unknown> {
   if (!array(body.messages) || body.messages.length === 0 || body.messages.length > 200)
@@ -116,7 +116,9 @@ export class VoiceCompletionStream {
   private event(data: string): void {
     if (this.done) throw protocolError('data after stream completion');
     if (data === '[DONE]') {
-      if (!this.terminal) throw protocolError('missing finish_reason');
+      // OpenRouter's gpt-audio stream can end with [DONE] without ever sending a
+      // finish_reason. The [DONE] sentinel itself marks a complete response; the
+      // outcome is inferred from the assembled output in finish().
       this.done = true;
       return;
     }
@@ -148,8 +150,8 @@ export class VoiceCompletionStream {
       // The audio guide's partial chunks omit index. This request asks for one
       // choice; an explicit index must still identify that same choice.
       if (choice.index !== undefined && choice.index !== 0) throw protocolError('invalid choice.index');
-      if (!record(choice.delta)) throw protocolError('invalid choice.delta');
-      const delta = choice.delta;
+      if (choice.delta != null && !record(choice.delta)) throw protocolError('invalid choice.delta');
+      const delta: Record<string, unknown> = record(choice.delta) ? choice.delta : {};
       if (delta.role != null && delta.role !== 'assistant') throw protocolError('invalid delta.role');
       if (delta.refusal != null && delta.refusal !== '') throw new Error('The voice model declined this request.');
       if (delta.content != null && typeof delta.content !== 'string') throw protocolError('invalid delta.content');
@@ -168,10 +170,9 @@ export class VoiceCompletionStream {
       if (typeof audio?.data === 'string' && audio.data) this.audio(audio.data);
       for (const part of tools) this.tool(part);
       if (choice.finish_reason != null) {
-        if (choice.finish_reason !== 'stop' && choice.finish_reason !== 'tool_calls')
+        if (choice.finish_reason === 'length' || choice.finish_reason === 'content_filter')
           throw new Error('The voice response was cut short. Please try again.');
-        if (this.terminal && this.terminal !== choice.finish_reason) throw protocolError('conflicting finish_reason');
-        this.terminal = choice.finish_reason;
+        this.terminal = String(choice.finish_reason);
       }
     }
   }
@@ -216,7 +217,6 @@ export class VoiceCompletionStream {
     try { this.buffer += this.decoder.decode(); } catch { throw protocolError('incomplete UTF-8'); }
     if (this.buffer.trim() || this.data.length) throw protocolError('incomplete SSE event');
     if (!this.done) throw protocolError('missing stream completion');
-    if (!this.terminal) throw protocolError('missing finish_reason');
     if (this.audioRemainder) throw protocolError('incomplete audio.data base64');
     const calls = [...this.calls.entries()].sort(([a], [b]) => a - b).map(([index, call], expected) => {
       if (index !== expected || !call.id || !/^[A-Za-z0-9_-]{1,128}$/.test(call.function.name))
@@ -226,13 +226,13 @@ export class VoiceCompletionStream {
       if (!record(args)) throw protocolError('invalid tool_call arguments');
       return call;
     });
-    if (new Set(calls.map((call) => call.id)).size !== calls.length ||
-        (this.terminal === 'tool_calls') !== (calls.length > 0)) throw protocolError('inconsistent completed tool_calls');
+    if (new Set(calls.map((call) => call.id)).size !== calls.length) throw protocolError('duplicate tool_call ids');
+    const finishReason = calls.length ? 'tool_calls' : 'stop';
     const content = this.transcript || this.text;
     if (!content.trim() && !calls.length) throw protocolError('missing transcript or text');
     return {
       ...(this.id ? { id: this.id } : {}), model: CONCIERGE_VOICE_MODEL,
-      choices: [{ index: 0, finish_reason: this.terminal,
+      choices: [{ index: 0, finish_reason: finishReason,
         message: { role: 'assistant', content: content || null, ...(calls.length ? { tool_calls: calls } : {}) } }],
       ...(this.usage ? { usage: this.usage } : {}),
     };

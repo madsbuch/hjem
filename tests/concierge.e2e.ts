@@ -180,7 +180,7 @@ async function startConcierge(page: Page) {
   await configure(page);
   await navigate(page, 'Concierge');
   await expect(
-    page.getByRole('heading', { name: /^Home Concierge/, level: 1 }),
+    page.getByRole('heading', { name: /^Concierge/, level: 1 }),
   ).toBeVisible();
 }
 
