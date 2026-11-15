@@ -1,6 +1,6 @@
 # Hjem
 
-**Your home, a little closer.**
+**A little more at home.**
 
 Hjem means “home” in Danish. It is a Tauri 2 app for controlling a Home Assistant home from a phone, tablet, or desktop. A forest-green house mark, amber doorway, and warm ivory interface give everyday controls a calm, familiar place to live.
 
@@ -8,7 +8,8 @@ Start with the interactive demo home, then connect your own Home Assistant in Se
 
 - Pin favourite devices for quick access.
 - Browse rooms using your Home Assistant areas and device assignments.
-- Search devices and filter by room or device type.
+- Search devices and filter by room or pinned favourites.
+- Choose Light, Dark, or System appearance, or switch with the header toggle.
 - Toggle lights, switches, fans, and input booleans; adjust supported light brightness.
 - Set supported thermostat temperatures, operate covers, and play or pause media.
 - Run existing Home Assistant scenes and view sensor readings.
@@ -31,12 +32,12 @@ Open [localhost:1435](http://localhost:1435) for the browser preview. To launch 
 npm run tauri dev
 ```
 
-| Command | Purpose |
-| --- | --- |
-| `npm run build` | Type-check and build the frontend into `dist` |
-| `npm test` | Run unit tests, including the Home Assistant protocol client |
-| `npm run test:e2e` | Run browser interaction and responsive-layout tests |
-| `npm run tauri -- build` | Build the desktop application and installers |
+| Command                  | Purpose                                                      |
+| ------------------------ | ------------------------------------------------------------ |
+| `npm run build`          | Type-check and build the frontend into `dist`                |
+| `npm test`               | Run unit tests, including the Home Assistant protocol client |
+| `npm run test:e2e`       | Run browser interaction and responsive-layout tests          |
+| `npm run tauri -- build` | Build the desktop application and installers                 |
 
 Install the browser needed by the end-to-end tests with `npx playwright install chromium` if it is not already available.
 
@@ -46,7 +47,7 @@ Install the browser needed by the end-to-end tests with `npx playwright install 
 2. In Hjem, open **Settings** and enter your Home Assistant URL, such as `http://homeassistant.local:8123` or your HTTPS remote address.
 3. Paste the token and connect. Hjem discovers supported entities, areas, and existing scenes.
 
-The token stays in memory for the current session; enter it again after restarting or reloading the app. Only the server URL and favourite preferences are stored locally. Disconnecting clears the client’s token. Hjem connects directly to your server using the [Home Assistant WebSocket API](https://developers.home-assistant.io/docs/api/websocket/) and does not need an intermediary service.
+The token stays in memory for the current session; enter it again after restarting or reloading the app. Only the server URL, favourites, and appearance preference are stored locally. Disconnecting clears the client’s token. Hjem connects directly to your server using the [Home Assistant WebSocket API](https://developers.home-assistant.io/docs/api/websocket/) and does not need an intermediary service.
 
 Use HTTPS for remote access. An HTTP address uses an unencrypted WebSocket connection, so reserve it for a trusted local network. The server must be reachable from the device running Hjem. If you use a reverse proxy, it must forward WebSocket connections to `/api/websocket`. An HTTPS browser preview cannot connect to an HTTP server because browsers block mixed content.
 
@@ -76,12 +77,24 @@ Real Home Assistant hardware and physical mobile devices have not yet been teste
 
 ## Project layout
 
-| Path | Contents |
-| --- | --- |
-| `src/` | React and TypeScript interface |
+| Path                        | Contents                                                             |
+| --------------------------- | -------------------------------------------------------------------- |
+| `src/`                      | React and TypeScript interface                                       |
 | `src/lib/home-assistant.ts` | Authentication, state subscriptions, reconnection, and service calls |
-| `src/lib/demo.ts` | Interactive sample home |
-| `public/brand/` | Original SVG logo, wordmark, and app-icon master |
-| `src-tauri/` | Rust application shell, platform configuration, and generated icons |
+| `src/lib/demo.ts`           | Interactive sample home                                              |
+| `public/brand/`             | Original SVG logo, wordmark, and app-icon master                     |
+| `src-tauri/`                | Rust application shell, platform configuration, and generated icons  |
 
 Hjem is an independent interface for Home Assistant, not an official Home Assistant application.
+
+## GitHub builds
+
+[Build Hjem](https://github.com/madsbuch/hjem/actions/workflows/build.yml) runs on pushes to `main`, pull requests, and manual dispatch. It checks the frontend, protocol tests, and phone/tablet browser tests, then builds:
+
+- macOS universal DMG (Apple Silicon and Intel), Windows NSIS installer, and Linux DEB/AppImage.
+- Android APK for ARM phones and tablets.
+- An unsigned iOS simulator app archive. Physical iPhone/iPad installation needs Apple signing.
+
+Download build artifacts from a completed Actions run; artifacts are retained for 14 days. Builds do not publish GitHub releases automatically. Desktop bundles are unsigned or ad-hoc signed for testing, without distribution notarization.
+
+For Android installs that can upgrade earlier builds, configure repository Actions secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD`. Without them, CI creates a temporary signing key: the APK installs, but each build requires uninstalling a previous CI build first.

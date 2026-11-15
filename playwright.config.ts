@@ -14,8 +14,22 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   projects: [
-    { name: 'phone', use: { ...devices['Pixel 5'], browserName: 'chromium', viewport: { width: 390, height: 844 } } },
-    { name: 'tablet', use: { browserName: 'chromium', viewport: { width: 1024, height: 1000 }, hasTouch: true } },
+    {
+      name: 'phone',
+      use: {
+        ...devices['Pixel 5'],
+        browserName: 'chromium',
+        viewport: { width: 390, height: 844 },
+      },
+    },
+    {
+      name: 'tablet',
+      use: {
+        browserName: 'chromium',
+        viewport: { width: 1024, height: 1000 },
+        hasTouch: true,
+      },
+    },
   ],
   webServer: {
     command: 'npm run dev -- --host 127.0.0.1 --port 1435',

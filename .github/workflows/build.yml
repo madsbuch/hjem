@@ -161,7 +161,7 @@ jobs:
           apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*release*.apk' -print -quit)
           test -n "$apk"
           android_tools="$ANDROID_HOME/build-tools/36.0.0"
-          "$android_tools/zipalign" -p -f 4 "$apk" "$aligned"
+          "$android_tools/zipalign" -P 16 -f 4 "$apk" "$aligned"
           "$android_tools/apksigner" sign --ks "$keystore" \
             --ks-pass env:ANDROID_KEYSTORE_PASSWORD --key-pass env:ANDROID_KEY_PASSWORD \
             --ks-key-alias "$ANDROID_KEY_ALIAS" --out out/Hjem-android.apk "$aligned"
