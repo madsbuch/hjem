@@ -34,6 +34,7 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm test
+      - run: bash tests/android/check-runner.sh
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
       - uses: actions/upload-artifact@v7
@@ -142,6 +143,10 @@ jobs:
       # The Android project is committed so custom network policy survives.
       - name: Build release APK
         run: npm run tauri -- android build --ci --apk --target aarch64 --target armv7 -- --locked
+      - name: Verify scanner survives release optimization
+        run: |
+          apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*release*.apk' -print -quit)
+          scripts/check-android-scanner.sh "$apk"
       - name: Sign and verify APK
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}

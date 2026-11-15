@@ -260,6 +260,14 @@ test('native scanning requests permission, limits formats, ignores cancelled res
   await expect(
     page.getByRole('button', { name: 'Cancel scanning', exact: true }),
   ).toBeVisible();
+  // A modal lives in the browser's top layer, so hiding #root alone does not
+  // hide the connection form behind the transparent native camera viewfinder.
+  await expect(page.locator('.connection-dialog')).toBeHidden();
+  expect(
+    await page.locator('.connection-dialog').evaluate(
+      (dialog) => getComputedStyle(dialog, '::backdrop').visibility,
+    ),
+  ).toBe('hidden');
   await expect
     .poll(() =>
       page.evaluate(() => (window as any).nativeCameraFixture.scans.length),
@@ -297,6 +305,7 @@ test('native scanning requests permission, limits formats, ignores cancelled res
     page.getByLabel('Long-lived access token', { exact: true }),
   ).toHaveValue(token);
   await expect(page.locator('html')).not.toHaveAttribute('data-qr-scanner');
+  await expect(page.locator('.connection-dialog')).toBeVisible();
   expect(
     await page.evaluate(() => (window as any).nativeCameraFixture.cancels),
   ).toBe(2);

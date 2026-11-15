@@ -121,7 +121,9 @@ html[data-qr-scanner='native'],
 html[data-qr-scanner='native'] body {
   background: transparent !important;
 }
-html[data-qr-scanner='native'] #root {
+html[data-qr-scanner='native'] #root,
+html[data-qr-scanner='native'] .connection-dialog,
+html[data-qr-scanner='native'] .connection-dialog::backdrop {
   visibility: hidden;
 }
 html[data-qr-scanner='native'] .qr-scanner-dialog::backdrop {
