@@ -121,7 +121,7 @@ test('saved appearance applies on initial load without a theme animation', async
       .getAnimations()
       .filter((animation) => animation instanceof CSSTransition).length,
   }));
-  expect(initial.background).toBe('rgb(20, 29, 25)');
+  expect(initial.background).toBe('rgb(20, 24, 29)');
   expect(initial.transitions).toBe(0);
   await expect(page.locator('html')).not.toHaveClass(/theme-changing/);
 });
@@ -156,7 +156,7 @@ test('manual appearance changes fade surfaces and rapid choices settle on the la
     choose('Light');
   });
   const rapid = await capturedTheme(page);
-  expect(rapid.frames.at(-1)?.background).toBe('rgb(248, 249, 245)');
+  expect(rapid.frames.at(-1)?.background).toBe('rgb(245, 247, 249)');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
   await expect(option(page, 'Light')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('html')).not.toHaveClass(/theme-changing/);
@@ -194,8 +194,8 @@ test('reduced motion applies manual and system themes immediately', async ({
   expect(
     manual.frames.every(
       (frame) =>
-        frame.background === 'rgb(20, 29, 25)' &&
-        frame.card === 'rgb(32, 44, 37)',
+        frame.background === 'rgb(20, 24, 29)' &&
+        frame.card === 'rgb(32, 38, 44)',
     ),
   ).toBe(true);
   await expect(page.locator('html')).not.toHaveClass(/theme-changing/);
@@ -207,8 +207,8 @@ test('reduced motion applies manual and system themes immediately', async ({
   expect(
     system.frames.every(
       (frame) =>
-        frame.background === 'rgb(20, 29, 25)' &&
-        frame.card === 'rgb(32, 44, 37)',
+        frame.background === 'rgb(20, 24, 29)' &&
+        frame.card === 'rgb(32, 38, 44)',
     ),
   ).toBe(true);
   await expect(page.locator('html')).not.toHaveClass(/theme-changing/);

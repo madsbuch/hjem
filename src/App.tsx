@@ -442,24 +442,6 @@ export default function App() {
             hjem<span className="brand-dot">.</span>
           </span>
         </button>
-        <div className="home-selector">
-          <span className="home-avatar">
-            <House size={19} />
-          </span>
-          <div>
-            <strong>
-              {mode === 'demo' ? 'Our home' : snapshot.locationName}
-            </strong>
-          </div>
-        </div>
-        <button
-          className={`connection-pill sidebar-connection ${mode === 'live' && status !== 'connected' ? 'offline' : ''}`}
-          onClick={openConnection}
-        >
-          <i />
-          {connectionLabel}
-        </button>
-        <span className="nav-label">YOUR SPACE</span>
         <nav aria-label="Main navigation">
           {navigation.map(({ id, label, Icon }) => (
             <button
@@ -526,13 +508,6 @@ export default function App() {
                     {greeting}
                     <span className="greeting-dot">.</span>
                   </h1>
-                  <button
-                    className={`connection-pill mobile-connection ${mode === 'live' && status !== 'connected' ? 'offline' : ''}`}
-                    onClick={openConnection}
-                  >
-                    <i />
-                    {connectionLabel}
-                  </button>
                 </div>
                 <div className="home-at-a-glance">
                   <time

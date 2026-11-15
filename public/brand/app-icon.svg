@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none">
   <title>Hjem app icon</title>
-  <path fill="#214C40" d="M0 0h1024v1024H0z"/>
-  <circle cx="768" cy="184" r="376" fill="#2B594A"/>
-  <circle cx="141" cy="1001" r="398" fill="#1D4439"/>
+  <path fill="#21354c" d="M0 0h1024v1024H0z"/>
+  <circle cx="768" cy="184" r="376" fill="#2b4059"/>
+  <circle cx="141" cy="1001" r="398" fill="#1d2f44"/>
   <g transform="translate(64 48) scale(14)">
     <path d="M11 29.5 29.4 13.7a4 4 0 0 1 5.2 0L53 29.5M16 26v23a3 3 0 0 0 3 3h8V38a5 5 0 0 1 10 0v14h8a3 3 0 0 0 3-3V26" stroke="#F6F3E9" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
     <path d="M32 41v11" stroke="#DFB77B" stroke-width="3.5" stroke-linecap="round"/>

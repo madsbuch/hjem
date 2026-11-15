@@ -2,7 +2,7 @@
 
 **A little more at home.**
 
-Hjem means “home” in Danish. It is a Tauri 2 home screen for an Android tablet, with today’s calendar, Home Assistant scenes, and music on its home screen. Separate Controls and Apps pages keep devices and installed apps within reach. Its home-control interface also runs on phones and desktops. A forest-green house mark, amber doorway, and warm ivory interface give everyday controls a calm, familiar place to live.
+Hjem means “home” in Danish. It is a Tauri 2 home screen for an Android tablet, with today’s calendar, Home Assistant scenes, and music on its home screen. Separate Controls and Apps pages keep devices and installed apps within reach. Its home-control interface also runs on phones and desktops. A navy-blue house mark, amber doorway, and cool blue interface give everyday controls a calm, familiar place to live.
 
 Start with the interactive demo home, then connect your own Home Assistant in Settings.
 

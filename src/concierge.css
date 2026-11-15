@@ -21,7 +21,7 @@
   font-size: 12px;
   line-height: 1.7;
   margin-top: 7px;
-  color: #75836b;
+  color: #6b7683;
 }
 .concierge-header-actions {
   display: flex;
@@ -39,7 +39,7 @@
   border-radius: 9px;
   border: 1px solid var(--border);
   background: #fff;
-  color: #677c58;
+  color: #58697c;
 }
 .concierge-new {
   padding: 11px 14px;
@@ -50,18 +50,18 @@
 }
 .concierge-new:hover:not(:disabled),
 .concierge-settings-button:hover {
-  background: #eff4e7;
-  border-color: #becfaf;
+  background: #e7edf4;
+  border-color: #afbecf;
 }
 .concierge-setup {
   display: flex;
   align-items: center;
   gap: 19px;
   padding: 24px;
-  border: 1px solid #dbe4ce;
+  border: 1px solid #ced8e4;
   border-radius: 13px;
   margin-bottom: 22px;
-  background: #eef3e5;
+  background: #e5ecf3;
 }
 .concierge-setup-icon {
   display: grid;
@@ -69,8 +69,8 @@
   flex-shrink: 0;
   width: 50px;
   height: 50px;
-  background: #e0e9ce;
-  color: #779159;
+  background: #cedbe9;
+  color: #597391;
   border-radius: 14px;
 }
 .concierge-setup h2 {
@@ -82,7 +82,7 @@
 .concierge-setup p {
   font-size: 11px;
   line-height: 1.8;
-  color: #6c8059;
+  color: #596b80;
   max-width: 450px;
 }
 .concierge-setup .primary-button {
@@ -98,12 +98,12 @@
   border-radius: 16px;
   min-width: 0;
   overflow: hidden;
-  box-shadow: 0 5px 25px #3c4f2804;
+  box-shadow: 0 5px 25px #283a4f04;
 }
 .concierge-panel-topline {
   min-height: 56px;
   padding: 12px 24px;
-  border-bottom: 1px solid #edf0e7;
+  border-bottom: 1px solid #e7ebf0;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -114,7 +114,7 @@
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
-  color: #567548;
+  color: #485d75;
   font-size: 11px;
   font-weight: 550;
 }
@@ -125,8 +125,8 @@
   align-items: center;
   gap: 7px;
   padding: 7px 9px;
-  background: #f1f5ea;
-  color: #71875f;
+  background: #eaeff5;
+  color: #5f7287;
   border-radius: 7px;
   font-size: 10px;
   overflow-wrap: anywhere;
@@ -138,10 +138,10 @@
   height: 5px;
   flex-shrink: 0;
   border-radius: 50%;
-  background: #a1aa91;
+  background: #919daa;
 }
 .concierge-model > span.configured {
-  background: #7f9b5d;
+  background: #5d7a9b;
 }
 .concierge-scroll {
   min-height: 380px;
@@ -150,7 +150,7 @@
   overscroll-behavior-y: contain;
   padding: 27px;
   scrollbar-width: thin;
-  scrollbar-color: #c4d0b8 transparent;
+  scrollbar-color: #b8c3d0 transparent;
 }
 .concierge-welcome {
   display: flex;
@@ -167,10 +167,10 @@
   width: 76px;
   height: 76px;
   border-radius: 25px;
-  background: #edf2e4;
-  color: #77915d;
+  background: #e4ebf2;
+  color: #5d7591;
   margin-bottom: 24px;
-  box-shadow: 0 0 0 11px #f8faf4;
+  box-shadow: 0 0 0 11px #f4f7fa;
 }
 .concierge-welcome h2 {
   font-family: Georgia, 'Times New Roman', serif;
@@ -183,7 +183,7 @@
 .concierge-welcome > p {
   font-size: 12px;
   line-height: 1.9;
-  color: #7b896d;
+  color: #6d7a89;
   max-width: 380px;
 }
 .concierge-suggestions {
@@ -198,10 +198,10 @@
   display: flex;
   align-items: center;
   gap: 11px;
-  border: 1px solid #e2e9d8;
+  border: 1px solid #d8e0e9;
   border-radius: 10px;
-  background: #fbfcf7;
-  color: #547345;
+  background: #f7f9fc;
+  color: #455a73;
   padding: 13px 15px;
   text-align: left;
 }
@@ -210,15 +210,15 @@
   line-height: 1.7;
 }
 .concierge-suggestions button > svg:first-child {
-  color: #8c9f71;
+  color: #71869f;
 }
 .concierge-suggestions button > svg:last-child {
   margin-left: auto;
-  color: #9dad8b;
+  color: #8b9bad;
 }
 .concierge-suggestions button:hover:not(:disabled) {
-  background: #eef4e3;
-  border-color: #b7cca1;
+  background: #e3ebf4;
+  border-color: #a1b5cc;
 }
 .concierge-log {
   display: flex;
@@ -240,15 +240,15 @@
 }
 .concierge-message-user {
   align-self: flex-end;
-  background: #214c40;
-  color: #f3f3e4;
+  background: #21354c;
+  color: #e4ebf3;
   border-bottom-right-radius: 4px;
 }
 .concierge-message-assistant {
   align-self: flex-start;
-  background: #f2f5eb;
-  border: 1px solid #e8eedf;
-  color: #344c2d;
+  background: #ebf0f5;
+  border: 1px solid #dfe6ee;
+  color: #2d3b4c;
   border-bottom-left-radius: 4px;
 }
 .concierge-message-author {
@@ -260,17 +260,17 @@
   font-weight: 550;
   margin-bottom: 7px;
   letter-spacing: 0.5px;
-  color: #72845d;
+  color: #5d6f84;
 }
 .concierge-message-user .concierge-message-author {
-  color: #bccfb2;
+  color: #b2c0cf;
 }
 .concierge-activity {
   display: flex;
   align-items: flex-start;
   gap: 9px;
   padding: 0 12px;
-  color: #70835e;
+  color: #5e6f83;
   max-width: 90%;
 }
 .concierge-activity > svg {
@@ -310,7 +310,7 @@
   margin: 20px auto 0;
   max-width: 850px;
   padding: 0 12px;
-  color: #788e62;
+  color: #62778e;
   font-size: 11px;
   line-height: 1.8;
 }
@@ -322,27 +322,27 @@
 }
 .concierge-compose {
   padding: 18px 22px 16px;
-  border-top: 1px solid #edf0e7;
-  background: #fdfefb;
+  border-top: 1px solid #e7ebf0;
+  background: #fbfcfe;
 }
 .concierge-input-wrap {
   display: flex;
   align-items: flex-end;
   gap: 11px;
-  border: 1px solid #dce6ce;
+  border: 1px solid #ced9e6;
   background: #fff;
   border-radius: 12px;
   padding: 9px 10px 9px 15px;
 }
 .concierge-input-wrap:focus-within {
-  border-color: #94ae7c;
-  box-shadow: 0 0 0 3px #b6caa128;
+  border-color: #7c93ae;
+  box-shadow: 0 0 0 3px #a1b4ca28;
 }
 .concierge-input-wrap.unconfigured {
-  background: #f4f6ef;
+  background: #eff2f6;
 }
 .concierge-input-icon {
-  color: #9aac87;
+  color: #8798ac;
   margin-bottom: 13px;
   flex-shrink: 0;
 }
@@ -359,11 +359,11 @@
   font: inherit;
   font-size: 13px;
   line-height: 1.7;
-  color: #344e2b;
+  color: #2b3b4e;
   scrollbar-width: thin;
 }
 .concierge-input-wrap textarea::placeholder {
-  color: #879b73;
+  color: #73869b;
 }
 .concierge-input-wrap textarea:disabled {
   opacity: 0.85;
@@ -377,15 +377,15 @@
   width: 44px;
   height: 44px;
   border-radius: 9px;
-  background: #214c40;
+  background: #21354c;
   color: #f7f4e6;
 }
 .concierge-send:hover:not(:disabled) {
-  background: #37674b;
+  background: #374d67;
 }
 .concierge-send:disabled {
-  background: #dfe8d5;
-  color: #91a47c;
+  background: #d5dee8;
+  color: #7c8fa4;
   opacity: 1;
 }
 .concierge-stop {
@@ -401,103 +401,103 @@
   align-items: center;
   gap: 18px;
   margin: 11px 3px 0;
-  color: #82926f;
+  color: #6f7f92;
   font-size: 8px;
   line-height: 1.8;
 }
 
 html[data-theme='dark'] .concierge-heading > div > p {
-  color: #b4c4a7;
+  color: #a7b5c4;
 }
 html[data-theme='dark'] .concierge-new,
 html[data-theme='dark'] .concierge-settings-button {
-  background: #26382a;
-  color: #c4d7af;
-  border-color: #435b39;
+  background: #262e38;
+  color: #afc2d7;
+  border-color: #39495b;
 }
 html[data-theme='dark'] .concierge-new:hover:not(:disabled),
 html[data-theme='dark'] .concierge-settings-button:hover {
-  background: #344b2f;
-  border-color: #708c5a;
+  background: #2f3c4b;
+  border-color: #5a718c;
 }
 html[data-theme='dark'] .concierge-setup {
-  background: #2a3c2b;
-  border-color: #48643a;
+  background: #2a323c;
+  border-color: #3a4e64;
 }
 html[data-theme='dark'] .concierge-setup-icon {
-  background: #3d5433;
-  color: #d0e2b3;
+  background: #334254;
+  color: #b3c9e2;
 }
 html[data-theme='dark'] .concierge-setup p {
-  color: #bdcfae;
+  color: #aebdcf;
 }
 html[data-theme='dark'] .concierge-chat-panel {
-  background: #1c2a21;
-  border-color: #3d5236;
+  background: #1c232a;
+  border-color: #364352;
   box-shadow: 0 5px 25px #0001;
 }
 html[data-theme='dark'] .concierge-panel-topline {
-  border-color: #34482f;
+  border-color: #2f3b48;
 }
 html[data-theme='dark'] .concierge-identity {
-  color: #c2d5ac;
+  color: #acbfd5;
 }
 html[data-theme='dark'] .concierge-model {
-  background: #2c402b;
-  color: #bfd5a7;
+  background: #2b3540;
+  color: #a7bcd5;
 }
 html[data-theme='dark'] .concierge-model > span {
-  background: #9eb08b;
+  background: #8b9cb0;
 }
 html[data-theme='dark'] .concierge-model > span.configured {
-  background: #b9d78c;
+  background: #8cafd7;
 }
 html[data-theme='dark'] .concierge-scroll {
-  scrollbar-color: #577449 transparent;
+  scrollbar-color: #495d74 transparent;
 }
 html[data-theme='dark'] .concierge-welcome-mark {
-  background: #344c30;
-  color: #c8dda9;
-  box-shadow: 0 0 0 11px #263926;
+  background: #303d4c;
+  color: #a9c1dd;
+  box-shadow: 0 0 0 11px #262f39;
 }
 html[data-theme='dark'] .concierge-welcome h2 {
-  color: #e8edda;
+  color: #dae3ed;
 }
 html[data-theme='dark'] .concierge-welcome > p {
-  color: #b8cba8;
+  color: #a8b8cb;
 }
 html[data-theme='dark'] .concierge-suggestions button {
-  background: #273a28;
-  color: #d3e1bd;
-  border-color: #48613b;
+  background: #27303a;
+  color: #bdcee1;
+  border-color: #3b4d61;
 }
 html[data-theme='dark'] .concierge-suggestions button > svg:first-child {
-  color: #bbd29e;
+  color: #9eb6d2;
 }
 html[data-theme='dark'] .concierge-suggestions button > svg:last-child {
-  color: #a8c18b;
+  color: #8ba4c1;
 }
 html[data-theme='dark'] .concierge-suggestions button:hover:not(:disabled) {
-  background: #385130;
-  border-color: #819e63;
+  background: #303f51;
+  border-color: #637f9e;
 }
 html[data-theme='dark'] .concierge-message-user {
-  background: #365443;
-  color: #f2f4e5;
+  background: #364454;
+  color: #e5ecf4;
 }
 html[data-theme='dark'] .concierge-message-assistant {
-  background: #2a3b2a;
-  color: #e0e9d3;
-  border-color: #3c5232;
+  background: #2a323b;
+  color: #d3dde9;
+  border-color: #324152;
 }
 html[data-theme='dark'] .concierge-message-author {
-  color: #b5cc9d;
+  color: #9db3cc;
 }
 html[data-theme='dark'] .concierge-message-user .concierge-message-author {
-  color: #c0d7b0;
+  color: #b0c2d7;
 }
 html[data-theme='dark'] .concierge-activity {
-  color: #b4caa0;
+  color: #a0b4ca;
 }
 html[data-theme='dark'] .concierge-message-error {
   background: #493729;
@@ -505,42 +505,42 @@ html[data-theme='dark'] .concierge-message-error {
   border-color: #795738;
 }
 html[data-theme='dark'] .concierge-working {
-  color: #c1d8aa;
+  color: #aabfd8;
 }
 html[data-theme='dark'] .concierge-compose {
-  background: #202f24;
-  border-color: #354b30;
+  background: #20272f;
+  border-color: #303d4b;
 }
 html[data-theme='dark'] .concierge-input-wrap {
-  background: #17251b;
-  border-color: #4e693f;
+  background: #171e25;
+  border-color: #3f5369;
 }
 html[data-theme='dark'] .concierge-input-wrap:focus-within {
-  border-color: #9dbb7b;
-  box-shadow: 0 0 0 3px #8eaf6b20;
+  border-color: #7b99bb;
+  box-shadow: 0 0 0 3px #6b8baf20;
 }
 html[data-theme='dark'] .concierge-input-wrap.unconfigured {
-  background: #253527;
+  background: #252c35;
 }
 html[data-theme='dark'] .concierge-input-icon {
-  color: #b2cb95;
+  color: #95aecb;
 }
 html[data-theme='dark'] .concierge-input-wrap textarea {
-  color: #e7efdb;
+  color: #dbe4ef;
 }
 html[data-theme='dark'] .concierge-input-wrap textarea::placeholder {
-  color: #afc29b;
+  color: #9badc2;
 }
 html[data-theme='dark'] .concierge-send {
-  background: #bad0a3;
-  color: #28402b;
+  background: #a3b8d0;
+  color: #283340;
 }
 html[data-theme='dark'] .concierge-send:hover:not(:disabled) {
-  background: #d3e2bf;
+  background: #bfcfe2;
 }
 html[data-theme='dark'] .concierge-send:disabled {
-  background: #3b5031;
-  color: #91aa77;
+  background: #313f50;
+  color: #778faa;
 }
 html[data-theme='dark'] .concierge-stop {
   background: #64512f;
@@ -550,7 +550,7 @@ html[data-theme='dark'] .concierge-stop:hover {
   background: #7b6237;
 }
 html[data-theme='dark'] .concierge-compose-hint {
-  color: #aabf93;
+  color: #93a8bf;
 }
 
 @media (max-width: 1100px) {
@@ -744,12 +744,12 @@ html[data-theme='dark'] .concierge-compose-hint {
   cursor: pointer;
 }
 .model-choice.selected {
-  border-color: #5d7853;
-  background: #f0f4e9;
-  box-shadow: inset 0 0 0 1px #5d7853;
+  border-color: #536478;
+  background: #e9eef4;
+  box-shadow: inset 0 0 0 1px #536478;
 }
 .model-choice:focus-within {
-  outline: 2px solid #8c9d72;
+  outline: 2px solid #72869d;
   outline-offset: 3px;
 }
 .model-choice input {
@@ -767,7 +767,7 @@ html[data-theme='dark'] .concierge-compose-hint {
 .model-badge {
   font-size: 10px;
   font-weight: 600;
-  color: #637954;
+  color: #546579;
 }
 .model-choice-check {
   display: grid;
@@ -783,8 +783,8 @@ html[data-theme='dark'] .concierge-compose-hint {
 }
 .selected .model-choice-check {
   color: #fff;
-  background: #526e47;
-  border-color: #526e47;
+  background: #47596e;
+  border-color: #47596e;
 }
 .selected .model-choice-check svg {
   visibility: visible;
@@ -796,7 +796,7 @@ html[data-theme='dark'] .concierge-compose-hint {
 .model-description {
   font-size: 11px;
   line-height: 1.7;
-  color: #78836f;
+  color: #6f7883;
 }
 .custom-model-choice {
   display: flex;
@@ -807,7 +807,7 @@ html[data-theme='dark'] .concierge-compose-hint {
   cursor: pointer;
 }
 .custom-model-choice input {
-  accent-color: #526e47;
+  accent-color: #47596e;
   width: 16px;
   height: 16px;
 }
@@ -820,19 +820,19 @@ html[data-theme='dark'] .concierge-compose-hint {
   cursor: default;
 }
 html[data-theme='dark'] .model-choice {
-  background: #223127;
-  border-color: #3c4e3a;
+  background: #222931;
+  border-color: #3a434e;
 }
 html[data-theme='dark'] .model-choice.selected {
-  background: #2c402a;
-  border-color: #9fb18a;
-  box-shadow: inset 0 0 0 1px #9fb18a;
+  background: #2a3440;
+  border-color: #8a9cb1;
+  box-shadow: inset 0 0 0 1px #8a9cb1;
 }
 html[data-theme='dark'] .model-badge {
-  color: #c2d6a6;
+  color: #a6bcd6;
 }
 html[data-theme='dark'] .model-description {
-  color: #b3c0a6;
+  color: #a6b2c0;
 }
 @media (max-width: 850px) {
   .recommended-models {
@@ -871,7 +871,7 @@ html[data-theme='dark'] .model-description {
 }
 .concierge-feedback {
   margin-top: 16px;
-  color: #6b865d;
+  color: #5d7086;
   font-size: 12px;
   line-height: 1.7;
 }
@@ -882,20 +882,20 @@ html[data-theme='dark'] .model-description {
   font-size: 11px;
   line-height: 1.7;
   margin: 20px 0 0;
-  color: #819174;
+  color: #748291;
 }
 .concierge-usage {
   font-size: 10px;
-  color: #839678;
+  color: #788696;
   margin-top: 14px;
   text-align: right;
 }
 html[data-theme='dark'] .concierge-feedback {
-  color: #b8cc9e;
+  color: #9eb3cc;
 }
 html[data-theme='dark'] .concierge-settings > p.concierge-privacy,
 html[data-theme='dark'] .concierge-usage {
-  color: #b3bfa8;
+  color: #a8b3bf;
 }
 .sidebar {
   overflow-y: auto;

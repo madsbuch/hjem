@@ -12,9 +12,11 @@ async function navigate(
 }
 
 async function openConnection(page: Page) {
-  if (!(await page.locator('.connection-pill:visible').count()))
-    await navigate(page, 'Overview');
-  await page.locator('.connection-pill:visible').click();
+  await navigate(page, 'Settings');
+  await page
+    .locator('main')
+    .getByRole('button', { name: /^(Connect your home|Manage connection)$/ })
+    .click();
   await expect(page.getByRole('dialog')).toBeVisible();
 }
 
@@ -241,9 +243,10 @@ async function connectMock(page: Page) {
     .getByRole('button', { name: 'Connect Home Assistant', exact: true })
     .click();
   await expect(page.getByRole('dialog')).not.toBeVisible();
-  await expect(page.locator('.connection-pill:visible')).toHaveText(
-    'Home connected',
-  );
+  await expect(
+    page.locator('main .setting-row').filter({ hasText: 'Connection' }),
+  ).toContainText('Home connected');
+  await navigate(page, 'Overview');
 }
 
 test('demo lights, keyboard brightness, and temperature controls update their state', async ({
@@ -316,9 +319,10 @@ test('overview keeps moods and music together and device controls on their own p
   page,
 }) => {
   await page.goto('/');
-  await expect(page.locator('.sidebar .connection-pill')).toHaveText(
-    'Demo home',
-  );
+  await expect(
+    page.locator('.home-selector, .connection-pill, .nav-label'),
+  ).toHaveCount(0);
+  await expect(page.getByText('YOUR SPACE', { exact: true })).toHaveCount(0);
   await expect(
     page.getByRole('region', { name: 'Today’s calendar' }),
   ).toBeVisible();
@@ -490,9 +494,7 @@ test('live Home Assistant service calls, events, and offline controls work end t
   );
   await expect(office).not.toBeChecked();
   await page.evaluate(() => (window as any).__ha.disconnect());
-  await expect(page.locator('.sidebar .connection-pill')).toHaveText(
-    'Reconnecting…',
-  );
+  await expect(page.locator('.offline-banner')).toBeVisible();
   await expect(office).toBeDisabled();
   await expect(
     page

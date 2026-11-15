@@ -18,7 +18,7 @@
       "height": 850,
       "minWidth": 360,
       "minHeight": 600,
-      "backgroundColor": "#F6F3E9"
+      "backgroundColor": "#f5f7f9"
     }],
     "security": {
       "csp": {

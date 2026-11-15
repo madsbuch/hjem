@@ -41,7 +41,7 @@ export function useTheme() {
       animationTimer.current = window.setTimeout(() => {
         root.classList.remove('theme-changing');
         animationTimer.current = undefined;
-      }, 300); // Allow the 240 ms CSS fade to finish before restoring hover transitions.
+      }, 900); // Allow the 800 ms CSS fade to finish before restoring hover transitions.
     } else {
       root.classList.remove('theme-changing');
       animationTimer.current = undefined;
@@ -53,7 +53,7 @@ export function useTheme() {
       .querySelector('meta[name="theme-color"]')
       ?.setAttribute(
         'content',
-        resolvedTheme === 'dark' ? '#18231d' : '#214c40',
+        resolvedTheme === 'dark' ? '#181d23' : '#21354c',
       );
   }, [resolvedTheme]);
 
