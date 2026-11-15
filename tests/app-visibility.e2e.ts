@@ -20,14 +20,14 @@ const visibility = (page: Page) => page.getByRole('region', { name: 'App visibil
 const apps = (page: Page) => page.getByRole('region', { name: 'Apps', exact: true });
 const sonosSwitch = (page: Page) => visibility(page).getByRole('switch', { name: 'Show Sonos in launcher', exact: true });
 
-test('hidden installed apps stay out of all launcher views, persist, and restore their pins', async ({ page }) => {
+test('hidden installed apps stay out of search, persist, and return when shown again', async ({ page }) => {
   const savedPins = ['com.sonos.acr2', 'com.example.music'];
   const storage = await nativeStorage(page, { pinnedApps: [{ scope: 'android', packageNames: savedPins }] });
   storage.setAndroidApps(installedApps);
   await page.goto('/');
   await navigate(page, 'Apps');
   await expect(apps(page).getByRole('button', { name: 'Open Sonos', exact: true })).toBeVisible();
-  await expect(apps(page).getByRole('button', { name: 'Unpin Sonos', exact: true })).toBeVisible();
+  await expect(apps(page).getByRole('button', { name: /^(Pin|Unpin) / })).toHaveCount(0);
 
   await navigate(page, 'Settings');
   await expect(sonosSwitch(page)).toBeChecked();
@@ -45,7 +45,6 @@ test('hidden installed apps stay out of all launcher views, persist, and restore
   await apps(page).getByRole('textbox', { name: 'Find an app', exact: true }).fill('Sonos');
   await expect(apps(page).getByRole('button', { name: /^Open / })).toHaveCount(0);
   await apps(page).getByRole('textbox', { name: 'Find an app', exact: true }).fill('');
-  await apps(page).getByRole('button', { name: 'Pinned', exact: true }).click();
   await expect(apps(page).getByRole('button', { name: 'Open Sonos', exact: true })).toHaveCount(0);
   await expect(apps(page).getByRole('button', { name: 'Open Music', exact: true })).toBeVisible();
 
@@ -64,9 +63,8 @@ test('hidden installed apps stay out of all launcher views, persist, and restore
 
   await page.reload();
   await navigate(page, 'Apps');
-  await apps(page).getByRole('button', { name: 'Pinned', exact: true }).click();
   await expect(apps(page).getByRole('button', { name: 'Open Sonos', exact: true })).toBeVisible();
-  await expect(apps(page).getByRole('button', { name: 'Unpin Sonos', exact: true })).toBeVisible();
+  await expect(apps(page).getByRole('button', { name: /^(Pin|Unpin) / })).toHaveCount(0);
   expect(storage.snapshot.pinnedApps).toEqual([{ scope: 'android', packageNames: savedPins }]);
   expect(storage.commands).not.toContain('plugin:launcher|uninstall_app');
   expect(storage.commands).not.toContain('plugin:launcher|launch_app');
@@ -86,7 +84,6 @@ test('failed visibility saves show an error and leave the installed app visible'
   expect(storage.snapshot.hiddenApps).toEqual([]);
   await navigate(page, 'Apps');
   await expect(apps(page).getByRole('button', { name: 'Open Sonos', exact: true })).toBeVisible();
-  await apps(page).getByRole('button', { name: 'Pinned', exact: true }).click();
   await expect(apps(page).getByRole('button', { name: 'Open Sonos', exact: true })).toBeVisible();
 
   await page.reload();
@@ -157,7 +154,6 @@ test('keyboard switches can hide every installed app and restore the empty launc
   await expect(apps(page).getByRole('heading', { name: 'All apps are hidden.', exact: true })).toBeVisible();
   await expect(apps(page).getByRole('button', { name: /^Open / })).toHaveCount(0);
   await expect(apps(page).getByRole('button', { name: 'Refresh apps', exact: true })).toBeEnabled();
-  await apps(page).getByRole('button', { name: 'Pinned', exact: true }).click();
   await expect(apps(page).getByRole('button', { name: /^Open / })).toHaveCount(0);
 
   await navigate(page, 'Settings');
@@ -169,5 +165,5 @@ test('keyboard switches can hide every installed app and restore the empty launc
   await expect(visibility(page).getByText('No apps are hidden.', { exact: true })).toBeVisible();
   await navigate(page, 'Apps');
   await expect(apps(page).getByRole('button', { name: 'Open Sonos', exact: true })).toBeVisible();
-  await expect(apps(page).getByRole('button', { name: 'Unpin Sonos', exact: true })).toBeVisible();
+  await expect(apps(page).getByRole('button', { name: /^(Pin|Unpin) / })).toHaveCount(0);
 });

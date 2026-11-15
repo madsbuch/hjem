@@ -1,4 +1,5 @@
 import type { HassEntity, HassSnapshot } from './home-assistant';
+import type { SceneConfig } from './home-setup-types';
 import { numberAttribute } from './entities';
 
 const actionNumber = (value: unknown): number => {
@@ -21,8 +22,44 @@ const entity = (
   attributes: { friendly_name: name, ...attributes },
 });
 
+const demoResources = [
+  ['light.living_pendant', 'Pendant lights', 'living'],
+  ['light.reading_lamp', 'Reading lamp', 'living'],
+  ['climate.living_room', 'Living room climate', 'living'],
+  ['media_player.speaker', 'Living room speaker', 'living'],
+  ['media_player.kitchen_sonos', 'Kitchen Sonos', 'kitchen'],
+  ['media_player.bedroom_sonos', 'Bedroom Sonos', 'bedroom'],
+  ['light.kitchen', 'Kitchen lights', 'kitchen'],
+  ['switch.coffee', 'Coffee machine', 'kitchen'],
+  ['light.bedside', 'Bedside lamp', 'bedroom'],
+  ['cover.bedroom', 'Bedroom blinds', 'bedroom'],
+  ['sensor.hallway_temperature', 'Hallway temperature', 'hallway'],
+  ['binary_sensor.front_door', 'Front door', 'hallway'],
+];
+
+export const demoSceneConfigs: Record<string, SceneConfig> = Object.fromEntries(
+  [
+    ['good_morning', 'Good morning'],
+    ['cosy_evening', 'Cosy evening'],
+    ['away', 'Heading out'],
+    ['good_night', 'Good night'],
+  ].map(([id, name]) => {
+    const off = id === 'away' || id === 'good_night';
+    return [id, {
+      id,
+      name,
+      entities: Object.fromEntries(demoResources
+        .filter(([entityId]) => entityId.startsWith('light.') || (off && entityId.startsWith('media_player.')))
+        .map(([entityId]) => [entityId, entityId.startsWith('light.')
+          ? { state: off ? 'off' : 'on', ...(off ? {} : { brightness: id === 'cosy_evening' ? 90 : 210 }) }
+          : { state: 'paused' }])),
+    }];
+  }),
+);
+
 export const demoSnapshot: HassSnapshot = {
   locationName: 'Our home',
+  structureStatus: 'ready',
   unitSystem: { temperature: '°C' },
   areas: [
     { area_id: 'living', name: 'Living room' },
@@ -30,24 +67,11 @@ export const demoSnapshot: HassSnapshot = {
     { area_id: 'bedroom', name: 'Bedroom' },
     { area_id: 'hallway', name: 'Hallway' },
   ],
-  devices: [],
-  registry: [
-    ['light.living_pendant', 'living'],
-    ['light.reading_lamp', 'living'],
-    ['climate.living_room', 'living'],
-    ['media_player.speaker', 'living'],
-    ['media_player.kitchen_sonos', 'kitchen'],
-    ['media_player.bedroom_sonos', 'bedroom'],
-    ['light.kitchen', 'kitchen'],
-    ['switch.coffee', 'kitchen'],
-    ['light.bedside', 'bedroom'],
-    ['cover.bedroom', 'bedroom'],
-    ['sensor.hallway_temperature', 'hallway'],
-    ['binary_sensor.front_door', 'hallway'],
-  ].map(([entity_id, area_id]) => ({
+  devices: demoResources.map(([id, name, area_id]) => ({ id: `demo_${id.replace('.', '_')}`, name, area_id })),
+  registry: demoResources.map(([entity_id]) => ({
     entity_id,
-    area_id,
-    device_id: null,
+    area_id: null,
+    device_id: `demo_${entity_id.replace('.', '_')}`,
     ...(entity_id.startsWith('media_player.') ? { platform: 'sonos' } : {}),
   })),
   entities: [
@@ -66,7 +90,10 @@ export const demoSnapshot: HassSnapshot = {
     }),
     entity('light.reading_lamp', 'Reading lamp', 'on', {
       brightness: 115,
-      supported_color_modes: ['brightness'],
+      supported_color_modes: ['color_temp'],
+      color_temp_kelvin: 3000,
+      min_color_temp_kelvin: 2200,
+      max_color_temp_kelvin: 6500,
     }),
     entity('media_player.speaker', 'Living room speaker', 'playing', {
       media_title: 'A slower kind of Sunday',
@@ -117,10 +144,10 @@ export const demoSnapshot: HassSnapshot = {
       temperature: 14,
       temperature_unit: '°C',
     }),
-    entity('scene.good_morning', 'Good morning', 'scening'),
-    entity('scene.cosy_evening', 'Cosy evening', 'scening'),
-    entity('scene.away', 'Heading out', 'scening'),
-    entity('scene.good_night', 'Good night', 'scening'),
+    entity('scene.good_morning', 'Good morning', 'unknown', { id: 'good_morning' }),
+    entity('scene.cosy_evening', 'Cosy evening', 'unknown', { id: 'cosy_evening' }),
+    entity('scene.away', 'Heading out', 'unknown', { id: 'away' }),
+    entity('scene.good_night', 'Good night', 'unknown', { id: 'good_night' }),
   ],
 };
 

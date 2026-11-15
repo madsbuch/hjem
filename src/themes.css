@@ -133,20 +133,6 @@ html[data-theme='dark'] .nav-item.selected {
 html[data-theme='dark'] .nav-item i {
   background: #97adc6;
 }
-html[data-theme='dark'] .connection-card {
-  background: #232a31;
-}
-html[data-theme='dark'] .connection-symbol {
-  color: #a4b5c8;
-}
-html[data-theme='dark'] .connection-card p {
-  color: #aab2bc;
-}
-html[data-theme='dark'] .connection-card button {
-  background: #303842;
-  color: #d8e0e9;
-  border-color: #434f5c;
-}
 html[data-theme='dark'] .connection-pill {
   background: #2b333d;
   color: #aabed4;
@@ -479,9 +465,8 @@ html[data-theme='dark'] .empty-state {
 html[data-theme='dark'] .empty-state h3 {
   color: #c3d1e1;
 }
-html[data-theme='dark'] .offline-banner {
-  background: #443522;
-  color: #e8ca96;
+html[data-theme='dark'] .connection-notice button {
+  color: #bfab8c;
 }
 html[data-theme='dark'] .connection-dialog {
   background: #20272e;
@@ -531,7 +516,7 @@ html[data-theme='dark'] .toast.error {
   border-color: #ad8058;
   color: #fff0df;
 }
-html[data-theme='dark'] .mobile-nav {
+html[data-theme='dark'] .mobile-navigation {
   background: #181d23f2;
   border-top-color: #3a4149;
 }

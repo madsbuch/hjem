@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { isTauri } from '@tauri-apps/api/core';
 import {
   House,
@@ -22,7 +22,6 @@ import {
   Check,
   LoaderCircle,
   SlidersHorizontal,
-  PlugZap,
   ShieldCheck,
   MessageCircle,
   ScanLine,
@@ -35,6 +34,11 @@ import {
   type HassSnapshot,
 } from './lib/home-assistant';
 import { demoSnapshot, applyDemoService } from './lib/demo';
+import { HomeSetupManager } from './lib/home-setup';
+import { DemoHomeSetupTransport } from './lib/demo-home-setup';
+import { isRecord } from './lib/home-assistant-protocol';
+import { SetupHistory } from './components/SetupHistory';
+import './home-setup.css';
 import {
   domainOf,
   isActive,
@@ -110,7 +114,7 @@ export default function App() {
   const launcher = useLauncher();
   const launching = useRef(false);
   const [page, setPage] = useState<Page>('home');
-  const [snapshot, setSnapshot] = useState<HassSnapshot>(() =>
+  const [snapshot, updateSnapshot] = useState<HassSnapshot>(() =>
     storage.connection
       ? {
           entities: [],
@@ -121,6 +125,12 @@ export default function App() {
         }
       : structuredClone(demoSnapshot),
   );
+  const snapshotRef = useRef(snapshot);
+  const setSnapshot = useCallback((value: HassSnapshot | ((current: HassSnapshot) => HassSnapshot)) => {
+    const next = typeof value === 'function' ? value(snapshotRef.current) : value;
+    snapshotRef.current = next;
+    updateSnapshot(next);
+  }, []);
   const [mode, setMode] = useState<'demo' | 'live'>(
     storage.connection ? 'live' : 'demo',
   );
@@ -155,6 +165,31 @@ export default function App() {
   const sessionVersion = useRef(0);
   const formIsBusy = status === 'connecting' || savingConnection;
   const canControl = !formIsBusy && (mode === 'demo' || status === 'connected');
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+  const setupSessionId = `${mode}:${sessionVersion.current}`;
+  const setupClient = mode === 'live' ? client.current : null;
+  const [, refreshSetupHistory] = useState(0);
+  const [setupUiBusy, setSetupUiBusy] = useState(false);
+  const [conciergeDraft, setConciergeDraft] = useState<{ id: number; text: string }>();
+  const draftSequence = useRef(0);
+  const setup = useMemo(() => {
+    const version = sessionVersion.current;
+    const isCurrent = () => sessionVersion.current === version && modeRef.current === mode;
+    const transport = mode === 'demo'
+      ? new DemoHomeSetupTransport({
+          getSnapshot: () => snapshotRef.current,
+          setSnapshot,
+          isCurrent,
+        })
+      : setupClient;
+    return transport ? new HomeSetupManager({
+      transport,
+      demo: mode === 'demo',
+      isCurrent,
+      onChange: () => { if (isCurrent()) refreshSetupHistory((value) => value + 1); },
+    }) : undefined;
+  }, [setupSessionId, mode, setupClient, setSnapshot]);
 
   useEffect(() => {
     if (!launcher.supported) return;
@@ -255,10 +290,7 @@ export default function App() {
   const launcherProps = {
     apps: launcher.apps,
     allAppsHidden: launcher.allApps.length > 0 && launcher.apps.length === 0,
-    pinned: launcher.pinned,
-    onTogglePin: launcher.togglePin,
     onLaunch: (app: LauncherApp) => void openApp(app),
-    onOpenAll: () => navigate('apps'),
     preview: launcher.preview,
     loading: launcher.loading,
     error: launcher.error,
@@ -270,6 +302,10 @@ export default function App() {
     setQuery('');
     setOnlyFavourites(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+  const askConcierge = (text: string) => {
+    setConciergeDraft({ id: ++draftSequence.current, text });
+    navigate('concierge');
   };
   const openConnection = () => {
     setFormError('');
@@ -361,6 +397,16 @@ export default function App() {
     pendingRef.current.add(entity.entity_id);
     setPending(new Set(pendingRef.current));
     try {
+      if (domainOf(entity) === 'scene' && setup) {
+        const result = await setup.activateMood(entity.entity_id);
+        if (sessionVersion.current === version) {
+          const message = isRecord(result) && typeof result.message === 'string'
+            ? result.message
+            : `${nameOf(entity)} requested. Check the devices for the result.`;
+          notify(message, isRecord(result) && result.status === 'partial');
+        }
+        return true;
+      }
       if (mode === 'demo')
         setSnapshot((current) =>
           applyDemoService(
@@ -383,7 +429,7 @@ export default function App() {
       }
       if (sessionVersion.current === version && domainOf(entity) === 'scene')
         notify(
-          `${nameOf(entity)} activated${mode === 'demo' ? ' in your demo home' : ''}.`,
+          `${nameOf(entity)} requested${mode === 'demo' ? ' in your demo home' : ''}.`,
         );
       return true;
     } catch (error) {
@@ -404,7 +450,23 @@ export default function App() {
     appsPreview: launcher.preview,
     action: act,
     launch: launchApp,
+    setup,
   });
+
+  async function undoSetup(changeId: string) {
+    if (!setup || setupUiBusy || concierge.busy || !canControl) return;
+    const version = sessionVersion.current;
+    setSetupUiBusy(true);
+    try {
+      const result = await setup.undo(changeId);
+      if (sessionVersion.current === version)
+        notify(isRecord(result) && typeof result.message === 'string' ? result.message : 'Setup change undone.');
+    } catch (cause) {
+      if (sessionVersion.current === version) notify(errorMessage(cause), true);
+    } finally {
+      setSetupUiBusy(false);
+    }
+  }
 
   const calendar = useCalendar({
     client: client.current,
@@ -421,22 +483,28 @@ export default function App() {
     (entity) =>
       domainOf(entity) === 'scene' &&
       !snapshot.registry.find((reg) => reg.entity_id === entity.entity_id)
-        ?.hidden_by,
+        ?.hidden_by &&
+      !snapshot.registry.find((reg) => reg.entity_id === entity.entity_id)
+        ?.disabled_by,
   );
+  const hasUnassigned = entities.some((entity) => roomFor(entity, snapshot) === null);
   const rooms = [
-    ...snapshot.areas.filter((area) =>
-      entities.some((entity) => roomFor(entity, snapshot) === area.area_id),
-    ),
-    ...(entities.some((entity) => roomFor(entity, snapshot) === 'unassigned')
-      ? [{ area_id: 'unassigned', name: 'Other devices' }]
+    ...snapshot.areas.map((area) => ({ ...area, selection: `area:${area.area_id}` })),
+    ...(hasUnassigned
+      ? [{ area_id: null, selection: 'unassigned', name: 'Other devices' }]
       : []),
   ];
+  useEffect(() => {
+    if ((room === 'unassigned' && !hasUnassigned) ||
+        (room !== 'all' && room !== 'unassigned' && !snapshot.areas.some((area) => `area:${area.area_id}` === room)))
+      setRoom('all');
+  }, [room, snapshot.areas, hasUnassigned]);
   const roomName = (entity: HassEntity) =>
     rooms.find((area) => area.area_id === roomFor(entity, snapshot))?.name ||
     'Other devices';
   const shown = entities.filter(
     (entity) =>
-      (room === 'all' || roomFor(entity, snapshot) === room) &&
+      (room === 'all' || (roomFor(entity, snapshot) === null ? 'unassigned' : `area:${roomFor(entity, snapshot)}`) === room) &&
       (!onlyFavourites || favourites.includes(entity.entity_id)) &&
       `${nameOf(entity)} ${roomName(entity)}`
         .toLowerCase()
@@ -459,6 +527,21 @@ export default function App() {
         : status === 'reconnecting'
           ? 'Reconnecting…'
           : 'Home offline';
+  const needsConnection = mode === 'live' && status !== 'connected';
+  const connectionDescription = connectionMessage ||
+    'Reconnecting to Home Assistant. Controls will be available when your home is back online.';
+  const connectionNotice = needsConnection && (
+    <div className="connection-notice" role="status">
+      <button
+        onClick={openConnection}
+        title={connectionDescription}
+        aria-label={`Connection settings: ${connectionDescription}`}
+      >
+        <WifiOff size={16} aria-hidden="true" />
+        <span>{connectionLabel}</span>
+      </button>
+    </div>
+  );
 
   const renderDevice = (entity: HassEntity) => (
     <DeviceCard
@@ -498,6 +581,8 @@ export default function App() {
         onClick={() => void act(entity, 'turn_on')}
         disabled={
           !canControl ||
+          concierge.busy ||
+          setupUiBusy ||
           pending.has(entity.entity_id) ||
           entity.state === 'unavailable'
         }
@@ -529,53 +614,39 @@ export default function App() {
           </span>
         </button>
         <nav aria-label="Main navigation">
-          {navigation.map(({ id, label, Icon }) => (
+          <div className="sidebar-links">
+            {navigation.filter(({ id }) => id !== 'settings').map(({ id, label, Icon }) => (
+              <button
+                key={id}
+                className={`nav-item ${page === id ? 'selected' : ''}`}
+                aria-label={label}
+                aria-current={page === id ? 'page' : undefined}
+                onClick={() => navigate(id)}
+              >
+                <Icon size={20} strokeWidth={1.8} />
+                <span>{label}</span>
+                {page === id && <i />}
+              </button>
+            ))}
+          </div>
+          <div className="sidebar-footer-actions">
+            <div className="connection-status-slot">{connectionNotice}</div>
             <button
-              key={id}
-              className={`nav-item ${page === id ? 'selected' : ''}`}
-              aria-label={label}
-              aria-current={page === id ? 'page' : undefined}
-              onClick={() => navigate(id)}
+              className={`nav-item nav-settings ${page === 'settings' ? 'selected' : ''}`}
+              aria-label="Settings"
+              aria-current={page === 'settings' ? 'page' : undefined}
+              onClick={() => navigate('settings')}
             >
-              <Icon size={20} strokeWidth={1.8} />
-              <span>{label}</span>
-              {page === id && <i />}
-            </button>
-          ))}
-        </nav>
-        <div className="sidebar-bottom">
-          <div className="connection-card">
-            <span className="connection-symbol">
-              <PlugZap size={23} />
-            </span>
-            <strong>
-              {mode === 'demo' ? 'Make yourself at home.' : 'A connected home.'}
-            </strong>
-            <p>
-              {mode === 'demo'
-                ? 'Bring your devices together with Home Assistant.'
-                : 'Your devices, one peaceful place.'}
-            </p>
-            <button onClick={openConnection}>
-              {mode === 'demo' ? 'Connect your home' : 'Connection settings'}
-              <ArrowRight size={16} />
+              <Settings size={20} strokeWidth={1.8} />
+              <span>Settings</span>
+              {page === 'settings' && <i />}
             </button>
           </div>
-        </div>
+        </nav>
       </aside>
 
       <div className="main-shell">
         <main>
-          {mode === 'live' && status !== 'connected' && (
-            <div className="offline-banner" role="status">
-              <WifiOff size={19} />
-              <span>
-                {connectionMessage ||
-                  'Reconnecting to Home Assistant. Controls will be available when your home is back online.'}
-              </span>
-              <button onClick={openConnection}>Connection settings</button>
-            </div>
-          )}
           {page === 'home' && (
             <>
               <section className="page-intro">
@@ -634,11 +705,16 @@ export default function App() {
                   now={now}
                 />
               </div>
-              {scenes.length > 0 && (
-                <section className="quick-scenes">
+                <section className="quick-scenes" aria-label="Moods">
                   <div className="section-heading">
                     <h2>A whole mood</h2>
+                    <button className="setup-link" onClick={() => askConcierge('Help me set up a mood using the rooms and devices in my home.')}>
+                      <MessageCircle size={16} /> Set up a mood
+                    </button>
                   </div>
+                  {scenes.length === 0 && (
+                    <p className="setup-empty">Make your home feel just right. Concierge can create a mood from your lights and devices.</p>
+                  )}
                   <div className="scenes-grid">
                     {scenes.map((entity, index) => (
                       <SceneButton
@@ -649,13 +725,12 @@ export default function App() {
                     ))}
                   </div>
                 </section>
-              )}
             </>
           )}
 
           {page === 'controls' && (
             <>
-              <section className="page-intro">
+              <section className="page-intro setup-controls-intro">
                 <div>
                   <span className="eyebrow date-label">YOUR DEVICES</span>
                   <h1>Home controls</h1>
@@ -664,7 +739,12 @@ export default function App() {
                     find a device.
                   </p>
                 </div>
-                <span className="count-pill">{rooms.length} rooms</span>
+                <div className="setup-room-actions">
+                  <span className="count-pill">{snapshot.areas.length} rooms</span>
+                  <button className="secondary-button" onClick={() => askConcierge('Help me organize my rooms and the devices assigned to them.')}>
+                    <MessageCircle size={16} /> Organize rooms
+                  </button>
+                </div>
               </section>
               <div className="rooms-grid">
                 {rooms.map((area) => {
@@ -674,12 +754,12 @@ export default function App() {
                   );
                   return (
                     <button
-                      key={area.area_id}
-                      className={`room-card ${room === area.area_id ? 'selected' : ''}`}
+                      key={area.selection}
+                      className={`room-card ${room === area.selection ? 'selected' : ''}`}
                       onClick={() =>
-                        setRoom(room === area.area_id ? 'all' : area.area_id)
+                        setRoom(room === area.selection ? 'all' : area.selection)
                       }
-                      aria-pressed={room === area.area_id}
+                      aria-pressed={room === area.selection}
                     >
                       <Icon size={30} strokeWidth={1.5} />
                       <h2>{area.name}</h2>
@@ -702,7 +782,7 @@ export default function App() {
                   <h2>
                     {room === 'all'
                       ? 'All devices'
-                      : rooms.find((area) => area.area_id === room)?.name}
+                      : rooms.find((area) => area.selection === room)?.name}
                   </h2>
                 </div>
                 <label className="search">
@@ -733,9 +813,9 @@ export default function App() {
                   </button>
                   {rooms.map((area) => (
                     <button
-                      key={area.area_id}
-                      className={room === area.area_id ? 'active' : ''}
-                      onClick={() => setRoom(area.area_id)}
+                      key={area.selection}
+                      className={room === area.selection ? 'active' : ''}
+                      onClick={() => setRoom(area.selection)}
                     >
                       {area.name}
                     </button>
@@ -793,7 +873,7 @@ export default function App() {
                     A PLACE FOR YOUR EVERYDAY
                   </span>
                   <h1>Your apps. Right at home.</h1>
-                  <p>Open an app, or pin it to your favourites.</p>
+                  <p>Find and open your apps.</p>
                 </div>
                 <LayoutGrid
                   className="intro-icon"
@@ -821,6 +901,14 @@ export default function App() {
                 onStop={concierge.stop}
                 onClear={concierge.clear}
                 onOpenSettings={() => navigate('settings')}
+                draftRequest={conciergeDraft}
+                onDraftApplied={(id) => setConciergeDraft((current) => current?.id === id ? undefined : current)}
+              />
+              <SetupHistory
+                changes={setup?.changes() ?? []}
+                demo={mode === 'demo'}
+                disabled={!canControl || concierge.busy || setupUiBusy}
+                onUndo={(id) => void undoSetup(id)}
               />
               {concierge.usage?.cost != null && (
                 <p className="concierge-usage">
@@ -1010,20 +1098,23 @@ export default function App() {
         </main>
       </div>
 
-      <nav className="mobile-nav" aria-label="Mobile navigation">
-        {navigation.map(({ id, label, Icon }) => (
-          <button
-            key={id}
-            className={page === id ? 'selected' : ''}
-            aria-label={label}
-            aria-current={page === id ? 'page' : undefined}
-            onClick={() => navigate(id)}
-          >
-            <Icon size={22} strokeWidth={1.7} />
-            <span>{label}</span>
-          </button>
-        ))}
-      </nav>
+      <div className="mobile-navigation">
+        <div className="connection-status-slot">{connectionNotice}</div>
+        <nav className="mobile-nav" aria-label="Mobile navigation">
+          {navigation.map(({ id, label, Icon }) => (
+            <button
+              key={id}
+              className={page === id ? 'selected' : ''}
+              aria-label={label}
+              aria-current={page === id ? 'page' : undefined}
+              onClick={() => navigate(id)}
+            >
+              <Icon size={22} strokeWidth={1.7} />
+              <span>{label}</span>
+            </button>
+          ))}
+        </nav>
+      </div>
       <dialog
         ref={dialog}
         className="connection-dialog"
@@ -1053,6 +1144,9 @@ export default function App() {
             Connect to Home Assistant to see your rooms, devices, and scenes in
             Hjem.
           </p>
+          {needsConnection && !formError && (
+            <p className="connection-detail">{connectionDescription}</p>
+          )}
           <label className="field-label" htmlFor="server">
             Home Assistant address
           </label>

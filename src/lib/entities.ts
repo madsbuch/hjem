@@ -31,7 +31,7 @@ export const supportsBrightness = (entity: HassEntity) =>
     (mode: unknown) => typeof mode === 'string' && !['onoff', 'unknown'].includes(mode),
   );
 
-export function roomFor(entity: HassEntity, snapshot: HassSnapshot): string {
+export function roomFor(entity: HassEntity, snapshot: HassSnapshot): string | null {
   const registration = snapshot.registry.find(
     (item) => item.entity_id === entity.entity_id,
   );
@@ -39,7 +39,7 @@ export function roomFor(entity: HassEntity, snapshot: HassSnapshot): string {
     registration?.area_id ||
     snapshot.devices.find((device) => device.id === registration?.device_id)
       ?.area_id;
-  return area || 'unassigned';
+  return area || null;
 }
 
 export function visibleEntities(snapshot: HassSnapshot): HassEntity[] {

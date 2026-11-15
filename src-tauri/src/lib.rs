@@ -2,6 +2,7 @@
 
 mod concierge;
 mod database;
+mod home_setup;
 mod schema;
 
 #[tauri::command]
@@ -22,7 +23,9 @@ pub fn run() {
         .manage(database::DatabaseState::default())
         .invoke_handler(tauri::generate_handler![
             qr_scanner_native,
+            home_setup::home_scene_config,
             database::calendar_add_feed,
+            database::calendar_update_feed,
             database::calendar_remove_feed,
             database::calendar_fetch_feed,
             database::storage_load,

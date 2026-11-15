@@ -14,6 +14,24 @@ val tauriProperties = Properties().apply {
     }
 }
 
+// Local release credentials are ignored by Git. CI signs the APK separately.
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = if (keystorePropertiesFile.exists()) {
+    Properties().apply {
+        keystorePropertiesFile.inputStream().use { load(it) }
+        listOf("storeFile", "storePassword", "keyAlias", "keyPassword").forEach { name ->
+            require(!getProperty(name).isNullOrBlank()) {
+                "keystore.properties must define $name"
+            }
+        }
+        require(rootProject.file(getProperty("storeFile")).isFile) {
+            "The storeFile in keystore.properties must point to an existing keystore"
+        }
+    }
+} else {
+    null
+}
+
 android {
     compileSdk = 36
     buildToolsVersion = "36.0.0"
@@ -25,6 +43,16 @@ android {
         targetSdk = 36
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
+    }
+    signingConfigs {
+        keystoreProperties?.let { properties ->
+            create("release") {
+                storeFile = rootProject.file(properties.getProperty("storeFile"))
+                storePassword = properties.getProperty("storePassword")
+                keyAlias = properties.getProperty("keyAlias")
+                keyPassword = properties.getProperty("keyPassword")
+            }
+        }
     }
     buildTypes {
         getByName("debug") {
@@ -40,6 +68,9 @@ android {
             }
         }
         getByName("release") {
+            if (keystoreProperties != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             optimization {
                enable = true
             }

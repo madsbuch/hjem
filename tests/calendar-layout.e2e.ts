@@ -1,14 +1,36 @@
 import { expect, test } from '@playwright/test';
+import { nativeStorage } from './helpers/native-storage';
 
 test.use({ timezoneId: 'Europe/Copenhagen' });
 test('24-hour calendar tracks now and shares the top row with music above full-width moods', async ({
   page,
 }) => {
   await page.clock.install({ time: new Date('2026-11-15T11:00:00Z') });
+  // A connected calendar renders the refresh control, which must not enlarge
+  // only its heading row and push its card below the Music card.
+  const calendarUrl = 'https://calendar.example.test/layout-fixture.ics';
+  const storage = await nativeStorage(page, {
+    calendarFeeds: [{ id: 1, name: 'Layout fixture', url: calendarUrl }],
+  });
+  storage.setFeedResponse(calendarUrl, [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Hjem//Layout fixture//EN',
+    'BEGIN:VEVENT',
+    'UID:layout-fixture',
+    'DTSTAMP:20261101T090000Z',
+    'DTSTART:20261115T113000Z',
+    'DTEND:20261115T123000Z',
+    'SUMMARY:Lunch',
+    'END:VEVENT',
+    'END:VCALENDAR',
+    '',
+  ].join('\r\n'));
   await page.goto('/');
   const calendar = page.getByRole('region', { name: 'Today’s calendar' });
   const music = page.getByRole('region', { name: 'Music controls' });
   const moods = page.locator('.quick-scenes');
+  await expect(calendar.getByRole('button', { name: 'Refresh calendar', exact: true })).toBeVisible();
   await expect(calendar.locator('.calendar-hour')).toHaveCount(25);
   await expect(calendar.locator('.calendar-hour').first()).toHaveText('00:00');
   await expect(calendar.locator('.calendar-hour').last()).toHaveText('24:00');
@@ -23,16 +45,24 @@ test('24-hour calendar tracks now and shares the top row with music above full-w
       .first()
       .evaluate((el) => el.getBoundingClientRect().height),
   );
-  const [c, m, scenes] = await Promise.all([
+  const [c, m, scenes, calendarTitle, musicTitle, agenda, player] = await Promise.all([
     calendar.boundingBox(),
     music.boundingBox(),
     moods.boundingBox(),
+    calendar.getByRole('heading', { name: 'Today’s calendar', exact: true }).boundingBox(),
+    music.getByRole('heading', { name: 'Music', exact: true }).boundingBox(),
+    calendar.locator('.calendar-agenda').boundingBox(),
+    music.locator('.music-player').boundingBox(),
   ]);
   expect(c).not.toBeNull();
   expect(m).not.toBeNull();
   expect(scenes).not.toBeNull();
   if (page.viewportSize()!.width > 700) {
     expect(Math.abs(c!.y - m!.y)).toBeLessThan(2);
+    expect(Math.abs(calendarTitle!.y - musicTitle!.y)).toBeLessThan(1);
+    expect(Math.abs(calendarTitle!.y + calendarTitle!.height - musicTitle!.y - musicTitle!.height)).toBeLessThan(1);
+    expect(Math.abs(agenda!.y - player!.y)).toBeLessThan(1);
+    expect(Math.abs(agenda!.y + agenda!.height - player!.y - player!.height)).toBeLessThan(1);
     expect(c!.x).toBeGreaterThan(m!.x + m!.width);
     expect(scenes!.width).toBeGreaterThan(c!.width * 1.9);
   } else expect(c!.y).toBeGreaterThan(m!.y + m!.height);

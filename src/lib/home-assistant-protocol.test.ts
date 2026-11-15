@@ -64,5 +64,12 @@ describe('Home Assistant protocol decoding', () => {
     expect(() => parseDevices([{ id: 'speaker', area_id: [] }])).toThrow('device area');
     expect(() => parseRegistry([{ entity_id: 'light.a', disabled_by: false }])).toThrow('entity availability');
     expect(() => parseConfig({ unit_system: { temperature: false } })).toThrow('temperature unit');
+    expect(() => parseAreas([{ area_id: 'room', name: 'Room', aliases: [12] }])).toThrow('area alias');
+  });
+
+  it('retains room metadata for undo conflict checks and canonicalizes set order', () => {
+    expect(parseAreas([{ area_id: 'office', name: 'Office', aliases: ['Study', 'Den'], labels: ['work'], floor_id: 'upstairs', icon: 'mdi:desk', picture: null, temperature_entity_id: 'sensor.office', humidity_entity_id: null }])).toEqual([
+      { area_id: 'office', name: 'Office', aliases: ['Den', 'Study'], labels: ['work'], floor_id: 'upstairs', icon: 'mdi:desk', picture: null, temperature_entity_id: 'sensor.office', humidity_entity_id: null },
+    ]);
   });
 });

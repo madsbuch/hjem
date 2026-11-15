@@ -9,6 +9,7 @@
     "core:default",
     "launcher:default",
     "allow-qr-scanner-native",
+    "allow-home-scene-config",
     "allow-concierge-get-settings",
     "allow-concierge-save-settings",
     "allow-concierge-clear-key",
@@ -26,6 +27,7 @@
     "allow-storage-set-selected-speaker",
     "allow-storage-import-legacy",
     "allow-calendar-add-feed",
+    "allow-calendar-update-feed",
     "allow-calendar-remove-feed",
     "allow-calendar-fetch-feed"
   ]

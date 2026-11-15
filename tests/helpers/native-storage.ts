@@ -55,6 +55,16 @@ export async function nativeStorage(
         const feed = { id: nextFeedId++, name: raw.name, url: raw.url };
         snapshot = parseStorageSnapshot({ ...snapshot, calendarFeeds: [...snapshot.calendarFeeds, feed] });
         return structuredClone(feed);
+      } else if (command === 'calendar_update_feed') {
+        if (typeof raw.id !== 'number' || typeof raw.name !== 'string' || typeof raw.url !== 'string')
+          throw new Error('Missing calendar details');
+        if (!snapshot.calendarFeeds.some((feed) => feed.id === raw.id))
+          throw new Error('This calendar subscription no longer exists.');
+        if (snapshot.calendarFeeds.some((feed) => feed.id !== raw.id && feed.url === raw.url))
+          throw new Error('This calendar link is already added.');
+        const feed = { id: raw.id, name: raw.name, url: raw.url };
+        snapshot = parseStorageSnapshot({ ...snapshot, calendarFeeds: snapshot.calendarFeeds.map((item) => item.id === feed.id ? feed : item) });
+        return structuredClone(feed);
       } else if (command === 'calendar_remove_feed') {
         if (typeof raw.id !== 'number') throw new Error('Missing calendar ID');
         snapshot = { ...snapshot, calendarFeeds: snapshot.calendarFeeds.filter((feed) => feed.id !== raw.id) };

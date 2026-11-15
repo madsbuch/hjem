@@ -134,3 +134,80 @@ test('reports a failed calendar save without claiming the link was added', async
   await expect(page.getByText('Sample events', { exact: true })).toBeVisible();
   expect(await page.evaluate(() => JSON.stringify(Object.entries(localStorage)))).not.toContain(familyUrl);
 });
+
+test('shows full calendar URLs and edits the saved name and link in place', async ({ page }) => {
+  const storage = await nativeStorage(page, { calendarFeeds: [{ id: 7, name: 'Family', url: familyUrl }] });
+  storage.setFeedResponse(familyUrl, calendar('old', 'Old calendar event'));
+  storage.setFeedResponse(workUrl, calendar('new', 'New calendar event'));
+  await page.goto('/');
+  await navigate(page, 'Settings');
+  const settings = page.getByRole('region', { name: 'Calendars', exact: true });
+  const url = settings.getByLabel('iCal / ICS link', { exact: true });
+  await expect(url).toHaveAttribute('type', 'url');
+  await expect(settings.getByText(familyUrl, { exact: true })).toBeVisible();
+  await settings.getByRole('button', { name: 'Edit Family calendar', exact: true }).click();
+  await expect(url).toHaveValue(familyUrl);
+  await settings.getByLabel('Calendar name', { exact: true }).fill('Updated family');
+  await url.fill(workUrl);
+  await settings.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(settings.getByRole('status')).toContainText('Calendar updated.');
+  await expect(settings.getByText(workUrl, { exact: true })).toBeVisible();
+  await expect(settings.getByText(familyUrl, { exact: true })).toHaveCount(0);
+  expect(storage.snapshot.calendarFeeds).toEqual([{ id: 7, name: 'Updated family', url: workUrl }]);
+  await navigate(page, 'Overview');
+  await expect(page.getByRole('article', { name: /^New calendar event,/ })).toBeVisible();
+  await expect(page.getByRole('article', { name: /^Old calendar event,/ })).toHaveCount(0);
+  await page.reload();
+  await navigate(page, 'Settings');
+  await settings.getByRole('button', { name: 'Edit Updated family calendar', exact: true }).click();
+  await expect(url).toHaveValue(workUrl);
+  await expect(settings.getByLabel('Calendar name', { exact: true })).toHaveValue('Updated family');
+  const width = await page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth }));
+  expect(width.document).toBeLessThanOrEqual(width.viewport);
+});
+
+test('cancelled, duplicate and failed calendar edits preserve the existing subscription', async ({ page }) => {
+  const initial = [{ id: 7, name: 'Family', url: familyUrl }, { id: 8, name: 'Work', url: workUrl }];
+  const storage = await nativeStorage(page, { calendarFeeds: initial });
+  await page.goto('/');
+  await navigate(page, 'Settings');
+  const settings = page.getByRole('region', { name: 'Calendars', exact: true });
+  const url = settings.getByLabel('iCal / ICS link', { exact: true });
+  await settings.getByRole('button', { name: 'Edit Family calendar', exact: true }).click();
+  await url.fill('https://calendar.example.test/cancelled.ics');
+  await settings.getByRole('button', { name: 'Cancel edit', exact: true }).click();
+  expect(storage.snapshot.calendarFeeds).toEqual(initial);
+  await settings.getByRole('button', { name: 'Edit Family calendar', exact: true }).click();
+  await expect(url).toHaveValue(familyUrl);
+  await url.fill(workUrl);
+  await settings.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(settings.getByRole('alert')).toContainText('already added');
+  expect(storage.snapshot.calendarFeeds).toEqual(initial);
+  storage.fail('calendar_update_feed');
+  await url.fill('https://calendar.example.test/replacement.ics');
+  await settings.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(settings.getByRole('alert')).toContainText('Could not save settings');
+  await expect(url).toHaveValue('https://calendar.example.test/replacement.ics');
+  await expect(settings.getByRole('button', { name: 'Edit Family calendar', exact: true })).toBeVisible();
+  expect(storage.snapshot.calendarFeeds).toEqual(initial);
+  await page.reload();
+  await navigate(page, 'Settings');
+  await expect(settings.getByText(familyUrl, { exact: true })).toBeVisible();
+});
+
+test('browser calendar editing replaces the existing feed without duplicates', async ({ page }) => {
+  await page.route('https://calendar.example.test/**', async (route) => {
+    await route.fulfill({ contentType: 'text/calendar', headers: { 'access-control-allow-origin': '*' }, body: calendar('browser', 'Browser calendar event') });
+  });
+  await page.goto('/');
+  await navigate(page, 'Settings');
+  await addLink(page, 'Family', familyUrl);
+  const settings = page.getByRole('region', { name: 'Calendars', exact: true });
+  await settings.getByRole('button', { name: 'Edit Family calendar', exact: true }).click();
+  await settings.getByLabel('Calendar name', { exact: true }).fill('Work');
+  await settings.getByLabel('iCal / ICS link', { exact: true }).fill(workUrl);
+  await settings.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await expect(settings.locator('.calendar-feed-list li')).toHaveCount(1);
+  await expect(settings.getByRole('button', { name: 'Edit Work calendar', exact: true })).toBeVisible();
+  await expect(settings.getByText(workUrl, { exact: true })).toBeVisible();
+});

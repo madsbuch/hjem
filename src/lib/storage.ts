@@ -351,3 +351,26 @@ export const removeCalendarFeed = (id: number) =>
     ...current,
     calendarFeeds: current.calendarFeeds.filter((feed) => feed.id !== id),
   }));
+
+export async function updateCalendarFeed(id: number, name: string, input: string): Promise<void> {
+  const url = normalizeCalendarUrl(input);
+  const trimmed = name.trim();
+  if (!Number.isSafeInteger(id) || id <= 0)
+    throw new Error('Choose a saved calendar to edit.');
+  if (!trimmed || trimmed.length > 100)
+    throw new Error('Enter a calendar name of up to 100 characters.');
+  const operation = writes.catch(() => {}).then(async () => {
+    if (!snapshot.calendarFeeds.some((feed) => feed.id === id))
+      throw new Error('This calendar subscription no longer exists.');
+    if (snapshot.calendarFeeds.some((feed) => feed.id !== id && feed.url === url))
+      throw new Error('This calendar link is already added.');
+    const feed = isTauri()
+      ? parseFeed(await nativeStorage('calendar_update_feed', { id, name: trimmed, url }))
+      : { id, name: trimmed, url };
+    if (feed.id !== id) throw new Error('The saved calendar could not be confirmed. Reload Settings before trying again.');
+    snapshot = { ...snapshot, calendarFeeds: snapshot.calendarFeeds.map((current) => current.id === id ? feed : current) };
+    emit();
+  });
+  writes = operation;
+  return operation;
+}

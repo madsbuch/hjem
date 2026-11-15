@@ -9,7 +9,6 @@ import {
   ArrowRight,
   ArrowUp,
   CircleAlert,
-  Grid2X2,
   Lightbulb,
   LoaderCircle,
   MessageCircle,
@@ -39,13 +38,15 @@ export interface ConciergeChatProps {
   onStop: () => void;
   onClear: () => void;
   onOpenSettings: () => void;
+  draftRequest?: { id: number; text: string };
+  onDraftApplied?: (id: number) => void;
 }
 
 const suggestions = [
   { text: 'Which lights are on?', Icon: Lightbulb },
-  { text: 'Make the living room cosy', Icon: Sofa },
+  { text: 'Set up a cosy evening mood', Icon: Sofa },
   { text: 'What is playing on Sonos?', Icon: Music2 },
-  { text: 'Open my music app', Icon: Grid2X2 },
+  { text: 'Help me organize my rooms and devices', Icon: Wrench },
 ];
 
 export function ConciergeChat({
@@ -59,12 +60,23 @@ export function ConciergeChat({
   onStop,
   onClear,
   onOpenSettings,
+  draftRequest,
+  onDraftApplied,
 }: ConciergeChatProps) {
   const [draft, setDraft] = useState('');
   const input = useRef<HTMLTextAreaElement>(null);
   const newest = useRef<HTMLDivElement>(null);
+  const appliedDraft = useRef<number | undefined>(undefined);
   const canSend =
     configured && !busy && !settingsPending && draft.trim().length > 0;
+
+  useEffect(() => {
+    if (!draftRequest || !configured || busy || appliedDraft.current === draftRequest.id) return;
+    appliedDraft.current = draftRequest.id;
+    setDraft(draftRequest.text);
+    input.current?.focus();
+    onDraftApplied?.(draftRequest.id);
+  }, [draftRequest, configured, busy, onDraftApplied]);
 
   useEffect(() => {
     if (!input.current) return;
@@ -192,8 +204,8 @@ export function ConciergeChat({
               </h2>
               <p>
                 {configured
-                  ? 'Ask a question, make a little adjustment, or find the app you need.'
-                  : 'Set up Home Concierge to ask about your devices, control your home, and open your apps.'}
+                  ? 'Organize your rooms, set up a mood, or ask for a little adjustment.'
+                  : 'Set up Home Concierge to organize rooms, create moods, control devices, and open your apps.'}
               </p>
               {configured && (
                 <div className="concierge-suggestions">

@@ -372,6 +372,7 @@ html[data-theme='dark'] .calendar-now > i {
 
 .home-overview-grid {
   --day-height: 480px;
+  --overview-card-height: 262px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 24px;
@@ -382,9 +383,18 @@ html[data-theme='dark'] .calendar-now > i {
   min-width: 0;
   margin: 0;
 }
-.home-overview-grid .home-music {
+.home-overview-grid > .home-music,
+.home-overview-grid > .today-calendar {
   display: flex;
   flex-direction: column;
+}
+/* Calendar actions must not shift its card below the neighboring player. */
+.home-overview-grid > section > .section-heading {
+  min-height: 32px;
+  flex-shrink: 0;
+}
+.home-overview-grid > section > .section-heading h2 {
+  line-height: 20px;
 }
 .home-overview-grid .calendar-time-block {
   padding-top: 3px;
@@ -395,7 +405,8 @@ html[data-theme='dark'] .calendar-now > i {
   padding-bottom: 1px;
 }
 .home-overview-grid .home-section-empty {
-  flex: 1;
+  height: var(--overview-card-height);
+  flex-shrink: 0;
   display: flex;
   align-items: center;
 }
@@ -407,7 +418,8 @@ html[data-theme='dark'] .calendar-now > i {
   }
 }
 .home-overview-grid .calendar-agenda {
-  height: 262px;
+  height: var(--overview-card-height);
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
 }
@@ -442,7 +454,8 @@ html[data-theme='dark'] .calendar-now > i {
 }
 /* A single player keeps controls in place while its speaker changes. */
 .music-player {
-  height: 262px;
+  height: var(--overview-card-height, 262px);
+  flex-shrink: 0;
   min-width: 0;
   display: flex;
   flex-direction: column;

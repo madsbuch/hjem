@@ -290,6 +290,22 @@ impl Database {
         self.connection.transaction(read_snapshot)
     }
 
+    pub(crate) fn scene_connection(&mut self, expected_server: &str) -> Result<(String, String)> {
+        let (server, token) = saved_connection::table
+            .find(1)
+            .select((saved_connection::server_url, saved_connection::token))
+            .first::<(String, Option<String>)>(&mut self.connection)?;
+        if server != expected_server || normalize_server(&server)? != server {
+            return Err(error(
+                "The saved home connection changed. Reconnect before managing moods.",
+            ));
+        }
+        let token = token
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| error("Connect Home Assistant in Settings before managing moods."))?;
+        Ok((server, token))
+    }
+
     fn set_app_hidden(
         &mut self,
         scope: AppScope,
@@ -319,10 +335,7 @@ impl Database {
     }
 
     fn add_calendar_feed(&mut self, name: String, url: String) -> Result<CalendarFeed> {
-        let name = name.trim();
-        if name.is_empty() || name.len() > 120 || name.chars().any(char::is_control) {
-            return Err(error("Give this calendar a name of 1–120 characters."));
-        }
+        let name = validate_calendar_name(&name)?;
         let url = normalize_calendar_url(&url)?;
         self.connection.transaction(|connection| {
             let count = calendar_feeds::table
@@ -347,6 +360,40 @@ impl Database {
                 .execute(connection)?;
             Ok(calendar_feeds::table
                 .filter(calendar_feeds::url.eq(&url))
+                .select(CalendarFeed::as_select())
+                .first(connection)?)
+        })
+    }
+
+    fn update_calendar_feed(&mut self, id: i32, name: String, url: String) -> Result<CalendarFeed> {
+        validate_calendar_id(id)?;
+        let name = validate_calendar_name(&name)?;
+        let url = normalize_calendar_url(&url)?;
+        self.connection.transaction(|connection| {
+            if calendar_feeds::table
+                .find(id)
+                .select(calendar_feeds::id)
+                .first::<i32>(connection)
+                .optional()?
+                .is_none()
+            {
+                return Err(error("This calendar subscription no longer exists."));
+            }
+            if calendar_feeds::table
+                .filter(calendar_feeds::url.eq(&url))
+                .filter(calendar_feeds::id.ne(id))
+                .select(calendar_feeds::id)
+                .first::<i32>(connection)
+                .optional()?
+                .is_some()
+            {
+                return Err(error("This calendar link is already subscribed."));
+            }
+            diesel::update(calendar_feeds::table.find(id))
+                .set((calendar_feeds::name.eq(name), calendar_feeds::url.eq(&url)))
+                .execute(connection)?;
+            Ok(calendar_feeds::table
+                .find(id)
                 .select(CalendarFeed::as_select())
                 .first(connection)?)
         })
@@ -826,6 +873,14 @@ fn validate_calendar_id(id: i32) -> Result<()> {
     }
 }
 
+fn validate_calendar_name(name: &str) -> Result<&str> {
+    let name = name.trim();
+    if name.is_empty() || name.len() > 120 || name.chars().any(char::is_control) {
+        return Err(error("Give this calendar a name of 1–120 characters."));
+    }
+    Ok(name)
+}
+
 fn calendar_url_allowed(url: &reqwest::Url) -> bool {
     matches!(url.scheme(), "http" | "https")
         && url.host_str().is_some()
@@ -892,6 +947,19 @@ pub fn calendar_add_feed(
 }
 
 #[tauri::command]
+pub fn calendar_update_feed(
+    app: AppHandle,
+    state: State<'_, DatabaseState>,
+    id: i32,
+    name: String,
+    url: String,
+) -> std::result::Result<CalendarFeed, String> {
+    with_database(&app, &state, |database| {
+        database.update_calendar_feed(id, name, url)
+    })
+}
+
+#[tauri::command]
 pub fn calendar_remove_feed(
     app: AppHandle,
     state: State<'_, DatabaseState>,
@@ -915,7 +983,7 @@ async fn fetch_calendar(url: &str) -> std::result::Result<String, String> {
     // or private subscription links, which often contain access tokens.
     let url = normalize_calendar_url(url).map_err(|failure| failure.to_string())?;
     let response = calendar_client()?
-        .get(url)
+        .get(url.as_str())
         .header(
             reqwest::header::ACCEPT,
             "text/calendar, text/plain;q=0.9, */*;q=0.1",
@@ -931,12 +999,7 @@ async fn fetch_calendar(url: &str) -> std::result::Result<String, String> {
             .to_owned()
         })?;
     if !response.status().is_success() {
-        return Err(match response.status().as_u16() {
-            401 | 403 => "This calendar link is not authorized. Use a private subscription link from your calendar provider.",
-            404 | 410 => "This calendar link no longer exists. Check the subscription link.",
-            429 => "This calendar is temporarily rate limited. Please try again shortly.",
-            _ => "This calendar could not be loaded. Please try again shortly.",
-        }.into());
+        return Err(calendar_status_error(response.status().as_u16(), &url));
     }
     if response
         .content_length()
@@ -956,11 +1019,82 @@ async fn fetch_calendar(url: &str) -> std::result::Result<String, String> {
     String::from_utf8(bytes).map_err(|_| "This calendar is not valid UTF-8 text.".into())
 }
 
+fn calendar_status_error(status: u16, address: &str) -> String {
+    let google_public = reqwest::Url::parse(address).is_ok_and(|url| {
+        url.host_str() == Some("calendar.google.com")
+            && url.path().starts_with("/calendar/ical/")
+            && url.path().contains("/public/")
+            && url.path().ends_with(".ics")
+    });
+    if matches!(status, 401 | 403 | 404 | 410) && google_public {
+        return "This Google Calendar public link is not accessible. The calendar may not be shared publicly, or the address may be incorrect. In Google Calendar → Settings → select the calendar → Integrate calendar, copy “Secret address in iCal format” instead.".into();
+    }
+    match status {
+        401 | 403 => "This calendar link is not authorized. Use the calendar’s private iCal/ICS subscription address.".into(),
+        404 | 410 => format!("This calendar link is unavailable (HTTP {status}). Check its iCal/ICS subscription address and sharing settings."),
+        429 => "This calendar is temporarily rate limited. Please try again shortly.".into(),
+        _ => "The calendar provider could not supply this calendar. Please try again shortly.".into(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use diesel::migration::MigrationSource;
     use serde_json::json;
+
+    #[test]
+    fn calendar_http_errors_explain_public_google_access_without_exposing_links() {
+        let public = "https://calendar.google.com/calendar/ical/fixture%40group.calendar.google.com/public/basic.ics";
+        for status in [401, 403, 404, 410] {
+            let message = calendar_status_error(status, public);
+            assert!(message.contains("may not be shared publicly"));
+            assert!(message.contains("Secret address in iCal format"));
+            assert!(!message.contains("fixture"));
+        }
+        let missing = calendar_status_error(
+            404,
+            "https://calendar.example/private-fixture-token/basic.ics",
+        );
+        assert!(missing.contains("unavailable (HTTP 404)"));
+        assert!(!missing.contains("no longer exists"));
+        assert!(!missing.contains("private-fixture-token"));
+        let spoofed = calendar_status_error(
+            404,
+            "https://calendar.google.com.example/calendar/ical/fixture/public/basic.ics",
+        );
+        assert!(!spoofed.contains("Google"));
+        assert!(calendar_status_error(429, public).contains("rate limited"));
+        assert!(calendar_status_error(500, public).contains("provider could not supply"));
+    }
+
+    #[test]
+    fn scene_transport_only_uses_the_current_saved_home() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut database = Database::open(
+            &directory.path().join("hjem.sqlite3"),
+            &directory.path().join("missing.json"),
+        )
+        .unwrap();
+        database
+            .save_connection(SavedConnection {
+                server_url: "https://home.example".into(),
+                token: "fixture-secret".into(),
+            })
+            .unwrap();
+        assert_eq!(
+            database.scene_connection("https://home.example").unwrap(),
+            ("https://home.example".into(), "fixture-secret".into())
+        );
+        let error = database
+            .scene_connection("https://different.example")
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("connection changed"));
+        assert!(!error.contains("fixture-secret"));
+        database.clear_connection().unwrap();
+        assert!(database.scene_connection("https://home.example").is_err());
+    }
 
     #[test]
     fn hidden_apps_survive_restart_without_changing_pins_or_requiring_installation() {
@@ -1190,6 +1324,88 @@ mod tests {
             )
             .unwrap();
         assert_eq!(database.snapshot().unwrap().calendar_feeds.len(), 1);
+    }
+
+    #[test]
+    fn calendar_edit_preserves_identity_and_survives_restart() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("hjem.sqlite3");
+        let legacy = directory.path().join("missing.json");
+        let mut database = Database::open(&path, &legacy).unwrap();
+        let feed = database
+            .add_calendar_feed(
+                "Family".into(),
+                "https://calendar.example/original.ics".into(),
+            )
+            .unwrap();
+        let updated = database
+            .update_calendar_feed(
+                feed.id,
+                " Family plans ".into(),
+                "webcal://calendar.example/replacement.ics".into(),
+            )
+            .unwrap();
+        assert_eq!(updated.id, feed.id);
+        assert_eq!(updated.name, "Family plans");
+        assert_eq!(updated.url, "https://calendar.example/replacement.ics");
+        // Keeping an existing URL while renaming is allowed.
+        database
+            .update_calendar_feed(feed.id, "Family schedule".into(), updated.url.clone())
+            .unwrap();
+        drop(database);
+        let mut reopened = Database::open(&path, &legacy).unwrap();
+        let feeds = reopened.snapshot().unwrap().calendar_feeds;
+        assert_eq!(feeds.len(), 1);
+        assert_eq!(feeds[0].id, feed.id);
+        assert_eq!(feeds[0].name, "Family schedule");
+        assert_eq!(feeds[0].url, updated.url);
+    }
+
+    #[test]
+    fn failed_calendar_edits_leave_the_original_subscription_unchanged() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut database = Database::open(
+            &directory.path().join("hjem.sqlite3"),
+            &directory.path().join("missing.json"),
+        )
+        .unwrap();
+        let original = database
+            .add_calendar_feed(
+                "Family".into(),
+                "https://calendar.example/family.ics".into(),
+            )
+            .unwrap();
+        let other = database
+            .add_calendar_feed("Work".into(), "https://calendar.example/work.ics".into())
+            .unwrap();
+        assert!(database
+            .update_calendar_feed(original.id, "Updated".into(), other.url)
+            .is_err());
+        assert!(database
+            .update_calendar_feed(
+                original.id,
+                " ".into(),
+                "https://calendar.example/changed.ics".into()
+            )
+            .is_err());
+        assert!(database
+            .update_calendar_feed(original.id, "Updated".into(), "file:///invalid.ics".into())
+            .is_err());
+        assert!(database
+            .update_calendar_feed(
+                999,
+                "Unknown".into(),
+                "https://calendar.example/unknown.ics".into()
+            )
+            .err()
+            .unwrap()
+            .to_string()
+            .contains("no longer exists"));
+        let feeds = database.snapshot().unwrap().calendar_feeds;
+        assert_eq!(feeds.len(), 2);
+        let unchanged = feeds.iter().find(|feed| feed.id == original.id).unwrap();
+        assert_eq!(unchanged.name, original.name);
+        assert_eq!(unchanged.url, original.url);
     }
 
     #[test]

@@ -1,4 +1,5 @@
 node_modules/
+.signing/
 src-tauri/plugins/**/android/.tauri/
 dist/
 .DS_Store

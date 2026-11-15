@@ -6,6 +6,7 @@ import {
   type CalendarRange,
 } from './calendar-feed-types';
 import type { HassCalendarEvent } from './calendar';
+import { downloadCalendarText } from './calendar-download';
 
 export async function loadCalendarFeed(
   feed: CalendarFeed,
@@ -28,39 +29,7 @@ export async function loadCalendarFeed(
       );
     }
   } else {
-    try {
-      const response = await fetch(feed.url, {
-        signal: AbortSignal.timeout(30_000),
-        credentials: 'omit',
-        referrerPolicy: 'no-referrer',
-      });
-      if (!response.ok || !response.body)
-        throw new Error('Could not download calendar.');
-      const reader = response.body.getReader();
-      const chunks: Uint8Array[] = [];
-      let size = 0;
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        size += value.byteLength;
-        if (size > 2 * 1024 * 1024) {
-          await reader.cancel();
-          throw new Error('Calendar too large.');
-        }
-        chunks.push(value);
-      }
-      const combined = new Uint8Array(size);
-      let offset = 0;
-      for (const chunk of chunks) {
-        combined.set(chunk, offset);
-        offset += chunk.length;
-      }
-      text = new TextDecoder('utf-8', { fatal: true }).decode(combined);
-    } catch {
-      throw new Error(
-        'This link could not be read in the browser preview. Try it in the installed Hjem app, where calendar links do not require browser sharing permissions.',
-      );
-    }
+    text = await downloadCalendarText(feed.url);
   }
   return new Promise((resolve, reject) => {
     const worker = new Worker(

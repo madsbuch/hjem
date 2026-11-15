@@ -4,7 +4,7 @@ import {
   listInstalledApps,
   type LauncherApp,
 } from './launcher';
-import { savePinnedApps, setAppHidden, useStorage } from './storage';
+import { setAppHidden, useStorage } from './storage';
 
 const sampleApps: LauncherApp[] = [
   { packageName: 'preview.sonos', name: 'Sonos' },
@@ -24,10 +24,8 @@ export function useLauncher() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const generation = useRef(0);
-  const pinScope = preview ? 'demo' : 'android';
-  const pinned = storage.pinnedApps.find((item) => item.scope === pinScope)?.packageNames
-    ?? apps.slice(0, 6).map((app) => app.packageName);
-  const hidden = storage.hiddenApps.find((item) => item.scope === pinScope)?.packageNames ?? [];
+  const appScope = preview ? 'demo' : 'android';
+  const hidden = storage.hiddenApps.find((item) => item.scope === appScope)?.packageNames ?? [];
 
   const refresh = useCallback(async () => {
     const current = ++generation.current;
@@ -70,25 +68,16 @@ export function useLauncher() {
     };
   }, [refresh]);
 
-  const togglePin = (id: string) => {
-    const next = pinned.includes(id) ? pinned.filter((item) => item !== id) : [...pinned, id];
-    void savePinnedApps(pinScope, next).catch((cause: unknown) => {
-      setError(cause instanceof Error ? cause.message : 'Could not save pinned apps.');
-    });
-  };
-
   return {
     apps: apps.filter((app) => !hidden.includes(app.packageName)),
     allApps: apps,
     hidden,
-    setHidden: (packageName: string, value: boolean) => setAppHidden(pinScope, packageName, value),
-    pinned,
+    setHidden: (packageName: string, value: boolean) => setAppHidden(appScope, packageName, value),
     preview,
     supported,
     isDefaultHome,
     loading,
     error,
     refresh,
-    togglePin,
   };
 }

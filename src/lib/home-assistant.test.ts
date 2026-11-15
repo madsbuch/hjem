@@ -134,6 +134,71 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+describe('Home Assistant setup transport', () => {
+  it('retains registry data and marks a failed refresh unavailable instead of inventing an empty home', async () => {
+    const { client, connection, socket } = setup();
+    await authenticate(socket);
+    await initialSnapshot(socket);
+    await connection;
+    expect(client.getSnapshot().structureStatus).toBe('ready');
+    const refresh = client.refreshStructure();
+    const rejected = expect(refresh).rejects.toThrow('permissions');
+    socket.answer('config/area_registry/list', 'Permission denied', false);
+    socket.answer('config/device_registry/list', []);
+    socket.answer('config/entity_registry/list', []);
+    await rejected;
+    expect(client.getSnapshot().structureStatus).toBe('unavailable');
+    expect(client.getSnapshot().areas).toEqual([{ area_id: 'kitchen', name: 'Kitchen' }]);
+  });
+
+  it('uses fixed registry commands and refreshes rooms when Home Assistant publishes a registry event', async () => {
+    const { client, connection, socket } = setup();
+    await authenticate(socket);
+    await initialSnapshot(socket);
+    await connection;
+    const creation = client.createArea('Office');
+    socket.answer('config/area_registry/create', { area_id: 'office', name: 'Office' });
+    expect(await creation).toEqual({ area_id: 'office', name: 'Office' });
+    const move = client.assignDeviceArea('device1', 'office');
+    expect(socket.sent.at(-1)).toMatchObject({ type: 'config/device_registry/update', device_id: 'device1', area_id: 'office' });
+    socket.answer('config/device_registry/update', { id: 'device1', area_id: 'office' });
+    await move;
+    const subscription = required(socket.sent.find((request) => request.event_type === 'device_registry_updated'));
+    socket.receive({ type: 'event', id: subscription.id, event: { event_type: 'device_registry_updated', data: { action: 'update', device_id: 'device1' } } });
+    await vi.advanceTimersByTimeAsync(100);
+    socket.answer('config/area_registry/list', [{ area_id: 'office', name: 'Office' }]);
+    socket.answer('config/device_registry/list', [{ id: 'device1', name: 'Desk lamp', area_id: 'office' }]);
+    socket.answer('config/entity_registry/list', [{ entity_id: 'light.kitchen', area_id: null, device_id: 'device1' }]);
+    await flush();
+    expect(client.getSnapshot().devices).toContainEqual({ id: 'device1', name: 'Desk lamp', area_id: 'office' });
+    expect(client.getSnapshot().areas).toEqual([{ area_id: 'office', name: 'Office' }]);
+  });
+
+  it('does not publish refreshes from a replaced connection', async () => {
+    const { client, connection, socket, snapshots } = setup();
+    await authenticate(socket);
+    await initialSnapshot(socket);
+    await connection;
+    const refresh = client.refreshStructure();
+    const rejection = expect(refresh).rejects.toThrow('connection changed');
+    client.disconnect();
+    const count = snapshots.length;
+    await rejection;
+    expect(snapshots).toHaveLength(count);
+  });
+
+  it('replays state events arriving during a state refresh', async () => {
+    const { client, connection, socket } = setup();
+    await authenticate(socket);
+    await initialSnapshot(socket);
+    await connection;
+    const refresh = client.refreshStates();
+    socket.state('light.kitchen', entity('on', '2026-11-15T09:00:02Z'));
+    socket.answer('get_states', [entity('off', '2026-11-15T09:00:01Z')]);
+    expect((await refresh).entities[0].state).toBe('on');
+  });
+});
+
 describe('Home Assistant connection', () => {
   it('retries an offline saved session until its first successful connection', async () => {
     const { connection, socket, onStatus } = setup({ retryInitial: true });

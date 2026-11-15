@@ -1,7 +1,10 @@
 import { parseCalendarEvents, type HassCalendarEvent } from './calendar';
+import { parseSceneConfig, requestSceneConfig, SceneRequestError } from './home-assistant-scenes';
+import type { HomeSetupTransport, SceneConfig } from './home-setup-types';
 import {
   HomeAssistantProtocolError,
   isEntityId,
+  isRecord,
   parseAreas,
   parseConfig,
   parseDevices,
@@ -24,10 +27,21 @@ export interface HassEntity {
 export interface HassArea {
   area_id: string;
   name: string;
+  aliases?: string[];
+  labels?: string[];
+  floor_id?: string | null;
+  icon?: string | null;
+  picture?: string | null;
+  temperature_entity_id?: string | null;
+  humidity_entity_id?: string | null;
 }
 export interface HassDevice {
   id: string;
   area_id: string | null;
+  name?: string | null;
+  name_by_user?: string | null;
+  manufacturer?: string | null;
+  model?: string | null;
 }
 export interface HassEntityRegistryEntry {
   entity_id: string;
@@ -36,6 +50,8 @@ export interface HassEntityRegistryEntry {
   device_id: string | null;
   hidden_by?: string | null;
   disabled_by?: string | null;
+  name?: string | null;
+  original_name?: string | null;
 }
 export interface HassSnapshot {
   entities: HassEntity[];
@@ -44,6 +60,8 @@ export interface HassSnapshot {
   registry: HassEntityRegistryEntry[];
   locationName: string;
   unitSystem?: { temperature: string };
+  structureStatus?: 'ready' | 'unavailable';
+  structureError?: string;
 }
 export type ConnectionStatus =
   'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'error';
@@ -105,7 +123,7 @@ export function normalizeServerUrl(input: string): string {
  * working credentials in memory; the app's storage layer handles persistence.
  * Service commands are never replayed after a disconnect.
  */
-export class HomeAssistantClient {
+export class HomeAssistantClient implements HomeSetupTransport {
   private socket?: WebSocket;
   private serverUrl = '';
   private token = '';
@@ -117,6 +135,11 @@ export class HomeAssistantClient {
   private authenticated = false;
   private nextId = 1;
   private subscriptionId?: number;
+  private registrySubscriptions = new Set<number>();
+  private registryRefreshTimer?: ReturnType<typeof setTimeout>;
+  private structureRevision = 0;
+  private stateRefreshes = new Set<StateChange[]>();
+  private httpRequests = new Set<AbortController>();
   private retryCount = 0;
   private reconnectTimer?: ReturnType<typeof setTimeout>;
   private connectionTimer?: ReturnType<typeof setTimeout>;
@@ -169,6 +192,167 @@ export class HomeAssistantClient {
   disconnect(): void {
     this.stop(new Error('Disconnected from Home Assistant.'));
     this.callbacks.onStatus('disconnected');
+  }
+
+  getSnapshot(): HassSnapshot {
+    return this.snapshot;
+  }
+
+  private currentSession(): () => void {
+    if (!this.ready) throw new Error('Home Assistant is offline. No setup change was sent.');
+    const generation = this.generation;
+    const socket = this.socket;
+    return () => {
+      if (!this.ready || generation !== this.generation || socket !== this.socket)
+        throw new Error('The home connection changed. Check the current setup before continuing.');
+    };
+  }
+
+  async refreshStructure(): Promise<HassSnapshot> {
+    const check = this.currentSession();
+    const revision = ++this.structureRevision;
+    try {
+      const [areas, devices, registry] = await Promise.all([
+        this.command({ type: 'config/area_registry/list' }),
+        this.command({ type: 'config/device_registry/list' }),
+        this.command({ type: 'config/entity_registry/list' }),
+      ]);
+      check();
+      const structure = { areas: parseAreas(areas), devices: parseDevices(devices), registry: parseRegistry(registry) };
+      if (revision === this.structureRevision) {
+        this.snapshot = { ...this.snapshot, ...structure, structureStatus: 'ready', structureError: undefined };
+        this.callbacks.onSnapshot(this.snapshot);
+      }
+      return { ...this.snapshot, ...structure, structureStatus: 'ready', structureError: undefined };
+    } catch (cause) {
+      check();
+      const error = new Error('Home Assistant’s room and device registry could not be read. Check this connection’s permissions before changing the setup.');
+      if (revision === this.structureRevision) {
+        this.snapshot = { ...this.snapshot, structureStatus: 'unavailable', structureError: error.message };
+        this.callbacks.onSnapshot(this.snapshot);
+      }
+      if (cause instanceof HomeAssistantProtocolError) throw cause;
+      throw error;
+    }
+  }
+
+  async refreshStates(): Promise<HassSnapshot> {
+    const check = this.currentSession();
+    const changes: StateChange[] = [];
+    this.stateRefreshes.add(changes);
+    try {
+      const entities = parseEntities(await this.command({ type: 'get_states' }));
+      check();
+      this.snapshot = { ...this.snapshot, entities };
+      for (const change of changes) this.applyChange(change);
+      this.callbacks.onSnapshot(this.snapshot);
+      return this.snapshot;
+    } finally {
+      this.stateRefreshes.delete(changes);
+    }
+  }
+
+  private async setupCommand(payload: ClientCommand): Promise<unknown> {
+    const check = this.currentSession();
+    try {
+      const result = await this.command(payload);
+      check();
+      return result;
+    } catch (error) {
+      check();
+      if (error instanceof ServerCommandError && /unauthori|permission|not allowed|admin/i.test(error.message))
+        throw new SceneRequestError('Home Assistant administrator access is required to organize rooms and devices. Update the connection in Settings.', true);
+      throw error;
+    }
+  }
+
+  async createArea(name: string): Promise<HassArea> {
+    this.validateRoomName(name);
+    const areas = parseAreas([await this.setupCommand({ type: 'config/area_registry/create', name })]);
+    const area = areas[0];
+    if (!area) throw new Error('Home Assistant did not return the created room.');
+    return area;
+  }
+
+  async renameArea(areaId: string, name: string): Promise<HassArea> {
+    this.validateRegistryId(areaId);
+    this.validateRoomName(name);
+    const areas = parseAreas([await this.setupCommand({ type: 'config/area_registry/update', area_id: areaId, name })]);
+    const area = areas[0];
+    if (!area) throw new Error('Home Assistant did not return the updated room.');
+    return area;
+  }
+
+  async deleteArea(areaId: string): Promise<void> {
+    this.validateRegistryId(areaId);
+    await this.setupCommand({ type: 'config/area_registry/delete', area_id: areaId });
+  }
+
+  async assignDeviceArea(deviceId: string, areaId: string | null): Promise<void> {
+    this.validateRegistryId(deviceId);
+    if (areaId !== null) this.validateRegistryId(areaId);
+    await this.setupCommand({ type: 'config/device_registry/update', device_id: deviceId, area_id: areaId });
+  }
+
+  async assignEntityArea(entityId: string, areaId: string | null): Promise<void> {
+    if (!isEntityId(entityId)) throw new Error('A registered entity is required.');
+    if (areaId !== null) this.validateRegistryId(areaId);
+    await this.setupCommand({ type: 'config/entity_registry/update', entity_id: entityId, area_id: areaId });
+  }
+
+  async relatedToArea(areaId: string): Promise<Record<string, string[]>> {
+    this.validateRegistryId(areaId);
+    const value = await this.setupCommand({ type: 'search/related', item_type: 'area', item_id: areaId });
+    if (!isRecord(value)) throw new Error('Home Assistant returned invalid room dependencies.');
+    const related: Record<string, string[]> = {};
+    for (const [key, ids] of Object.entries(value)) {
+      if (!Array.isArray(ids) || !ids.every((id): id is string => typeof id === 'string'))
+        throw new Error('Home Assistant returned invalid room dependencies.');
+      related[key] = ids;
+    }
+    return related;
+  }
+
+  async readScene(configId: string): Promise<SceneConfig> {
+    return parseSceneConfig(await this.sceneRequest('GET', configId));
+  }
+
+  async saveScene(configId: string, config: SceneConfig): Promise<void> {
+    const value = await this.sceneRequest('POST', configId, parseSceneConfig(config));
+    if (!isRecord(value) || value.result !== 'ok')
+      throw new Error('Home Assistant did not confirm that the mood was saved. Read its configuration before retrying.');
+  }
+
+  async deleteScene(configId: string): Promise<void> {
+    const value = await this.sceneRequest('DELETE', configId);
+    if (!isRecord(value) || value.result !== 'ok')
+      throw new Error('Home Assistant did not confirm that the mood was removed.');
+  }
+
+  async activateScene(entityId: string): Promise<void> {
+    if (!/^scene\.[a-z0-9_]+$/.test(entityId)) throw new Error('A scene is required.');
+    await this.callService('scene', 'turn_on', entityId);
+  }
+
+  private async sceneRequest(method: 'GET' | 'POST' | 'DELETE', configId: string, config?: SceneConfig): Promise<unknown> {
+    const check = this.currentSession();
+    const controller = new AbortController();
+    this.httpRequests.add(controller);
+    try {
+      const value = await requestSceneConfig(this.serverUrl, this.token, method, configId, config, controller.signal);
+      check();
+      return value;
+    } finally {
+      this.httpRequests.delete(controller);
+    }
+  }
+
+  private validateRegistryId(id: string): void {
+    if (!id.trim() || id.length > 250 || /[\u0000-\u001f]/.test(id)) throw new Error('A valid room or device identifier is required.');
+  }
+
+  private validateRoomName(name: string): void {
+    if (!name.trim() || name.length > 100 || /[\u0000-\u001f]/.test(name)) throw new Error('Choose a room name between 1 and 100 characters.');
   }
 
   async callService(
@@ -233,6 +417,7 @@ export class HomeAssistantClient {
     this.authenticated = false;
     this.nextId = 1;
     this.subscriptionId = undefined;
+    this.registrySubscriptions.clear();
     this.bufferedChanges = [];
     const generation = this.generation;
     const url = new URL(`${this.serverUrl}/api/websocket`);
@@ -326,11 +511,17 @@ export class HomeAssistantClient {
       message.id === this.subscriptionId
     ) {
       const change = message.change;
+      for (const changes of this.stateRefreshes) changes.push(change);
       if (!this.ready) this.bufferedChanges.push(change);
       else {
         this.applyChange(change);
         this.callbacks.onSnapshot(this.snapshot);
       }
+    } else if (message.type === 'registry_updated' && this.registrySubscriptions.has(message.id)) {
+      clearTimeout(this.registryRefreshTimer);
+      this.registryRefreshTimer = setTimeout(() => {
+        if (this.ready) void this.refreshStructure().catch(() => undefined);
+      }, 100);
     }
   }
 
@@ -367,6 +558,10 @@ export class HomeAssistantClient {
         areas: areas === undefined ? [] : parseAreas(areas),
         devices: devices === undefined ? [] : parseDevices(devices),
         registry: registry === undefined ? [] : parseRegistry(registry),
+        structureStatus: areas === undefined || devices === undefined || registry === undefined ? 'unavailable' : 'ready',
+        ...(areas === undefined || devices === undefined || registry === undefined ? {
+          structureError: 'Home Assistant’s room and device registry could not be read. Check connection permissions before changing the setup.',
+        } : {}),
         ...(config === undefined
           ? { locationName: 'My home' }
           : parseConfig(config)),
@@ -382,6 +577,17 @@ export class HomeAssistantClient {
       this.initialResolve?.();
       this.initialResolve = undefined;
       this.initialReject = undefined;
+      // These subscriptions must not delay ordinary controls for non-admin users.
+      const registryEvents: Array<'area_registry_updated' | 'device_registry_updated' | 'entity_registry_updated'> = [
+        'area_registry_updated', 'device_registry_updated', 'entity_registry_updated',
+      ];
+      for (const event_type of registryEvents) {
+        const id = this.nextId;
+        this.registrySubscriptions.add(id);
+        void this.command({ type: 'subscribe_events', event_type }).catch(() => {
+          if (current()) this.registrySubscriptions.delete(id);
+        });
+      }
       this.heartbeatTimer = setInterval(() => {
         if (current())
           void this.command({ type: 'ping' }).catch(() => {
@@ -491,6 +697,11 @@ export class HomeAssistantClient {
     this.authenticated = false;
     clearTimeout(this.connectionTimer);
     clearInterval(this.heartbeatTimer);
+    clearTimeout(this.registryRefreshTimer);
+    this.registrySubscriptions.clear();
+    this.stateRefreshes.clear();
+    for (const controller of this.httpRequests) controller.abort();
+    this.httpRequests.clear();
     const socket = this.socket;
     this.socket = undefined;
     if (socket) {

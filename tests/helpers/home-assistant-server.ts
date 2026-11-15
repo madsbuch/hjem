@@ -69,7 +69,7 @@ export async function localHomeAssistant() {
       let result: unknown = null;
       switch (value.type) {
         case 'subscribe_events':
-          subscriptionId = value.id;
+          if (value.event_type === 'state_changed') subscriptionId = value.id;
           break;
         case 'get_states':
           result = [light];

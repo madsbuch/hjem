@@ -88,6 +88,13 @@ export function parseAreas(value: unknown): HassArea[] {
     return {
       area_id: string(entry.area_id, 'area identifier'),
       name: string(entry.name, 'area name'),
+      ...(entry.aliases === undefined ? {} : { aliases: list(entry.aliases, 'area aliases', (alias) => string(alias, 'area alias')).sort() }),
+      ...(entry.labels === undefined ? {} : { labels: list(entry.labels, 'area labels', (label) => string(label, 'area label')).sort() }),
+      ...(entry.floor_id === undefined ? {} : { floor_id: nullableString(entry.floor_id, 'area floor') }),
+      ...(entry.icon === undefined ? {} : { icon: nullableString(entry.icon, 'area icon') }),
+      ...(entry.picture === undefined ? {} : { picture: nullableString(entry.picture, 'area picture') }),
+      ...(entry.temperature_entity_id === undefined ? {} : { temperature_entity_id: nullableString(entry.temperature_entity_id, 'area temperature sensor') }),
+      ...(entry.humidity_entity_id === undefined ? {} : { humidity_entity_id: nullableString(entry.humidity_entity_id, 'area humidity sensor') }),
     };
   });
 }
@@ -98,6 +105,10 @@ export function parseDevices(value: unknown): HassDevice[] {
     return {
       id: string(entry.id, 'device identifier'),
       area_id: nullableString(entry.area_id, 'device area'),
+      ...(entry.name === undefined ? {} : { name: nullableString(entry.name, 'device name') }),
+      ...(entry.name_by_user === undefined ? {} : { name_by_user: nullableString(entry.name_by_user, 'device name') }),
+      ...(entry.manufacturer === undefined ? {} : { manufacturer: nullableString(entry.manufacturer, 'device manufacturer') }),
+      ...(entry.model === undefined ? {} : { model: nullableString(entry.model, 'device model') }),
     };
   });
 }
@@ -112,6 +123,8 @@ export function parseRegistry(value: unknown): HassEntityRegistryEntry[] {
       device_id: nullableString(entry.device_id, 'entity device'),
       hidden_by: nullableString(entry.hidden_by, 'entity visibility'),
       disabled_by: nullableString(entry.disabled_by, 'entity availability'),
+      ...(entry.name === undefined ? {} : { name: nullableString(entry.name, 'entity name') }),
+      ...(entry.original_name === undefined ? {} : { original_name: nullableString(entry.original_name, 'original entity name') }),
     };
   });
 }
@@ -145,6 +158,7 @@ export type ServerMessage =
   | { type: 'result'; id: number; success: true; result: unknown }
   | { type: 'result'; id: number; success: false; error: string }
   | { type: 'state_changed'; id: number; change: StateChange }
+  | { type: 'registry_updated'; id: number }
   | { type: 'other_event'; id: number };
 
 function parseMessage(value: unknown): ServerMessage {
@@ -173,6 +187,8 @@ function parseMessage(value: unknown): ServerMessage {
       const id = commandId(value.id);
       if (!isRecord(value.event) || typeof value.event.event_type !== 'string')
         invalid('event');
+      if (['area_registry_updated', 'device_registry_updated', 'entity_registry_updated'].includes(value.event.event_type))
+        return { type: 'registry_updated', id };
       if (value.event.event_type !== 'state_changed')
         return { type: 'other_event', id };
       const data = value.event.data;
@@ -210,7 +226,13 @@ export function parseServerMessages(raw: unknown): ServerMessage[] {
 }
 
 export type ClientCommand =
-  | { type: 'subscribe_events'; event_type: 'state_changed' }
+  | { type: 'subscribe_events'; event_type: 'state_changed' | 'area_registry_updated' | 'device_registry_updated' | 'entity_registry_updated' }
+  | { type: 'config/area_registry/create'; name: string }
+  | { type: 'config/area_registry/update'; area_id: string; name: string }
+  | { type: 'config/area_registry/delete'; area_id: string }
+  | { type: 'config/device_registry/update'; device_id: string; area_id: string | null }
+  | { type: 'config/entity_registry/update'; entity_id: string; area_id: string | null }
+  | { type: 'search/related'; item_type: 'area'; item_id: string }
   | {
       type:
         | 'get_states'

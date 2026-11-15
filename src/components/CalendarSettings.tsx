@@ -1,9 +1,10 @@
-import { useState, type FormEvent } from 'react';
-import { CalendarDays, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { CalendarDays, Check, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { isTauri } from '@tauri-apps/api/core';
 import {
   addCalendarFeed,
   removeCalendarFeed,
+  updateCalendarFeed,
   useStorage,
 } from '../lib/storage';
 import { loadCalendarFeed } from '../lib/calendar-subscriptions';
@@ -16,23 +17,51 @@ export function CalendarSettings() {
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
   const [error, setError] = useState('');
+  const [editing, setEditing] = useState<number | null>(null);
+  const [feedback, setFeedback] = useState('');
+  const nameInput = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [checking, setChecking] = useState<number | null>(null);
   const [checks, setChecks] = useState<Record<number, string>>({});
+  useEffect(() => {
+    if (editing !== null) nameInput.current?.focus();
+  }, [editing]);
+  const resetForm = () => {
+    setEditing(null);
+    setName('');
+    setUrl('');
+    setError('');
+  };
+  const edit = (feed: CalendarFeed) => {
+    setEditing(feed.id);
+    setName(feed.name);
+    setUrl(feed.url);
+    setError('');
+    setFeedback('');
+  };
   const fail = (cause: unknown) =>
     setError(
       cause instanceof Error
         ? cause.message
         : 'Could not save the calendar. Please try again.',
     );
-  async function add(event: FormEvent) {
+  async function save(event: FormEvent) {
     event.preventDefault();
     setError('');
+    setFeedback('');
     setBusy(true);
     try {
-      await addCalendarFeed(name, url);
-      setName('');
-      setUrl('');
+      if (editing === null) await addCalendarFeed(name, url);
+      else {
+        await updateCalendarFeed(editing, name, url);
+        setChecks((current) => {
+          const next = { ...current };
+          delete next[editing];
+          return next;
+        });
+        setFeedback('Calendar updated.');
+      }
+      resetForm();
     } catch (cause) {
       fail(cause);
     } finally {
@@ -44,6 +73,7 @@ export function CalendarSettings() {
     setBusy(true);
     try {
       await removeCalendarFeed(feed.id);
+      if (editing === feed.id) resetForm();
       setChecks((current) => {
         const next = { ...current };
         delete next[feed.id];
@@ -96,7 +126,11 @@ export function CalendarSettings() {
           <strong>Secret address in iCal format</strong> and paste it here. No
           Google login is needed on the tablet.
         </p>
-        <p>Keep this link private; it grants read access to that calendar.</p>
+        <p>
+          Keep this secret link private; it grants read access without making
+          your calendar public. A <strong>Public address in iCal format</strong>{' '}
+          only works for a calendar that is already shared publicly.
+        </p>
       </details>
       {calendarFeeds.length > 0 && (
         <ul className="calendar-feed-list">
@@ -104,13 +138,22 @@ export function CalendarSettings() {
             <li key={feed.id}>
               <div className="calendar-feed-title">
                 <strong>{feed.name}</strong>
-                <span>{new URL(feed.url).hostname}</span>
+                <span className="calendar-feed-url">{feed.url}</span>
               </div>
               <div className="calendar-feed-actions">
                 <button
                   type="button"
                   className="icon-button"
-                  disabled={checking !== null || busy}
+                  disabled={busy || checking !== null}
+                  aria-label={`Edit ${feed.name} calendar`}
+                  onClick={() => edit(feed)}
+                >
+                  <Pencil size={17} />
+                </button>
+                <button
+                  type="button"
+                  className="icon-button"
+                  disabled={checking !== null || busy || editing !== null}
                   aria-label={`Check ${feed.name} calendar`}
                   onClick={() => void check(feed)}
                 >
@@ -139,12 +182,14 @@ export function CalendarSettings() {
         </ul>
       )}
       <form
-        onSubmit={(event) => void add(event)}
+        onSubmit={(event) => void save(event)}
         className="calendar-link-form"
       >
+        <h3>{editing === null ? 'Add a calendar' : 'Edit calendar'}</h3>
         <label htmlFor="calendar-name">Calendar name</label>
         <input
           id="calendar-name"
+          ref={nameInput}
           value={name}
           onChange={(event) => setName(event.target.value)}
           placeholder="Family"
@@ -156,7 +201,7 @@ export function CalendarSettings() {
         <label htmlFor="calendar-url">iCal / ICS link</label>
         <input
           id="calendar-url"
-          type="password"
+          type="url"
           inputMode="url"
           value={url}
           onChange={(event) => setUrl(event.target.value)}
@@ -172,10 +217,18 @@ export function CalendarSettings() {
             {error}
           </p>
         )}
-        <button type="submit" className="primary-button" disabled={busy}>
-          {busy ? 'Saving…' : 'Add calendar'}
-          <Plus size={17} />
-        </button>
+        {feedback && <p role="status" className="calendar-feed-status">{feedback}</p>}
+        <div className="calendar-form-actions">
+          <button type="submit" className="primary-button" disabled={busy}>
+            {busy ? 'Saving…' : editing === null ? 'Add calendar' : 'Save changes'}
+            {editing === null ? <Plus size={17} /> : <Check size={17} />}
+          </button>
+          {editing !== null && (
+            <button type="button" className="secondary-button" disabled={busy} onClick={resetForm}>
+              Cancel edit
+            </button>
+          )}
+        </div>
       </form>
       {!isTauri() && (
         <p className="field-help">

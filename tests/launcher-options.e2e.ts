@@ -136,7 +136,7 @@ test('keyboard app options return focus and show native failures without claimin
   await expect(app).toBeFocused();
 });
 
-test('sample app options are clearly unavailable and pin controls still work', async ({ page }) => {
+test('sample app options are clearly unavailable and opening apps still works', async ({ page }) => {
   await appsPage(page);
   const app = page.getByRole('button', { name: 'Open Sonos', exact: true });
   await app.click({ button: 'right' });
@@ -146,8 +146,7 @@ test('sample app options are clearly unavailable and pin controls still work', a
   await expect(dialog.getByRole('button', { name: 'Uninstall app', exact: true })).toBeDisabled();
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(dialog).not.toBeVisible();
-  await page.getByRole('button', { name: 'Unpin Sonos', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Pin Sonos', exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Apps', exact: true }).getByRole('button', { name: /^(Pin|Unpin) / })).toHaveCount(0);
   await app.click();
   await expect(page.getByRole('status')).toContainText('preview shortcut');
 });

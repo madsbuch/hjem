@@ -131,6 +131,13 @@ async function mockHomeAssistant(page: Page, includeMedia = false) {
           socket.onclose?.();
         }
       },
+      reconnect() {
+        server.offline = false;
+        // A retry may already be waiting for its greeting. Otherwise the next
+        // socket will receive the normal greeting from its constructor.
+        for (const socket of server.sockets.filter((item) => item.readyState === 1))
+          socket.deliver({ type: 'auth_required' });
+      },
     };
     class MockWebSocket {
       static OPEN = 1;
@@ -164,7 +171,7 @@ async function mockHomeAssistant(page: Page, includeMedia = false) {
             return;
           }
           let result: unknown = null;
-          if (command.type === 'subscribe_events')
+          if (command.type === 'subscribe_events' && command.event_type === 'state_changed')
             this.subscriptionId = command.id;
           if (command.type === 'get_states') result = states;
           if (command.type === 'config/area_registry/list')
@@ -371,7 +378,7 @@ test('overview keeps moods and music together and device controls on their own p
   }
   await page.getByRole('button', { name: 'Good night', exact: true }).click();
   await expect(page.getByRole('status')).toContainText(
-    'Good night activated in your demo home',
+    'Good night applied in the demo home; device states confirmed.',
   );
   await expect(
     page.getByRole('button', { name: 'Play Living room speaker' }),
@@ -432,7 +439,7 @@ test('all live scenes remain accessible from overview beyond the first four', as
         target: { entity_id: 'scene.weekend' },
       }),
     ]);
-  await expect(page.getByRole('status')).toContainText('Weekend activated.');
+  await expect(page.getByRole('status')).toContainText('Weekend sent to Home Assistant; its device results could not be fully verified.');
 });
 
 test('connection dialog validates addresses and never persists an access token', async ({
@@ -502,13 +509,14 @@ test('live Home Assistant service calls, events, and offline controls work end t
   );
   await expect(office).not.toBeChecked();
   await page.evaluate(() => (window as any).__ha.disconnect());
-  await expect(page.locator('.offline-banner')).toBeVisible();
+  const connectionNotice = page.locator('.connection-notice:visible');
+  await expect(connectionNotice).toBeVisible();
+  await expect(connectionNotice).toContainText('Reconnecting…');
+  await expect(page.locator('.offline-banner')).toHaveCount(0);
   await expect(office).toBeDisabled();
   await expect(
-    page
-      .getByRole('status')
-      .filter({ hasText: 'Connection to Home Assistant was lost' }),
-  ).toBeVisible();
+    connectionNotice.getByRole('button', { name: /Connection settings/ }),
+  ).toHaveAttribute('title', /Connection to Home Assistant was lost/);
   const stored = await page.evaluate(() =>
     JSON.stringify({
       local: { ...localStorage },
@@ -517,6 +525,68 @@ test('live Home Assistant service calls, events, and offline controls work end t
   );
   expect(stored).not.toContain('https://ha.example');
   expect(stored).not.toContain('private-test-access-token');
+});
+
+test('connection status stays in its reserved menu slot without moving the dashboard', async ({ page }, testInfo) => {
+  await mockHomeAssistant(page, true);
+  await page.goto('/');
+  await connectMock(page);
+  const mobileNav = page.getByRole('navigation', { name: 'Mobile navigation' });
+  const navigation = await mobileNav.isVisible()
+    ? mobileNav
+    : page.getByRole('navigation', { name: 'Main navigation' });
+  const settings = navigation.getByRole('button', { name: 'Settings', exact: true });
+  const slot = page.locator('.connection-status-slot:visible');
+  const notice = page.locator('.connection-notice:visible');
+  const panels = [
+    page.locator('main > .page-intro'),
+    page.locator('.music-player'),
+    page.locator('.calendar-agenda'),
+    page.locator('.quick-scenes'),
+    settings,
+    slot,
+  ];
+  const geometry = async () => {
+    const bounds = await Promise.all(panels.map((panel) => panel.boundingBox()));
+    return bounds.map((box) => {
+      if (!box) throw new Error('A dashboard panel or reserved menu slot is missing.');
+      return box;
+    });
+  };
+  const expectSameGeometry = async (before: Awaited<ReturnType<typeof geometry>>) => {
+    const after = await geometry();
+    for (let index = 0; index < before.length; index++) {
+      expect(after[index].x).toBeCloseTo(before[index].x, 0);
+      expect(after[index].y).toBeCloseTo(before[index].y, 0);
+      expect(after[index].width).toBeCloseTo(before[index].width, 0);
+      expect(after[index].height).toBeCloseTo(before[index].height, 0);
+    }
+  };
+  await expect(slot).toBeVisible();
+  await expect(notice).toHaveCount(0);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  const connected = await geometry();
+
+  await page.evaluate(() => (window as any).__ha.disconnect());
+  await expect(notice).toContainText('Reconnecting…');
+  await expect(page.locator('main .connection-notice, main .offline-banner')).toHaveCount(0);
+  await expectSameGeometry(connected);
+  await page.screenshot({ path: testInfo.outputPath('reconnecting.png'), scale: 'css' });
+  const connectionSettings = notice.getByRole('button', { name: /Connection settings/ });
+  await expect(connectionSettings).toHaveAttribute('title', /Connection to Home Assistant was lost/);
+  await connectionSettings.click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(page.getByLabel('Home Assistant address', { exact: true })).toHaveValue('https://ha.example');
+  await page.getByRole('button', { name: 'Close connection settings', exact: true }).click();
+  await expect(page.getByRole('dialog')).not.toBeVisible();
+
+  await page.evaluate(() => (window as any).__ha.reconnect());
+  await expect(notice).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Pause Office Sonos', exact: true })).toBeEnabled();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  await expectSameGeometry(connected);
 });
 
 test('live service failures stay visible and editing connection settings keeps the app usable', async ({
@@ -969,55 +1039,33 @@ test('missing live readings stay unknown until Home Assistant reports valid valu
   await expect(speaker.locator('.track-title')).toHaveText('A reported track');
 });
 
-test('app search and pinned app preferences persist across refresh', async ({
+test('app search works without pinning and ignores legacy app pins after refresh', async ({
   page,
 }) => {
-  await nativeStorage(page);
+  const storage = await nativeStorage(page, {
+    pinnedApps: [{ scope: 'demo', packageNames: ['preview.photos'] }],
+  });
   await page.goto('/');
   await navigate(page, 'Apps');
-  const search = page.getByRole('textbox', {
-    name: 'Find an app',
-    exact: true,
-  });
+  const apps = page.getByRole('region', { name: 'Apps', exact: true });
+  const search = apps.getByRole('textbox', { name: 'Find an app', exact: true });
+  await expect(apps.getByRole('button', { name: /^(Pin|Unpin) / })).toHaveCount(0);
+  await expect(apps.getByRole('button', { name: 'Pinned', exact: true })).toHaveCount(0);
   await search.fill('spotify');
-  await expect(
-    page.getByRole('button', { name: 'Open Spotify', exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole('button', { name: 'Open YouTube', exact: true }),
-  ).not.toBeVisible();
+  await expect(apps.getByRole('button', { name: 'Open Spotify', exact: true })).toBeVisible();
+  await expect(apps.getByRole('button', { name: 'Open YouTube', exact: true })).toHaveCount(0);
   await search.fill('');
-  const unpin = page.getByRole('button', { name: 'Unpin Photos', exact: true });
-  if (await unpin.isVisible()) await unpin.click();
-  await page.getByRole('button', { name: 'Pin Photos', exact: true }).click();
-  await expect(
-    page.getByRole('button', { name: 'Unpin Photos', exact: true }),
-  ).toBeVisible();
-  await page
-    .getByRole('button', { name: 'Unpin YouTube', exact: true })
-    .click();
-  const pinnedFilter = page
-    .getByRole('group', { name: 'Show apps' })
-    .getByRole('button', { name: 'Pinned', exact: true });
-  await pinnedFilter.click();
-  await expect(
-    page.getByRole('button', { name: 'Open Photos', exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole('button', { name: 'Open YouTube', exact: true }),
-  ).toHaveCount(0);
+  await expect(apps.getByRole('button', { name: 'Open YouTube', exact: true })).toBeVisible();
+  await expect(apps.getByRole('button', { name: 'Open Photos', exact: true })).toBeVisible();
+  await apps.getByRole('button', { name: 'Refresh apps', exact: true }).click();
+  await expect(apps.getByRole('button', { name: /^Open / })).toHaveCount(6);
   await page.reload();
   await navigate(page, 'Apps');
-  await pinnedFilter.click();
-  await expect(
-    page.getByRole('button', { name: 'Open Photos', exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole('button', { name: 'Open YouTube', exact: true }),
-  ).toHaveCount(0);
-  await expect(
-    page.getByRole('button', { name: 'Unpin Photos', exact: true }),
-  ).toBeVisible();
+  await expect(apps.getByRole('button', { name: 'Open YouTube', exact: true })).toBeVisible();
+  await expect(apps.getByRole('button', { name: 'Open Photos', exact: true })).toBeVisible();
+  await expect(apps.getByRole('button', { name: /^(Pin|Unpin) / })).toHaveCount(0);
+  expect(storage.commands).not.toContain('storage_set_pinned_apps');
+  expect(storage.snapshot.pinnedApps).toEqual([{ scope: 'demo', packageNames: ['preview.photos'] }]);
 });
 
 test('browser app launches and Android home settings give honest preview feedback', async ({

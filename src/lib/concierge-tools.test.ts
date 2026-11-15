@@ -4,6 +4,7 @@ import {
   type ConciergeContext,
 } from './concierge-tools';
 import type { HassEntity, HassSnapshot } from './home-assistant';
+import type { HomeSetup } from './home-setup-types';
 
 const record = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -492,5 +493,200 @@ describe('Home Concierge app launching', () => {
       status: 'unconfirmed',
     });
     expect(launch).toHaveBeenCalledTimes(1);
+  });
+});
+
+function setupHome() {
+  const fixture = setup();
+  const structure = {
+    areas: [{ area_id: 'lounge', name: 'Lounge' }],
+    devices: [{ id: 'speaker-device', name: 'Sonos', area_id: 'lounge' }],
+    entities: [
+      { entity_id: 'light.dimmer', name: 'Dimmer' },
+      { entity_id: 'media_player.sonos', name: 'Sonos' },
+    ],
+    scenes: [{ entity_id: 'scene.evening', name: 'Evening' }],
+  };
+  const inspect = vi.fn<HomeSetup['inspect']>().mockResolvedValue(structure);
+  const createRoom = vi.fn<HomeSetup['createRoom']>().mockResolvedValue({
+    changed: true, demo: true, area: { area_id: 'office', name: 'Office' },
+  });
+  const renameRoom = vi.fn<HomeSetup['renameRoom']>().mockResolvedValue({ changed: true });
+  const assignDevice = vi.fn<HomeSetup['assignDevice']>().mockResolvedValue({ changed: true });
+  const assignEntity = vi.fn<HomeSetup['assignEntity']>().mockResolvedValue({ changed: true });
+  const inspectMood = vi.fn<HomeSetup['inspectMood']>().mockResolvedValue({
+    entity_id: 'scene.evening', editable: true,
+    targets: [{ entity_id: 'light.dimmer', state: 'on', brightness_pct: 30 }],
+  });
+  const saveMood = vi.fn<HomeSetup['saveMood']>().mockResolvedValue({
+    changed: true, entity_id: 'scene.hjem_cosyy', verification: 'saved',
+  });
+  const activateMood = vi.fn<HomeSetup['activateMood']>().mockResolvedValue({
+    accepted: true, verified: false, status: 'partial', issues: ['One light did not respond.'],
+  });
+  const changes = vi.fn<HomeSetup['changes']>().mockReturnValue([
+    { id: 'change-1', description: 'Created Office', createdAt: '2026-11-15T12:00:00Z' },
+  ]);
+  const undo = vi.fn<HomeSetup['undo']>().mockResolvedValue({ changed: true });
+  fixture.context.setup = {
+    inspect, createRoom, renameRoom, assignDevice, assignEntity,
+    inspectMood, saveMood, activateMood, changes, undo,
+  };
+  return {
+    ...fixture, structure, inspect, createRoom, renameRoom, assignDevice,
+    assignEntity, inspectMood, saveMood, activateMood, changes, undo,
+  };
+}
+
+describe('Home Concierge room and mood setup', () => {
+  it('requires structural discovery, then permits a new room to be used in the same turn', async () => {
+    const { run, createRoom, assignDevice, controller } = setupHome();
+    await expect(run('create_room', { name: 'Office' })).rejects.toThrow('list_home_structure');
+    await run('get_home_state');
+    await expect(run('create_room', { name: 'Office' })).rejects.toThrow('list_home_structure');
+    expect(createRoom).not.toHaveBeenCalled();
+    await run('list_home_structure');
+    await run('create_room', { name: ' Office ' });
+    await run('assign_device_to_room', { device_id: 'speaker-device', area_id: 'office' });
+    expect(createRoom).toHaveBeenCalledExactlyOnceWith('Office', controller.signal);
+    expect(assignDevice).toHaveBeenCalledExactlyOnceWith('speaker-device', 'office', controller.signal);
+  });
+
+  it('rejects guessed rooms and devices while allowing explicit unassignment and entity override removal', async () => {
+    const { run, renameRoom, assignDevice, assignEntity, controller } = setupHome();
+    await run('list_home_structure');
+    await expect(run('rename_room', { area_id: 'guessed', name: 'Office' })).rejects.toThrow('Choose a room');
+    await expect(run('assign_device_to_room', { device_id: 'speaker-device', area_id: 'guessed' })).rejects.toThrow('Choose a room');
+    await expect(run('assign_device_to_room', { device_id: 'guessed', area_id: 'lounge' })).rejects.toThrow('Choose a device');
+    await expect(run('assign_entity_to_room', { entity_id: 'light.guessed', area_id: 'lounge' })).rejects.toThrow('Choose an entity');
+    expect(renameRoom).not.toHaveBeenCalled();
+    expect(assignDevice).not.toHaveBeenCalled();
+    expect(assignEntity).not.toHaveBeenCalled();
+    await run('rename_room', { area_id: 'lounge', name: 'Living room' });
+    await run('assign_device_to_room', { device_id: 'speaker-device', area_id: null });
+    await run('assign_entity_to_room', { entity_id: 'light.dimmer', area_id: null });
+    expect(renameRoom).toHaveBeenCalledExactlyOnceWith('lounge', 'Living room', controller.signal);
+    expect(assignDevice).toHaveBeenCalledExactlyOnceWith('speaker-device', null, controller.signal);
+    expect(assignEntity).toHaveBeenCalledExactlyOnceWith('light.dimmer', null, controller.signal);
+  });
+
+  it('does not authorize setup from malformed or failed discovery', async () => {
+    const { run, inspect, createRoom, structure } = setupHome();
+    inspect.mockResolvedValueOnce({ ...structure, entities: null });
+    await expect(run('list_home_structure')).rejects.toThrow('structure could not be read');
+    await expect(run('create_room', { name: 'Office' })).rejects.toThrow('list_home_structure');
+    inspect.mockRejectedValueOnce(new Error('Registry permission denied'));
+    await expect(run('list_home_structure')).rejects.toThrow('permission denied');
+    await expect(run('create_room', { name: 'Office' })).rejects.toThrow('list_home_structure');
+    expect(createRoom).not.toHaveBeenCalled();
+  });
+
+  it('only saves discovered mood targets and requires a fresh editable inspection for updates', async () => {
+    const { run, saveMood, inspectMood, controller } = setupHome();
+    const args = {
+      name: 'Evening', entity_id: 'scene.evening',
+      targets: [{ entity_id: 'light.dimmer', state: 'on', brightness_pct: 40 }],
+    };
+    await run('list_home_structure');
+    await expect(run('save_mood', args)).rejects.toThrow('inspect_mood');
+    await expect(run('inspect_mood', { entity_id: 'scene.guessed' })).rejects.toThrow('find the scene first');
+    inspectMood.mockResolvedValueOnce({ entity_id: 'scene.evening', editable: false, issues: ['External scene'] });
+    await run('inspect_mood', { entity_id: 'scene.evening' });
+    await expect(run('save_mood', args)).rejects.toThrow('inspect_mood');
+    await run('inspect_mood', { entity_id: 'scene.evening' });
+    await run('save_mood', args);
+    expect(saveMood).toHaveBeenCalledExactlyOnceWith(args, controller.signal);
+    await expect(run('save_mood', { ...args, name: 'Evening revised' })).rejects.toThrow('inspect_mood');
+    await expect(run('save_mood', {
+      name: 'New mood', targets: [{ entity_id: 'light.guessed', state: 'off' }],
+    })).rejects.toThrow('discover every mood target');
+  });
+
+  it.each([
+    { entity_id: 'light.dimmer', state: 'on', brightness_pct: 101 },
+    { entity_id: 'light.dimmer', state: 'on', brightness_pct: '40' },
+    { entity_id: 'light.dimmer', state: 'on', color_temp_kelvin: Infinity },
+    { entity_id: 'light.dimmer', state: 'on', temperature: null },
+    { entity_id: 'light.dimmer', state: 'on', is_volume_muted: 1 },
+    { entity_id: 'light.dimmer', state: 'on', service: 'homeassistant.restart' },
+    { entity_id: 'light.dimmer', attributes: { brightness: 100 } },
+  ])('rejects malformed mood settings before dispatch: %j', async (target) => {
+    const { run, saveMood } = setupHome();
+    await run('list_home_structure');
+    await expect(run('save_mood', { name: 'Evening', targets: [target] })).rejects.toThrow();
+    expect(saveMood).not.toHaveBeenCalled();
+  });
+
+  it('bounds mood size and rejects duplicate targets and empty names', async () => {
+    const { run, saveMood, createRoom } = setupHome();
+    await run('list_home_structure');
+    const target = { entity_id: 'light.dimmer', state: 'off' };
+    for (const targets of [[], Array.from({ length: 51 }, () => target), [target, target]])
+      await expect(run('save_mood', { name: 'Evening', targets })).rejects.toThrow();
+    await expect(run('save_mood', { name: ' ', targets: [target] })).rejects.toThrow('name');
+    await expect(run('create_room', { name: ' ' })).rejects.toThrow('name');
+    expect(saveMood).not.toHaveBeenCalled();
+    expect(createRoom).not.toHaveBeenCalled();
+  });
+
+  it('never replays setup after ambiguous failure, including reordered nested mood settings', async () => {
+    const { run, saveMood } = setupHome();
+    await run('list_home_structure');
+    saveMood.mockRejectedValueOnce(new Error('Response lost after saving'));
+    await expect(run('save_mood', {
+      name: 'Cosy', targets: [{ entity_id: 'light.dimmer', state: 'on', brightness_pct: 30 }],
+    })).rejects.toThrow('Response lost');
+    await expect(run('save_mood', {
+      targets: [{ brightness_pct: 30, state: 'on', entity_id: 'light.dimmer' }], name: 'Cosy',
+    })).resolves.toMatchObject({ already_attempted: true, status: 'unconfirmed' });
+    expect(saveMood).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves partial verification results and can activate a scene created in this turn', async () => {
+    const { run, activateMood, action, controller } = setupHome();
+    await run('list_home_structure');
+    await run('save_mood', { name: 'Cosy', targets: [{ entity_id: 'light.dimmer', state: 'on' }] });
+    await expect(run('activate_scene', { entity_id: 'scene.hjem_cosyy' })).resolves.toMatchObject({
+      accepted: true, verified: false, status: 'partial', issues: ['One light did not respond.'],
+    });
+    expect(activateMood).toHaveBeenCalledExactlyOnceWith('scene.hjem_cosyy', controller.signal);
+    expect(action).not.toHaveBeenCalled();
+  });
+
+  it('requires listing undo history and rejects guessed change IDs', async () => {
+    const { run, undo, controller } = setupHome();
+    await expect(run('undo_setup_change', { change_id: 'change-1' })).rejects.toThrow('list_setup_changes');
+    await run('list_setup_changes');
+    await expect(run('undo_setup_change', { change_id: 'guessed' })).rejects.toThrow('list_setup_changes');
+    expect(undo).not.toHaveBeenCalled();
+    await run('undo_setup_change', { change_id: 'change-1' });
+    expect(undo).toHaveBeenCalledExactlyOnceWith('change-1', controller.signal);
+  });
+
+  it('blocks writes while offline, after cancellation, and after home changes', async () => {
+    const { run, context, controller, createRoom, inspect } = setupHome();
+    context.demo = false;
+    await expect(run('list_home_structure')).rejects.toThrow('offline');
+    expect(inspect).not.toHaveBeenCalled();
+    context.connected = true;
+    await run('list_home_structure');
+    controller.abort();
+    await expect(run('create_room', { name: 'Office' })).rejects.toMatchObject({ name: 'AbortError' });
+    expect(createRoom).not.toHaveBeenCalled();
+    const other = setupHome();
+    await other.run('list_home_structure');
+    other.context.sessionId = 'different-home';
+    await expect(other.run('create_room', { name: 'Office' })).rejects.toThrow('connection changed');
+    expect(other.createRoom).not.toHaveBeenCalled();
+  });
+
+  it('does not accept a late discovery result after switching homes', async () => {
+    const { run, inspect, structure, context } = setupHome();
+    let finish: (value: unknown) => void = () => { throw new Error('Missing pending discovery.'); };
+    inspect.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const pending = run('list_home_structure');
+    context.sessionId = 'different-home';
+    finish(structure);
+    await expect(pending).rejects.toThrow('connection changed');
   });
 });
