@@ -291,9 +291,9 @@ test('controls, room search, pins, and persistent preferences work together', as
   await page.goto('/');
   await navigate(page, 'Controls');
   await page
-    .getByRole('button', { name: 'Kitchen 2 devices · 0 active' })
+    .getByRole('button', { name: 'Kitchen 3 devices · 0 active' })
     .click();
-  await expect(page.getByRole('article')).toHaveCount(2);
+  await expect(page.getByRole('article')).toHaveCount(3);
   await page.getByRole('textbox', { name: 'Find a device' }).fill('coffee');
   await expect(page.getByRole('article')).toHaveCount(1);
   await page
@@ -859,6 +859,7 @@ test('speaker controls respect capabilities, service failures, and offline state
   await mockHomeAssistant(page, true);
   await page.goto('/');
   await connectMock(page);
+  await page.getByRole('tab', { name: 'Basic player', exact: true }).click();
   const basic = page.getByRole('article', {
     name: 'Basic player',
     exact: true,
@@ -874,6 +875,7 @@ test('speaker controls respect capabilities, service failures, and offline state
   await expect(
     basic.getByRole('button', { name: 'Pause Basic player', exact: true }),
   ).toBeEnabled();
+  await page.getByRole('tab', { name: 'Office Sonos', exact: true }).click();
   const speaker = page.getByRole('article', {
     name: 'Office Sonos',
     exact: true,
@@ -1062,4 +1064,81 @@ test('today’s calendar reads real Home Assistant events and recovers from refr
   await expect(
     calendar.getByText('Lunch at home', { exact: true }),
   ).toHaveCount(0);
+});
+
+test('three demo Sonos systems keep playback, volume, and tracks independent', async ({
+  page,
+}) => {
+  await page.goto('/');
+  const music = page.getByRole('region', { name: 'Music controls' });
+  await expect(music.getByRole('tab')).toHaveText([
+    'Living room',
+    'Kitchen',
+    'Bedroom',
+  ]);
+  await expect(music.getByRole('article')).toHaveCount(1);
+  await expect(
+    music.getByRole('button', { name: /^(Pin|Unpin) / }),
+  ).toHaveCount(0);
+  await expect(
+    music.getByRole('tab', { name: 'Living room', exact: true }),
+  ).toHaveAttribute('aria-selected', 'true');
+  await music.getByRole('tab', { name: 'Kitchen', exact: true }).click();
+  await music
+    .getByRole('button', { name: 'Play Kitchen Sonos', exact: true })
+    .click();
+  await expect(
+    music.getByRole('button', { name: 'Pause Kitchen Sonos', exact: true }),
+  ).toBeVisible();
+  const kitchenVolume = music.getByRole('slider', {
+    name: 'Kitchen Sonos volume',
+    exact: true,
+  });
+  await kitchenVolume.focus();
+  await kitchenVolume.press('End');
+  await expect(kitchenVolume).toHaveValue('100');
+  await music.getByRole('tab', { name: 'Living room', exact: true }).click();
+  await expect(
+    music.getByRole('button', {
+      name: 'Pause Living room speaker',
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    music.getByRole('slider', {
+      name: 'Living room speaker volume',
+      exact: true,
+    }),
+  ).toHaveValue('32');
+  await music.getByRole('tab', { name: 'Bedroom', exact: true }).click();
+  await expect(
+    music.getByRole('button', { name: 'Play Bedroom Sonos', exact: true }),
+  ).toBeVisible();
+  await expect(
+    music.getByRole('slider', { name: 'Bedroom Sonos volume', exact: true }),
+  ).toHaveValue('15');
+  await music
+    .getByRole('button', { name: 'Next track on Bedroom Sonos', exact: true })
+    .click();
+  await expect(
+    music.getByRole('article', { name: 'Bedroom Sonos', exact: true }),
+  ).toContainText('A slower kind of Sunday');
+  await music
+    .getByRole('tab', { name: 'Bedroom', exact: true })
+    .press('ArrowLeft');
+  await expect(
+    music.getByRole('tab', { name: 'Kitchen', exact: true }),
+  ).toBeFocused();
+  await expect(
+    music.getByRole('tab', { name: 'Kitchen', exact: true }),
+  ).toHaveAttribute('aria-selected', 'true');
+  await expect(kitchenVolume).toHaveValue('100');
+  await expect(
+    music.getByRole('article', { name: 'Kitchen Sonos', exact: true }),
+  ).toContainText('Light through the window');
+  await navigate(page, 'Controls');
+  await navigate(page, 'Overview');
+  await expect(
+    music.getByRole('tab', { name: 'Kitchen', exact: true }),
+  ).toHaveAttribute('aria-selected', 'true');
 });

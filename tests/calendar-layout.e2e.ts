@@ -64,11 +64,13 @@ test('compact calendar allows a held peek and returns to the current time after 
   expect(
     await page
       .locator('.home-music .track-title')
+      .first()
       .evaluate((el) => el.getBoundingClientRect().height),
   ).toBeGreaterThanOrEqual(16);
   expect(
     await page
       .locator('.home-music .track-artist')
+      .first()
       .evaluate((el) => el.getBoundingClientRect().height),
   ).toBeGreaterThanOrEqual(12);
   await page.waitForTimeout(120);

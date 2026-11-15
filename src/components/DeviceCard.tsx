@@ -51,6 +51,7 @@ interface Props {
   disabled: boolean;
   pending: boolean;
   platform?: string;
+  compact?: boolean;
 }
 
 export function DeviceCard({
@@ -63,6 +64,7 @@ export function DeviceCard({
   disabled,
   pending,
   platform,
+  compact = false,
 }: Props) {
   const domain = domainOf(entity);
   const active = isActive(entity);
@@ -169,27 +171,31 @@ export function DeviceCard({
       className={`device-card ${domain} ${active ? 'is-active' : ''} ${unavailable ? 'is-unavailable' : ''}`}
       aria-label={name}
     >
-      <div className="device-top">
-        <span className="device-icon">
-          {pending ? (
-            <LoaderCircle size={22} className="spin" />
-          ) : (
-            <Icon size={22} strokeWidth={1.7} />
-          )}
-        </span>
-        <button
-          className={`icon-button favourite ${favourite ? 'saved' : ''}`}
-          onClick={onFavourite}
-          aria-label={`${favourite ? 'Unpin' : 'Pin'} ${name}`}
-          aria-pressed={favourite}
-        >
-          <Star size={17} fill={favourite ? 'currentColor' : 'none'} />
-        </button>
-      </div>
-      <div className="device-heading">
-        <span className="eyebrow">{room}</span>
-        <h3>{name}</h3>
-      </div>
+      {!compact && (
+        <>
+          <div className="device-top">
+            <span className="device-icon">
+              {pending ? (
+                <LoaderCircle size={22} className="spin" />
+              ) : (
+                <Icon size={22} strokeWidth={1.7} />
+              )}
+            </span>
+            <button
+              className={`icon-button favourite ${favourite ? 'saved' : ''}`}
+              onClick={onFavourite}
+              aria-label={`${favourite ? 'Unpin' : 'Pin'} ${name}`}
+              aria-pressed={favourite}
+            >
+              <Star size={17} fill={favourite ? 'currentColor' : 'none'} />
+            </button>
+          </div>
+          <div className="device-heading">
+            <span className="eyebrow">{room}</span>
+            <h3>{name}</h3>
+          </div>
+        </>
+      )}
       {domain === 'climate' ? (
         <>
           <div className="temperature-display">
@@ -266,7 +272,9 @@ export function DeviceCard({
             <div className="media-volume">
               <div className="volume-caption">
                 <span>Volume</span>
-                <span>{muted ? 'Muted' : volumeKnown ? `${volumeLevel}%` : '—'}</span>
+                <span>
+                  {muted ? 'Muted' : volumeKnown ? `${volumeLevel}%` : '—'}
+                </span>
               </div>
               <div className="volume-row">
                 {canMute && (
@@ -275,7 +283,9 @@ export function DeviceCard({
                     disabled={locked}
                     aria-label={`${muted ? 'Unmute' : 'Mute'} ${name}`}
                     aria-pressed={muted}
-                    onClick={() => action('volume_mute', { is_volume_muted: !muted })}
+                    onClick={() =>
+                      action('volume_mute', { is_volume_muted: !muted })
+                    }
                   >
                     {muted ? <VolumeX size={17} /> : <Volume2 size={17} />}
                   </button>
@@ -291,14 +301,31 @@ export function DeviceCard({
                     disabled={locked}
                     aria-label={`${name} volume`}
                     aria-valuetext={`${volumeLevel}%${muted ? ', muted' : ''}`}
-                    onChange={(event) => setVolumeLevel(Number(event.target.value))}
-                    onPointerUp={(event) => action('volume_set', {
-                      volume_level: Number(event.currentTarget.value) / 100,
-                    })}
+                    onChange={(event) =>
+                      setVolumeLevel(Number(event.target.value))
+                    }
+                    onPointerUp={(event) =>
+                      action('volume_set', {
+                        volume_level: Number(event.currentTarget.value) / 100,
+                      })
+                    }
                     onPointerCancel={() => setVolumeLevel(latestVolume.current)}
                     onKeyUp={(event) => {
-                      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) {
-                        action('volume_set', { volume_level: Number(event.currentTarget.value) / 100 });
+                      if (
+                        [
+                          'ArrowLeft',
+                          'ArrowRight',
+                          'ArrowUp',
+                          'ArrowDown',
+                          'Home',
+                          'End',
+                          'PageUp',
+                          'PageDown',
+                        ].includes(event.key)
+                      ) {
+                        action('volume_set', {
+                          volume_level: Number(event.currentTarget.value) / 100,
+                        });
                       }
                     }}
                   />
@@ -309,7 +336,9 @@ export function DeviceCard({
           <div className="media-controls">
             <div className="media-meta">
               <span className="device-status">{status}</span>
-              {platform === 'sonos' && <span className="platform-label">Sonos</span>}
+              {platform === 'sonos' && (
+                <span className="platform-label">Sonos</span>
+              )}
             </div>
             <div className="transport-controls">
               <button

@@ -26,6 +26,8 @@ export const demoSnapshot: HassSnapshot = {
     ['light.reading_lamp', 'living'],
     ['climate.living_room', 'living'],
     ['media_player.speaker', 'living'],
+    ['media_player.kitchen_sonos', 'kitchen'],
+    ['media_player.bedroom_sonos', 'bedroom'],
     ['light.kitchen', 'kitchen'],
     ['switch.coffee', 'kitchen'],
     ['light.bedside', 'bedroom'],
@@ -36,7 +38,7 @@ export const demoSnapshot: HassSnapshot = {
     entity_id,
     area_id,
     device_id: null,
-    ...(entity_id === 'media_player.speaker' ? { platform: 'sonos' } : {}),
+    ...(entity_id.startsWith('media_player.') ? { platform: 'sonos' } : {}),
   })),
   entities: [
     entity('light.living_pendant', 'Pendant lights', 'on', {
@@ -63,6 +65,22 @@ export const demoSnapshot: HassSnapshot = {
       volume_level: 0.32,
       is_volume_muted: false,
       demo_track: 0,
+    }),
+    entity('media_player.kitchen_sonos', 'Kitchen Sonos', 'paused', {
+      media_title: 'Light through the window',
+      media_artist: 'Kitchen playlist',
+      supported_features: 1 | 4 | 8 | 16 | 32 | 16384,
+      volume_level: 0.22,
+      is_volume_muted: false,
+      demo_track: 1,
+    }),
+    entity('media_player.bedroom_sonos', 'Bedroom Sonos', 'idle', {
+      media_title: 'Somewhere to stay',
+      media_artist: 'Bedroom playlist',
+      supported_features: 1 | 4 | 8 | 16 | 32 | 16384,
+      volume_level: 0.15,
+      is_volume_muted: false,
+      demo_track: 2,
     }),
     entity('light.kitchen', 'Kitchen lights', 'off', {
       brightness: 204,

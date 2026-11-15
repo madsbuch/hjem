@@ -243,9 +243,6 @@ export function CalendarToday({
             </div>
           </div>
         </div>
-        <span className="calendar-scroll-hint">
-          Scroll to peek · returns to now
-        </span>
       </div>
     </section>
   );

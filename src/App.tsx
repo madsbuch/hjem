@@ -21,8 +21,8 @@ import {
   Check,
   LoaderCircle,
   SlidersHorizontal,
-  Heart,
   PlugZap,
+  ShieldCheck,
   MessageCircle,
 } from 'lucide-react';
 import {
@@ -43,6 +43,7 @@ import {
   visibleEntities,
 } from './lib/entities';
 import { DeviceCard } from './components/DeviceCard';
+import { MusicPanel } from './components/MusicPanel';
 import { useTheme, type Theme } from './lib/useTheme';
 import { AppLauncher } from './components/AppLauncher';
 import { useLauncher } from './lib/useLauncher';
@@ -98,6 +99,7 @@ export default function App() {
   const [room, setRoom] = useState('all');
   const [query, setQuery] = useState('');
   const [onlyFavourites, setOnlyFavourites] = useState(false);
+  const [selectedSpeakerId, setSelectedSpeakerId] = useState('');
   const [favourites, setFavourites] = useState<string[]>(() =>
     readPreference('hjem.favourites.demo', [
       'light.living_pendant',
@@ -475,9 +477,6 @@ export default function App() {
               <ArrowRight size={16} />
             </button>
           </div>
-          <span className="sidebar-footer">
-            <Heart size={12} /> A little more at home.
-          </span>
         </div>
       </aside>
 
@@ -544,9 +543,15 @@ export default function App() {
                     <h2>Music</h2>
                   </div>
                   {speakers.length ? (
-                    <div className="devices-grid music-grid">
-                      {speakers.map(renderDevice)}
-                    </div>
+                    <MusicPanel
+                      speakers={speakers}
+                      snapshot={snapshot}
+                      selectedId={selectedSpeakerId}
+                      onSelect={setSelectedSpeakerId}
+                      onAction={act}
+                      disabled={!canControl}
+                      pending={pending}
+                    />
                   ) : (
                     <div className="home-section-empty">
                       Your Sonos speakers and other media players will appear
@@ -995,7 +1000,7 @@ export default function App() {
             tokens. Create a token for Hjem.
           </p>
           <div className="privacy-note">
-            <Heart size={17} />
+            <ShieldCheck size={17} />
             <p>
               Your token stays in memory for this session. You’ll enter it again
               when you reopen Hjem.

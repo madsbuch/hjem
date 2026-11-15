@@ -62,7 +62,7 @@ Music and the calendar share the top of the home screen, with the full-width moo
 
 Add your speakers to the [Sonos integration in Home Assistant](https://www.home-assistant.io/integrations/sonos/). Hjem then discovers their media-player entities alongside your other devices; no separate Sonos account or connection is needed in Hjem.
 
-Speaker cards show the current track and artist, with play/pause, previous/next track, volume, and mute controls when the speaker supports them. The demo includes a Sonos speaker with simulated controls. Music selection, queues, and speaker grouping remain in the Sonos app or Home Assistant for this first version.
+Speaker cards show the current track and artist, with play/pause, previous/next track, volume, and mute controls when the speaker supports them. Tabs at the top of the home-screen music card switch between systems. The demo includes three independent Sonos systems in the living room, kitchen, and bedroom, each with its own playback, track, and volume. Music selection, queues, and speaker grouping remain in the Sonos app or Home Assistant for this first version.
 
 ## Android home screen and apps
 
