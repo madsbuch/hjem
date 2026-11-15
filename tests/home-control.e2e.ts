@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 
 async function navigate(
   page: Page,
-  name: 'Overview' | 'Rooms' | 'Scenes' | 'Settings',
+  name: 'Overview' | 'Rooms' | 'Scenes' | 'Apps' | 'Settings',
 ) {
   const mobile = page.getByRole('navigation', { name: 'Mobile navigation' });
   const nav = (await mobile.isVisible())
@@ -391,6 +391,7 @@ test('overview, rooms, scenes, settings, and connection dialog fit the viewport'
     'Overview',
     'Rooms',
     'Scenes',
+    'Apps',
     'Settings',
   ] as const) {
     await navigate(page, destination);
@@ -584,4 +585,69 @@ test('speaker controls respect capabilities, service failures, and offline state
   await expect(speaker.getByRole('button', { name: 'Mute Office Sonos', exact: true })).toBeDisabled();
   await expect(speaker.getByRole('button', { name: 'Next track on Office Sonos' })).toBeDisabled();
   await expect(speaker.getByRole('button', { name: 'Pause Office Sonos', exact: true })).toBeDisabled();
+});
+
+test('app search, pinned apps, and the everyday dock persist across refresh', async ({ page }) => {
+  await page.goto('/');
+  await navigate(page, 'Apps');
+  const search = page.getByRole('textbox', { name: 'Find an app', exact: true });
+  await search.fill('spotify');
+  await expect(page.getByRole('button', { name: 'Open Spotify', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open YouTube', exact: true })).not.toBeVisible();
+  await search.fill('');
+  const unpin = page.getByRole('button', { name: 'Unpin Photos', exact: true });
+  if (await unpin.isVisible()) await unpin.click();
+  await page.getByRole('button', { name: 'Pin Photos', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Unpin Photos', exact: true })).toBeVisible();
+  await navigate(page, 'Overview');
+  const dock = page.getByRole('region', { name: 'Your everyday apps', exact: true });
+  await expect(dock.getByRole('button', { name: 'Open Photos', exact: true })).toBeVisible();
+  await page.reload();
+  await expect(dock.getByRole('button', { name: 'Open Photos', exact: true })).toBeVisible();
+  await dock.getByRole('button', { name: 'All apps', exact: true }).click();
+  await expect(search).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Unpin Photos', exact: true })).toBeVisible();
+});
+
+test('browser app launches and Android home settings give honest preview feedback', async ({ page }) => {
+  await page.goto('/');
+  await navigate(page, 'Apps');
+  await page.getByRole('button', { name: 'Open Sonos', exact: true }).click();
+  await expect(page.getByRole('status')).toContainText(/preview shortcut/i);
+  await expect(page.getByRole('status')).toContainText(/apps open in Hjem for Android/i);
+  await expect(page).toHaveURL(/\/$/);
+  await navigate(page, 'Settings');
+  await expect(page.getByRole('heading', { name: 'A home for your tablet', exact: true })).toBeVisible();
+  await expect(page.getByText(/^Install Hjem on your Android tablet/)).toBeVisible();
+  const defaultHome = page.getByRole('button', { name: 'Choose default home app', exact: true });
+  await expect(defaultHome).toBeDisabled();
+});
+
+test('dark mode app launcher and dock fit the phone and tablet viewport', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.goto('/');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(page.getByRole('heading', { name: 'Your everyday apps', exact: true })).toBeVisible();
+  for (const destination of ['Apps', 'Overview'] as const) {
+    await navigate(page, destination);
+    if (destination === 'Apps') {
+      await expect(page.getByRole('textbox', { name: 'Find an app', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Open Sonos', exact: true })).toBeVisible();
+    }
+    const sizes = await page.evaluate(() => ({
+      body: document.body.scrollWidth,
+      root: document.documentElement.clientWidth,
+    }));
+    expect(sizes.body).toBeLessThanOrEqual(sizes.root + 1);
+  }
+  if (page.viewportSize()!.width === 390) {
+    await page.setViewportSize({ width: 320, height: 844 });
+    await navigate(page, 'Apps');
+    const buttons = page.getByRole('navigation', { name: 'Mobile navigation' }).getByRole('button');
+    for (const button of await buttons.all()) {
+      const bounds = await button.boundingBox();
+      expect(bounds!.x).toBeGreaterThanOrEqual(0);
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(320);
+    }
+  }
 });

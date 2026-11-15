@@ -332,6 +332,32 @@ input[type='range'] {
   padding-right: 2px;
   color: #a5a277;
 }
+.home-at-a-glance {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 9px;
+  flex-shrink: 0;
+}
+.home-clock {
+  font-size: 29px;
+  font-weight: 350;
+  letter-spacing: -1px;
+  font-variant-numeric: tabular-nums;
+}
+.home-at-a-glance .weather strong {
+  font-size: 16px;
+}
+.home-at-a-glance .weather > svg {
+  width: 22px;
+  height: 22px;
+}
+.home-screen-card {
+  grid-column: 1 / -1;
+}
+.home-screen-card .primary-button {
+  max-width: 340px;
+}
 .weather strong {
   font-weight: 500;
   font-size: 22px;
@@ -1936,7 +1962,8 @@ input[type='range'] {
     align-items: center;
     justify-content: center;
     gap: 5px;
-    min-width: 63px;
+    min-width: 0;
+    flex: 1;
     background: none;
     color: #a5ae99;
     border-radius: 9px;

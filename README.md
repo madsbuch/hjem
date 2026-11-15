@@ -2,11 +2,12 @@
 
 **A little more at home.**
 
-Hjem means “home” in Danish. It is a Tauri 2 app for controlling a Home Assistant home from a phone, tablet, or desktop. A forest-green house mark, amber doorway, and warm ivory interface give everyday controls a calm, familiar place to live.
+Hjem means “home” in Danish. It is a Tauri 2 home screen for an Android tablet, bringing favourite apps, Home Assistant controls, and Sonos together. Its home-control interface also runs on phones and desktops. A forest-green house mark, amber doorway, and warm ivory interface give everyday controls a calm, familiar place to live.
 
 Start with the interactive demo home, then connect your own Home Assistant in Settings.
 
 - Pin favourite devices for quick access.
+- Open installed Android apps from a searchable app drawer and pin favourites to the home screen.
 - Browse rooms using your Home Assistant areas and device assignments.
 - Search devices and filter by room or pinned favourites.
 - Choose Light, Dark, or System appearance, or switch with the header toggle.
@@ -56,6 +57,14 @@ Use HTTPS for remote access. An HTTP address uses an unencrypted WebSocket conne
 Add your speakers to the [Sonos integration in Home Assistant](https://www.home-assistant.io/integrations/sonos/). Hjem then discovers their media-player entities alongside your other devices; no separate Sonos account or connection is needed in Hjem.
 
 Speaker cards show the current track and artist, with play/pause, previous/next track, volume, and mute controls when the speaker supports them. The demo includes a Sonos speaker with simulated controls. Music selection, queues, and speaker grouping remain in the Sonos app or Home Assistant for this first version.
+
+## Android home screen and apps
+
+On Android, Hjem lists launchable apps in the current profile, using their names and icons from Android. Open **Apps** to search, launch, or pin an app to the dashboard. The list refreshes when you return to Hjem, and pinned choices stay on this device. Apps work independently of your Home Assistant connection.
+
+To use Hjem as the tablet's home screen, choose **Settings → Choose default home app**, then select **Hjem** in Android's settings. Hjem never changes the default automatically. You can choose your previous launcher from the same Android setting.
+
+The browser, desktop, and iOS versions show clearly labeled sample app shortcuts for exploring the layout. They do not enumerate or launch installed apps. The native launcher uses Android's scoped package visibility for launcher activities; it does not request broad access to every installed package. Work profiles, widgets, and notification badges are outside this first version.
 
 ## Phone and tablet
 

@@ -50,11 +50,20 @@ import {
 import { DeviceCard } from './components/DeviceCard';
 import { RoomIllustration } from './components/RoomIllustration';
 import { useTheme, type Theme } from './lib/useTheme';
+import { AppLauncher } from './components/AppLauncher';
+import { useLauncher } from './lib/useLauncher';
+import {
+  launchApp,
+  openHomeSettings,
+  onHomeRequested,
+  type LauncherApp,
+} from './lib/launcher';
 
-type Page = 'home' | 'rooms' | 'scenes' | 'settings';
+type Page = 'home' | 'apps' | 'rooms' | 'scenes' | 'settings';
 const navigation = [
   { id: 'home', label: 'Overview', Icon: House },
-  { id: 'rooms', label: 'Rooms', Icon: LayoutGrid },
+  { id: 'apps', label: 'Apps', Icon: LayoutGrid },
+  { id: 'rooms', label: 'Rooms', Icon: Sofa },
   { id: 'scenes', label: 'Scenes', Icon: Sparkles },
   { id: 'settings', label: 'Settings', Icon: Settings },
 ] as const;
@@ -74,6 +83,8 @@ const errorMessage = (error: unknown) =>
 
 export default function App() {
   const { theme, resolvedTheme, setTheme } = useTheme();
+  const launcher = useLauncher();
+  const launching = useRef(false);
   const [page, setPage] = useState<Page>('home');
   const [snapshot, setSnapshot] = useState<HassSnapshot>(() =>
     structuredClone(demoSnapshot),
@@ -109,6 +120,31 @@ export default function App() {
   const canControl = !formIsBusy && (mode === 'demo' || status === 'connected');
 
   useEffect(() => {
+    if (!launcher.supported) return;
+    let disposed = false;
+    let removeListener: (() => void) | undefined;
+    void onHomeRequested(() => {
+      setPage('home');
+      setRoom('all');
+      setQuery('');
+      setOnlyFavourites(false);
+      dialog.current?.close();
+      window.scrollTo({ top: 0 });
+    })
+      .then((remove) => {
+        if (disposed) remove();
+        else removeListener = remove;
+      })
+      .catch((cause) => {
+        if (!disposed) setToast({ text: errorMessage(cause), error: true });
+      });
+    return () => {
+      disposed = true;
+      removeListener?.();
+    };
+  }, [launcher.supported]);
+
+  useEffect(() => {
     client.current = new HomeAssistantClient({
       onSnapshot: setSnapshot,
       onStatus: (next, message) => {
@@ -130,6 +166,41 @@ export default function App() {
   }, [toast]);
 
   const notify = (text: string, error = false) => setToast({ text, error });
+  async function openApp(app: LauncherApp) {
+    if (launcher.preview) {
+      notify(
+        `${app.name} is a preview shortcut. Installed apps open in Hjem for Android.`,
+      );
+      return;
+    }
+    if (launching.current) return;
+    launching.current = true;
+    try {
+      await launchApp(app.packageName);
+    } catch (cause) {
+      notify(errorMessage(cause), true);
+    } finally {
+      launching.current = false;
+    }
+  }
+  async function chooseHomeApp() {
+    try {
+      await openHomeSettings();
+    } catch (cause) {
+      notify(errorMessage(cause), true);
+    }
+  }
+  const launcherProps = {
+    apps: launcher.apps,
+    pinned: launcher.pinned,
+    onTogglePin: launcher.togglePin,
+    onLaunch: (app: LauncherApp) => void openApp(app),
+    onOpenAll: () => navigate('apps'),
+    preview: launcher.preview,
+    loading: launcher.loading,
+    error: launcher.error,
+    onRefresh: () => void launcher.refresh(),
+  };
   const navigate = (next: Page) => {
     setPage(next);
     setRoom('all');
@@ -454,23 +525,36 @@ export default function App() {
                   </h1>
                   <p>Welcome to your little corner of calm.</p>
                 </div>
-                {weather && weather.attributes.temperature != null && (
-                  <div className="weather">
-                    <Sun size={29} strokeWidth={1.5} />
-                    <div>
-                      <strong>
-                        {weather.attributes.temperature}
-                        {weather.attributes.temperature_unit || unit}
-                      </strong>
-                      <span>
-                        {String(weather.state)
-                          .replace('partlycloudy', 'Partly cloudy')
-                          .replaceAll('_', ' ')}
-                      </span>
+                <div className="home-at-a-glance">
+                  <time
+                    className="home-clock"
+                    dateTime={now.toISOString()}
+                    aria-label="Current time"
+                  >
+                    {now.toLocaleTimeString(undefined, {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </time>
+                  {weather && weather.attributes.temperature != null && (
+                    <div className="weather">
+                      <Sun size={29} strokeWidth={1.5} />
+                      <div>
+                        <strong>
+                          {weather.attributes.temperature}
+                          {weather.attributes.temperature_unit || unit}
+                        </strong>
+                        <span>
+                          {String(weather.state)
+                            .replace('partlycloudy', 'Partly cloudy')
+                            .replaceAll('_', ' ')}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
               </section>
+              <AppLauncher {...launcherProps} compact />
               <section className="welcome-card">
                 <div className="welcome-copy">
                   <span className="hero-eyebrow">
@@ -727,6 +811,26 @@ export default function App() {
             </>
           )}
 
+          {page === 'apps' && (
+            <>
+              <section className="page-intro">
+                <div>
+                  <span className="eyebrow date-label">
+                    A PLACE FOR YOUR EVERYDAY
+                  </span>
+                  <h1>Your apps. Right at home.</h1>
+                  <p>Open an app, or pin it to keep it close.</p>
+                </div>
+                <LayoutGrid
+                  className="intro-icon"
+                  size={32}
+                  strokeWidth={1.3}
+                />
+              </section>
+              <AppLauncher {...launcherProps} />
+            </>
+          )}
+
           {page === 'settings' && (
             <>
               <section className="page-intro">
@@ -797,6 +901,35 @@ export default function App() {
                   >
                     See pinned devices
                     <ArrowRight size={17} />
+                  </button>
+                </section>
+                <section className="settings-card home-screen-card">
+                  <span className="settings-icon">
+                    <House size={25} />
+                  </span>
+                  <h2>A home for your tablet</h2>
+                  <p>
+                    {launcher.supported
+                      ? 'Make Hjem your default home screen to return to your apps, music, and home controls whenever you press Home.'
+                      : 'Install Hjem on your Android tablet to open installed apps and use it as your home screen. This preview uses sample apps.'}
+                  </p>
+                  <div className="setting-row">
+                    <span>Home screen</span>
+                    <strong>
+                      {launcher.isDefaultHome
+                        ? 'Hjem is your default'
+                        : launcher.supported
+                          ? 'Ready to set up'
+                          : 'Preview'}
+                    </strong>
+                  </div>
+                  <button
+                    className="primary-button"
+                    disabled={!launcher.supported || launcher.loading}
+                    onClick={() => void chooseHomeApp()}
+                  >
+                    Choose default home app
+                    <ArrowUpRight size={17} />
                   </button>
                 </section>
                 <section className="settings-card appearance-card">

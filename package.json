@@ -14,9 +14,10 @@
     "ios": "tauri ios dev"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.12.4",
+    "lucide-react": "^0.468.0",
     "react": "^19.3.0",
-    "react-dom": "^19.3.0",
-    "lucide-react": "^0.468.0"
+    "react-dom": "^19.3.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.0",

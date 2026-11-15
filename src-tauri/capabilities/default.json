@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Basic window functionality for the local Hjem interface.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "launcher:default"]
 }
