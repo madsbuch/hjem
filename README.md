@@ -93,6 +93,12 @@ npm run tauri -- android build
 
 The first command runs on a connected device or emulator. The second creates a release build; distribution requires your own signing configuration.
 
+### Android releases
+
+On every push to `main`, the GitHub workflow publishes a signed `Hjem-android.apk` as a rolling `latest` release once the tests and the Android build pass. Each run replaces the previous release. Pull requests and manual runs on other branches build the APK as a workflow artifact without publishing it.
+
+Release signing requires the `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD` repository secrets; without them, `main` does not publish. Run `./scripts/make-android-keystore.sh` once to create a key and print the four secrets. Keep the keystore and its password safe: later releases must use the same key to upgrade an installed copy. Pull requests sign their test APKs with a temporary key, so those cannot upgrade a released install.
+
 Android release builds allow local HTTP access to `homeassistant.local` and the app’s local origins. For a different HTTP hostname or LAN IP, add that exact address to `src-tauri/gen/android/app/src/main/res/xml/network_security_config.xml` and rebuild. HTTPS addresses do not need this exception. The debug configuration separately permits the local development server.
 
 For iPhone and iPad, install full Xcode and `xcodegen`, configure Apple signing, and install the iOS Rust targets from the Tauri prerequisites. The iOS project has not yet been initialized. Then run:

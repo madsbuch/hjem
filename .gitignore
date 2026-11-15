@@ -21,3 +21,6 @@ src-tauri/gen/apple/**/*.xcuserstate
 src-tauri/gen/apple/**/xcuserdata/
 test-results/
 playwright-report/
+
+# Android signing keys
+*.jks

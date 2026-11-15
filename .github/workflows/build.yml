@@ -1,5 +1,8 @@
 name: Build Hjem
 
+# Every push to main replaces the rolling "latest" release with a fresh APK.
+# Pull requests and other branches build and test everything; only main publishes.
+
 on:
   push:
     branches: [main]
@@ -145,6 +148,7 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          PUBLISHES: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
         run: |
           set -euo pipefail
           mkdir -p out
@@ -152,7 +156,15 @@ jobs:
           aligned="$RUNNER_TEMP/hjem-aligned.apk"
           trap 'rm -f "$keystore" "$aligned"' EXIT
           if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            : "${ANDROID_KEYSTORE_PASSWORD:?Configure ANDROID_KEYSTORE_PASSWORD}"
+            : "${ANDROID_KEY_PASSWORD:?Configure ANDROID_KEY_PASSWORD}"
+            : "${ANDROID_KEY_ALIAS:?Configure ANDROID_KEY_ALIAS}"
             printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore"
+          elif [ "$PUBLISHES" = 'true' ]; then
+            # A release signed with a throwaway key could not upgrade the
+            # previous install, so main refuses to publish without the real key.
+            echo '::error::Configure the ANDROID_KEYSTORE_* and ANDROID_KEY_* secrets before releasing (see scripts/make-android-keystore.sh).'
+            exit 1
           else
             echo '::warning::Using a temporary signing key. This APK cannot upgrade an earlier CI install.'
             export ANDROID_KEYSTORE_PASSWORD='hjem-ci-temporary'
@@ -218,3 +230,59 @@ jobs:
           path: out/Hjem-ios-simulator.zip
           if-no-files-found: error
           retention-days: 14
+
+  publish:
+    name: Publish latest
+    # Only main publishes. Desktop and iOS builds stay workflow artifacts; a
+    # manual run on another branch keeps its APK as an artifact for testing.
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: [check, android]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v7
+        with:
+          name: hjem-android
+          path: release
+      - name: Move the latest tag to this commit
+        run: |
+          git tag -f latest "$GITHUB_SHA"
+          git push -f origin refs/tags/latest
+      - name: Compose release notes
+        env:
+          # Passed through the environment so quotes and newlines in the commit
+          # message cannot break the shell.
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          cat > notes.md <<'HEADER'
+          Rolling build of `main`. Replaced on every push.
+
+          ### Install
+
+          **Android** — download `Hjem-android.apk`, open it on the phone or
+          tablet, and allow installation from this source. To use Hjem as the
+          home screen, choose **Settings → Choose default home app** in the app.
+
+          HEADER
+          {
+            echo '### This build'
+            echo
+            echo "- Commit \`${GITHUB_SHA::7}\` — $(printf '%s' "${COMMIT_MESSAGE:-manual run}" | head -1)"
+            echo "- Built $(date -u '+%Y-%m-%d %H:%M UTC')"
+          } >> notes.md
+      # Start from an empty release each time, so no asset from an older build
+      # is left behind.
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --repo "$GITHUB_REPOSITORY" || true
+          gh release create latest release/Hjem-android.apk \
+            --repo "$GITHUB_REPOSITORY" \
+            --title 'Latest build' \
+            --notes-file notes.md \
+            --verify-tag \
+            --latest
