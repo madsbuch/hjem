@@ -1,9 +1,11 @@
 import { expect, test, type Page } from '@playwright/test';
+import { nativeStorage } from './helpers/native-storage';
 
 type Colours = { background: string; card: string; text: string };
 type Capture = { before: Colours; frames: Colours[] };
 
 async function openAppearance(page: Page) {
+  await page.locator('nav:visible').first().waitFor();
   const mobile = page.getByRole('navigation', { name: 'Mobile navigation' });
   const navigation = (await mobile.isVisible())
     ? mobile
@@ -110,9 +112,7 @@ test('saved appearance applies on initial load without a theme animation', async
     colorScheme: 'light',
     reducedMotion: 'no-preference',
   });
-  await page.addInitScript(() =>
-    localStorage.setItem('hjem.theme', JSON.stringify('dark')),
-  );
+  await nativeStorage(page, { theme: 'dark' });
   await page.goto('/');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   const initial = await page.evaluate(() => ({

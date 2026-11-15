@@ -1,11 +1,16 @@
 import type { HassEntity, HassSnapshot } from './home-assistant';
 
-export const domainOf = (entity: HassEntity) => entity.entity_id.split('.')[0];
-export const nameOf = (entity: HassEntity) =>
-  String(
-    entity.attributes.friendly_name ||
-      entity.entity_id.split('.')[1].replaceAll('_', ' '),
-  );
+export const domainOf = (entity: HassEntity) => entity.entity_id.split('.')[0] ?? '';
+export function textAttribute(entity: HassEntity, key: string, fallback = ''): string {
+  const value = entity.attributes[key];
+  return typeof value === 'string' ? value : fallback;
+}
+export function numberAttribute(entity: HassEntity, key: string, fallback = 0): number {
+  const value = entity.attributes[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+export const nameOf = (entity: HassEntity) => textAttribute(entity, 'friendly_name') ||
+  (entity.entity_id.split('.')[1] ?? entity.entity_id).replaceAll('_', ' ');
 export const isUnavailable = (entity: HassEntity) =>
   ['unavailable', 'unknown'].includes(entity.state);
 export const isActive = (entity: HassEntity) =>
@@ -19,11 +24,11 @@ export const isActive = (entity: HassEntity) =>
     'unknown',
   ].includes(entity.state);
 export const supports = (entity: HassEntity, flag: number) =>
-  (Number(entity.attributes.supported_features || 0) & flag) !== 0;
+  (numberAttribute(entity, 'supported_features') & flag) !== 0;
 export const supportsBrightness = (entity: HassEntity) =>
   Array.isArray(entity.attributes.supported_color_modes) &&
   entity.attributes.supported_color_modes.some(
-    (mode: string) => !['onoff', 'unknown'].includes(mode),
+    (mode: unknown) => typeof mode === 'string' && !['onoff', 'unknown'].includes(mode),
   );
 
 export function roomFor(entity: HassEntity, snapshot: HassSnapshot): string {
@@ -57,20 +62,4 @@ export function visibleEntities(snapshot: HassSnapshot): HassEntity[] {
       domains.includes(domainOf(entity)) && !reg?.hidden_by && !reg?.disabled_by
     );
   });
-}
-
-export function readPreference<T>(key: string, fallback: T): T {
-  try {
-    const value = localStorage.getItem(key);
-    return value ? (JSON.parse(value) as T) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-export function savePreference(key: string, value: unknown) {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    /* Preferences are optional when storage is disabled. */
-  }
 }

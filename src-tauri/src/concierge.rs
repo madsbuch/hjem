@@ -1,32 +1,30 @@
-//! OpenRouter credentials stay in the native app's private settings file.
+//! OpenRouter credentials stay in the native app's private SQLite database.
 //! This is private file storage, not OS keychain encryption. Only a key-presence
 //! flag crosses IPC. API errors deliberately omit remote text and credentials.
 
+use crate::database::{with_database, DatabaseState};
 use futures_util::future::{AbortHandle, AbortRegistration, Abortable};
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use std::fs::{self, File};
-use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 
 const API: &str = "https://openrouter.ai/api/v1";
 const RESPONSE_LIMIT: usize = 4 * 1024 * 1024;
 const REQUEST_LIMIT: usize = 1024 * 1024;
-const SETTINGS_LIMIT: u64 = 16 * 1024;
+const RESPONSE_LENGTH_LIMIT: u64 = 4 * 1024 * 1024;
 const STOPPED: &str = "Stopped.";
 type Result<T> = std::result::Result<T, String>;
 
 #[derive(Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct StoredSettings {
-    api_key: Option<String>,
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct StoredSettings {
+    pub(crate) api_key: Option<String>,
     #[serde(default)]
-    model: String,
+    pub(crate) model: String,
 }
 
 #[derive(Serialize)]
@@ -60,7 +58,6 @@ enum Pending {
 
 #[derive(Default)]
 pub struct ConciergeState {
-    settings_lock: Mutex<()>,
     pending: Arc<Mutex<HashMap<String, Pending>>>,
 }
 
@@ -142,66 +139,7 @@ fn validate_request_id(id: &str) -> Result<()> {
     Ok(())
 }
 
-fn settings_path(app: &AppHandle) -> Result<PathBuf> {
-    app.path()
-        .app_config_dir()
-        .map(|dir| dir.join("concierge.json"))
-        .map_err(|_| "Hjem's private settings folder could not be located.".into())
-}
-
-fn read_settings(path: &Path) -> Result<StoredSettings> {
-    let file = match File::open(path) {
-        Ok(file) => file,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(StoredSettings::default())
-        }
-        Err(_) => return Err("Concierge settings could not be read.".into()),
-    };
-    let mut bytes = Vec::new();
-    file.take(SETTINGS_LIMIT + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|_| "Concierge settings could not be read.")?;
-    if bytes.len() as u64 > SETTINGS_LIMIT {
-        return Err("Concierge settings are unreadable.".into());
-    }
-    serde_json::from_slice(&bytes).map_err(|_| "Concierge settings are unreadable.".into())
-}
-
-fn persist_settings(path: &Path, settings: &StoredSettings) -> Result<()> {
-    let directory = path
-        .parent()
-        .ok_or("Hjem's private settings folder could not be located.")?;
-    fs::create_dir_all(directory)
-        .map_err(|_| "Hjem's private settings folder could not be created.")?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(directory, fs::Permissions::from_mode(0o700))
-            .map_err(|_| "Hjem's private settings folder could not be secured.")?;
-    }
-    let mut temporary = tempfile::NamedTempFile::new_in(directory)
-        .map_err(|_| "Concierge settings could not be saved.")?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        temporary
-            .as_file()
-            .set_permissions(fs::Permissions::from_mode(0o600))
-            .map_err(|_| "Concierge settings could not be secured.")?;
-    }
-    serde_json::to_writer(temporary.as_file_mut(), settings)
-        .map_err(|_| "Concierge settings could not be saved.")?;
-    temporary
-        .flush()
-        .and_then(|_| temporary.as_file().sync_all())
-        .map_err(|_| "Concierge settings could not be saved.")?;
-    temporary
-        .persist(path)
-        .map_err(|_| "Concierge settings could not be saved.")?;
-    Ok(())
-}
-
-fn apply_settings(
+pub(crate) fn apply_settings(
     settings: &mut StoredSettings,
     api_key: Option<String>,
     model: String,
@@ -224,53 +162,43 @@ fn apply_settings(
     Ok(())
 }
 
-fn snapshot(app: &AppHandle, state: &ConciergeState) -> Result<StoredSettings> {
-    let _lock = state
-        .settings_lock
-        .lock()
-        .map_err(|_| "Concierge settings are unavailable.")?;
-    read_settings(&settings_path(app)?)
+fn snapshot(app: &AppHandle, database: &DatabaseState) -> Result<StoredSettings> {
+    with_database(app, database, |database| database.concierge_settings())
 }
 
 #[tauri::command]
 pub fn concierge_get_settings(
     app: AppHandle,
-    state: State<'_, ConciergeState>,
+    database: State<'_, DatabaseState>,
 ) -> Result<ConciergeSettings> {
-    Ok(snapshot(&app, &state)?.public())
+    Ok(snapshot(&app, &database)?.public())
 }
 
 #[tauri::command]
 pub fn concierge_save_settings(
     app: AppHandle,
-    state: State<'_, ConciergeState>,
+    database: State<'_, DatabaseState>,
     api_key: Option<String>,
     model: String,
 ) -> Result<ConciergeSettings> {
-    let _lock = state
-        .settings_lock
-        .lock()
-        .map_err(|_| "Concierge settings are unavailable.")?;
-    let path = settings_path(&app)?;
-    let mut settings = read_settings(&path)?;
-    apply_settings(&mut settings, api_key, model)?;
-    persist_settings(&path, &settings)?;
+    let settings = with_database(&app, &database, |database| {
+        database.update_concierge(|settings| apply_settings(settings, api_key, model))
+    })?;
     Ok(settings.public())
 }
 
 #[tauri::command]
 pub fn concierge_clear_key(
     app: AppHandle,
+    database: State<'_, DatabaseState>,
     state: State<'_, ConciergeState>,
 ) -> Result<ConciergeSettings> {
-    let _lock = state
-        .settings_lock
-        .lock()
-        .map_err(|_| "Concierge settings are unavailable.")?;
-    let path = settings_path(&app)?;
-    let mut settings = read_settings(&path)?;
-    settings.api_key = None;
-    persist_settings(&path, &settings)?;
+    let settings = with_database(&app, &database, |database| {
+        database.update_concierge(|settings| {
+            settings.api_key = None;
+            Ok(())
+        })
+    })?;
     if let Ok(pending) = state.pending.lock() {
         for entry in pending.values() {
             if let Pending::Running(handle) = entry {
@@ -323,7 +251,7 @@ async fn response_json(request: reqwest::RequestBuilder) -> Result<Value> {
     }
     if response
         .content_length()
-        .is_some_and(|length| length > RESPONSE_LIMIT as u64)
+        .is_some_and(|length| length > RESPONSE_LENGTH_LIMIT)
     {
         return Err("OpenRouter returned a response that is too large.".into());
     }
@@ -349,8 +277,8 @@ async fn response_json(request: reqwest::RequestBuilder) -> Result<Value> {
 }
 
 #[tauri::command]
-pub async fn concierge_test_key(app: AppHandle, state: State<'_, ConciergeState>) -> Result<()> {
-    let settings = snapshot(&app, &state)?;
+pub async fn concierge_test_key(app: AppHandle, database: State<'_, DatabaseState>) -> Result<()> {
+    let settings = snapshot(&app, &database)?;
     response_json(
         client()?
             .get(format!("{API}/key"))
@@ -515,12 +443,13 @@ fn request_body(mut body: Value, model: &str) -> Result<Value> {
 #[tauri::command]
 pub async fn concierge_request(
     app: AppHandle,
+    database: State<'_, DatabaseState>,
     state: State<'_, ConciergeState>,
     request_id: String,
     body: Value,
 ) -> Result<Value> {
     let (_guard, registration) = state.begin(request_id)?;
-    let settings = snapshot(&app, &state)?;
+    let settings = snapshot(&app, &database)?;
     let body = request_body(body, &settings.model)?;
     let request = client()?
         .post(format!("{API}/chat/completions"))
@@ -543,9 +472,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn settings_persist_privately_and_public_response_never_contains_key() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("settings/concierge.json");
+    fn settings_validate_and_public_response_never_contains_key() {
         let mut settings = StoredSettings::default();
         apply_settings(
             &mut settings,
@@ -553,36 +480,16 @@ mod tests {
             " provider/model ".into(),
         )
         .unwrap();
-        persist_settings(&path, &settings).unwrap();
-        let loaded = read_settings(&path).unwrap();
-        assert_eq!(loaded.key().unwrap(), "test-secret");
+        assert_eq!(settings.key().unwrap(), "test-secret");
         assert_eq!(
-            serde_json::to_value(loaded.public()).unwrap(),
+            serde_json::to_value(settings.public()).unwrap(),
             json!({"hasApiKey":true,"model":"provider/model"})
         );
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            assert_eq!(
-                fs::metadata(&path).unwrap().permissions().mode() & 0o777,
-                0o600
-            );
-            assert_eq!(
-                fs::metadata(path.parent().unwrap())
-                    .unwrap()
-                    .permissions()
-                    .mode()
-                    & 0o777,
-                0o700
-            );
-        }
         apply_settings(&mut settings, None, "provider/new".into()).unwrap();
         assert_eq!(settings.key().unwrap(), "test-secret");
         assert!(apply_settings(&mut settings, Some(" ".into()), "".into()).is_err());
         settings.api_key = None;
-        persist_settings(&path, &settings).unwrap();
-        assert!(!fs::read_to_string(&path).unwrap().contains("test-secret"));
-        assert!(!read_settings(&path).unwrap().public().has_api_key);
+        assert!(!settings.public().has_api_key);
     }
 
     #[test]

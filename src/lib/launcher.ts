@@ -13,13 +13,26 @@ export interface LauncherStatus {
 
 export async function getLauncherStatus(): Promise<LauncherStatus> {
   if (!isTauri()) return { supported: false, isDefaultHome: false };
-  return invoke<LauncherStatus>('plugin:launcher|get_status');
+  const value = await invoke<unknown>('plugin:launcher|get_status');
+  if (!record(value) || typeof value.supported !== 'boolean' || typeof value.isDefaultHome !== 'boolean')
+    throw new Error('Android returned an unreadable launcher status.');
+  return { supported: value.supported, isDefaultHome: value.isDefaultHome };
 }
 
 export async function listInstalledApps(): Promise<LauncherApp[]> {
   if (!isTauri()) return [];
-  return invoke<LauncherApp[]>('plugin:launcher|list_apps');
+  const value = await invoke<unknown>('plugin:launcher|list_apps');
+  if (!unknownArray(value)) throw new Error('Android returned an unreadable app list.');
+  return value.map((app) => {
+    if (!record(app) || typeof app.packageName !== 'string' || typeof app.name !== 'string' ||
+      (app.icon !== undefined && typeof app.icon !== 'string')) throw new Error('Android returned an unreadable app.');
+    return { packageName: app.packageName, name: app.name, ...(typeof app.icon === 'string' ? { icon: app.icon } : {}) };
+  });
 }
+
+const record = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+const unknownArray = (value: unknown): value is unknown[] => Array.isArray(value);
 
 export async function launchApp(packageName: string): Promise<void> {
   if (!isTauri())

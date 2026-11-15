@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { isTauri } from '@tauri-apps/api/core';
 import {
   House,
   LayoutGrid,
@@ -38,9 +39,9 @@ import {
   domainOf,
   isActive,
   nameOf,
-  readPreference,
+  numberAttribute,
+  textAttribute,
   roomFor,
-  savePreference,
   visibleEntities,
 } from './lib/entities';
 import { DeviceCard } from './components/DeviceCard';
@@ -60,15 +61,34 @@ import {
   onHomeRequested,
   type LauncherApp,
 } from './lib/launcher';
+import {
+  useStorage,
+  getStorageSnapshot,
+  saveConnection,
+  forgetConnection,
+  saveFavourites,
+  saveSelectedSpeaker,
+} from './lib/storage';
 
 type Page = 'home' | 'apps' | 'controls' | 'concierge' | 'settings';
-const navigation = [
+const navigation: { id: Page; label: string; Icon: typeof House }[] = [
   { id: 'home', label: 'Overview', Icon: House },
   { id: 'apps', label: 'Apps', Icon: LayoutGrid },
   { id: 'controls', label: 'Controls', Icon: SlidersHorizontal },
   { id: 'concierge', label: 'Concierge', Icon: MessageCircle },
   { id: 'settings', label: 'Settings', Icon: Settings },
-] as const;
+];
+const themeOptions: { id: Theme; label: string; Icon: typeof Monitor }[] = [
+  { id: 'system', label: 'System', Icon: Monitor },
+  { id: 'light', label: 'Light', Icon: Sun },
+  { id: 'dark', label: 'Dark', Icon: Moon },
+];
+const demoFavourites = [
+  'light.living_pendant',
+  'climate.living_room',
+  'light.reading_lamp',
+  'media_player.speaker',
+];
 const sceneIcons = [Sun, Moon, ArrowUpRight, Coffee];
 const roomIcon = (name: string) =>
   /kitchen/i.test(name)
@@ -84,6 +104,7 @@ const errorMessage = (error: unknown) =>
     : 'Something went wrong. Please try again.';
 
 export default function App() {
+  const storage = useStorage();
   const { theme, setTheme } = useTheme();
   const launcher = useLauncher();
   const launching = useRef(false);
@@ -94,23 +115,22 @@ export default function App() {
   const [mode, setMode] = useState<'demo' | 'live'>('demo');
   const [status, setStatus] = useState<ConnectionStatus>('disconnected');
   const [connectionMessage, setConnectionMessage] = useState('');
-  const [server, setServer] = useState(() => readPreference('hjem.server', ''));
+  const [server, setServer] = useState(() => storage.serverUrl);
   const [connectedServer, setConnectedServer] = useState('');
   const [token, setToken] = useState('');
   const [scanningToken, setScanningToken] = useState(false);
   const [formError, setFormError] = useState('');
+  const [savingConnection, setSavingConnection] = useState(false);
   const [room, setRoom] = useState('all');
   const [query, setQuery] = useState('');
   const [onlyFavourites, setOnlyFavourites] = useState(false);
-  const [selectedSpeakerId, setSelectedSpeakerId] = useState('');
-  const [favourites, setFavourites] = useState<string[]>(() =>
-    readPreference('hjem.favourites.demo', [
-      'light.living_pendant',
-      'climate.living_room',
-      'light.reading_lamp',
-      'media_player.speaker',
-    ]),
-  );
+  const preferenceScope = mode === 'demo' ? 'demo' : connectedServer;
+  const favourites =
+    storage.favourites.find((item) => item.scope === preferenceScope)
+      ?.entityIds ?? (mode === 'demo' ? demoFavourites : []);
+  const selectedSpeakerId =
+    storage.selectedSpeakers.find((item) => item.scope === preferenceScope)
+      ?.entityId ?? '';
   const [pending, setPending] = useState<Set<string>>(new Set());
   const pendingRef = useRef(new Set<string>());
   const [toast, setToast] = useState<{ text: string; error: boolean } | null>(
@@ -120,7 +140,7 @@ export default function App() {
   const dialog = useRef<HTMLDialogElement>(null);
   const client = useRef<HomeAssistantClient | null>(null);
   const sessionVersion = useRef(0);
-  const formIsBusy = status === 'connecting';
+  const formIsBusy = status === 'connecting' || savingConnection;
   const canControl = !formIsBusy && (mode === 'demo' || status === 'connected');
 
   useEffect(() => {
@@ -150,17 +170,41 @@ export default function App() {
   }, [launcher.supported]);
 
   useEffect(() => {
-    client.current = new HomeAssistantClient({
-      onSnapshot: setSnapshot,
+    let active = true;
+    const connection = new HomeAssistantClient({
+      onSnapshot: (value) => {
+        if (active) setSnapshot(value);
+      },
       onStatus: (next, message) => {
+        if (!active) return;
         setStatus(next);
         setConnectionMessage(message || '');
       },
     });
+    client.current = connection;
+    const saved = getStorageSnapshot().connection;
+    if (saved) {
+      setMode('live');
+      setConnectedServer(saved.serverUrl);
+      setSnapshot({
+        entities: [],
+        areas: [],
+        devices: [],
+        registry: [],
+        locationName: 'My home',
+      });
+      void connection
+        .connect(saved.serverUrl, saved.token, { retryInitial: true })
+        .catch((cause: unknown) => {
+          if (active) setConnectionMessage(errorMessage(cause));
+        });
+    }
     const timer = setInterval(() => setNow(new Date()), 60_000);
     return () => {
+      active = false;
       sessionVersion.current++;
-      client.current?.disconnect();
+      connection.disconnect();
+      if (client.current === connection) client.current = null;
       clearInterval(timer);
     };
   }, []);
@@ -215,17 +259,22 @@ export default function App() {
   };
   const openConnection = () => {
     setFormError('');
+    setToken(storage.connection?.token ?? '');
     dialog.current?.showModal();
   };
-  const favouriteKey = `hjem.favourites.${mode === 'demo' ? 'demo' : connectedServer}`;
-  const toggleFavourite = (id: string) =>
-    setFavourites((current) => {
-      const next = current.includes(id)
-        ? current.filter((item) => item !== id)
-        : [...current, id];
-      savePreference(favouriteKey, next);
-      return next;
-    });
+  const toggleFavourite = (id: string) => {
+    const next = favourites.includes(id)
+      ? favourites.filter((item) => item !== id)
+      : [...favourites, id];
+    void saveFavourites(preferenceScope, next).catch((cause: unknown) =>
+      notify(errorMessage(cause), true),
+    );
+  };
+  const selectSpeaker = (entityId: string) => {
+    void saveSelectedSpeaker(preferenceScope, entityId).catch(
+      (cause: unknown) => notify(errorMessage(cause), true),
+    );
+  };
 
   async function connect(event: FormEvent) {
     event.preventDefault();
@@ -233,21 +282,32 @@ export default function App() {
     const version = ++sessionVersion.current;
     try {
       const normalized = normalizeServerUrl(server);
-      await client.current!.connect(normalized, token);
+      const connection = client.current;
+      if (!connection)
+        throw new Error('Home Assistant is still starting. Please try again.');
+      await connection.connect(normalized, token);
+      if (sessionVersion.current !== version) return;
+      try {
+        setSavingConnection(true);
+        await saveConnection({ serverUrl: normalized, token: token.trim() });
+      } catch (cause) {
+        connection.disconnect();
+        throw cause;
+      }
       if (sessionVersion.current !== version) return;
       setServer(normalized);
       setConnectedServer(normalized);
-      savePreference('hjem.server', normalized);
-      setFavourites(readPreference(`hjem.favourites.${normalized}`, []));
       setMode('live');
       setRoom('all');
       setQuery('');
       setToken('');
       setOnlyFavourites(false);
       dialog.current?.close();
-      notify('Welcome home. Home Assistant is connected.');
+      notify('Home Assistant connected.');
     } catch (error) {
       if (sessionVersion.current === version) setFormError(errorMessage(error));
+    } finally {
+      setSavingConnection(false);
     }
   }
 
@@ -257,19 +317,23 @@ export default function App() {
     setMode('demo');
     setSnapshot(structuredClone(demoSnapshot));
     setToken('');
-    setFavourites(
-      readPreference('hjem.favourites.demo', [
-        'light.living_pendant',
-        'climate.living_room',
-        'light.reading_lamp',
-        'media_player.speaker',
-      ]),
-    );
     setRoom('all');
     setQuery('');
     setOnlyFavourites(false);
     setFormError('');
     dialog.current?.close();
+  }
+
+  async function forgetHome() {
+    try {
+      await forgetConnection();
+      useDemo();
+      setServer('');
+      setConnectedServer('');
+      notify('Saved connection removed.');
+    } catch (cause) {
+      notify(errorMessage(cause), true);
+    }
   }
 
   async function act(
@@ -292,13 +356,16 @@ export default function App() {
             data,
           ),
         );
-      else
-        await client.current!.callService(
+      else {
+        const connection = client.current;
+        if (!connection) throw new Error('Home Assistant is not connected.');
+        await connection.callService(
           domainOf(entity),
           service,
           entity.entity_id,
           data,
         );
+      }
       if (sessionVersion.current === version && domainOf(entity) === 'scene')
         notify(
           `${nameOf(entity)} activated${mode === 'demo' ? ' in your demo home' : ''}.`,
@@ -528,11 +595,11 @@ export default function App() {
                       <Sun size={29} strokeWidth={1.5} />
                       <div>
                         <strong>
-                          {weather.attributes.temperature}
-                          {weather.attributes.temperature_unit || unit}
+                          {numberAttribute(weather, 'temperature')}
+                          {textAttribute(weather, 'temperature_unit', unit)}
                         </strong>
                         <span>
-                          {String(weather.state)
+                          {weather.state
                             .replace('partlycloudy', 'Partly cloudy')
                             .replaceAll('_', ' ')}
                         </span>
@@ -551,7 +618,7 @@ export default function App() {
                       speakers={speakers}
                       snapshot={snapshot}
                       selectedId={selectedSpeakerId}
-                      onSelect={setSelectedSpeakerId}
+                      onSelect={selectSpeaker}
                       onAction={act}
                       disabled={!canControl}
                       pending={pending}
@@ -805,6 +872,15 @@ export default function App() {
                       <strong className="server-value">{server}</strong>
                     </div>
                   )}
+                  {storage.connection && (
+                    <button
+                      className="text-button disconnect"
+                      disabled={formIsBusy}
+                      onClick={() => void forgetHome()}
+                    >
+                      Forget connection
+                    </button>
+                  )}
                   <button className="primary-button" onClick={openConnection}>
                     {mode === 'demo'
                       ? 'Connect your home'
@@ -887,18 +963,16 @@ export default function App() {
                     role="group"
                     aria-label="Appearance"
                   >
-                    {(
-                      [
-                        { id: 'system', label: 'System', Icon: Monitor },
-                        { id: 'light', label: 'Light', Icon: Sun },
-                        { id: 'dark', label: 'Dark', Icon: Moon },
-                      ] as const
-                    ).map(({ id, label, Icon }) => (
+                    {themeOptions.map(({ id, label, Icon }) => (
                       <button
                         key={id}
                         className={`theme-option ${theme === id ? 'selected' : ''}`}
                         aria-pressed={theme === id}
-                        onClick={() => setTheme(id as Theme)}
+                        onClick={() =>
+                          void setTheme(id).catch((cause: unknown) =>
+                            notify(errorMessage(cause), true),
+                          )
+                        }
                       >
                         <Icon size={22} />
                         <span>{label}</span>
@@ -1015,13 +1089,15 @@ export default function App() {
             In Home Assistant, open your profile → Security → Long-lived access
             tokens. Create a token for Hjem, then select Generate QR code.
           </p>
-          <div className="privacy-note">
-            <ShieldCheck size={17} />
-            <p>
-              Your token stays in memory for this session. You’ll enter it again
-              when you reopen Hjem.
-            </p>
-          </div>
+          {isTauri() && (
+            <div className="privacy-note">
+              <ShieldCheck size={17} />
+              <p>
+                Hjem saves your connection on this device and reconnects
+                automatically.
+              </p>
+            </div>
+          )}
           {formError && (
             <p className="form-error" role="alert">
               {formError}
@@ -1047,6 +1123,7 @@ export default function App() {
           <button
             type="button"
             className="text-button demo-button"
+            disabled={savingConnection}
             onClick={useDemo}
           >
             {formIsBusy

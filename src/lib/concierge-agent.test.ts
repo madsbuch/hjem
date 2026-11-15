@@ -34,7 +34,7 @@ const call = (id: string, name = 'read_home', args = '{}'): ToolCall => ({
 });
 const completion = (
   content: unknown,
-  calls?: ToolCall[],
+  calls?: unknown[],
   usage?: unknown,
   finish = calls?.length ? 'tool_calls' : 'stop',
 ) => ({
@@ -79,7 +79,8 @@ async function failure(
     await promise;
   } catch (error) {
     expect(error).toBeInstanceOf(ConciergeRunError);
-    return error as ConciergeRunError;
+    if (error instanceof ConciergeRunError) return error;
+    throw error;
   }
   throw new Error('Expected the concierge run to fail.');
 }
@@ -87,6 +88,23 @@ async function failure(
 const flush = async () => {
   for (let i = 0; i < 10; i++) await Promise.resolve();
 };
+
+function required<T>(value: T | undefined | null): T {
+  if (value === undefined || value === null) throw new Error('Missing test value.');
+  return value;
+}
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+function object(value: unknown): Record<string, unknown> {
+  if (!isObject(value))
+    throw new Error('Expected an object.');
+  return value;
+}
+function toolResult(message: WireMessage): Record<string, unknown> {
+  if (typeof message.content !== 'string') throw new Error('Expected tool result content.');
+  const parsed: unknown = JSON.parse(message.content);
+  return object(parsed);
+}
 
 function expectPaired(messages: WireMessage[]) {
   for (let index = 0; index < messages.length; index++) {
@@ -132,7 +150,7 @@ describe('Home Concierge model/tool protocol', () => {
     });
     expect(request.mock.calls[0][0]).not.toHaveProperty('model');
     expect(
-      (request.mock.calls[0][0].messages as WireMessage[]).filter(
+      request.mock.calls[0][0].messages.filter(
         (message) => message.role === 'system',
       ),
     ).toEqual([{ role: 'system', content: options.systemPrompt }]);
@@ -159,7 +177,7 @@ describe('Home Concierge model/tool protocol', () => {
           cost: 0.002,
         }),
       );
-    let release!: (value: unknown) => void;
+    let release: (value: unknown) => void = () => { throw new Error('Missing pending tool.'); };
     executeTool
       .mockImplementationOnce(
         () =>
@@ -188,8 +206,8 @@ describe('Home Concierge model/tool protocol', () => {
       cost: 0.003,
     });
     expectPaired(result.messages);
-    expectPaired(request.mock.calls[1][0].messages as WireMessage[]);
-    expect(request.mock.calls[0][0].messages as WireMessage[]).toHaveLength(2);
+    expectPaired(request.mock.calls[1][0].messages);
+    expect(request.mock.calls[0][0].messages).toHaveLength(2);
     expect(
       events
         .filter((event) => event.type === 'tool')
@@ -213,12 +231,12 @@ describe('Home Concierge model/tool protocol', () => {
     expect(executeTool).not.toHaveBeenCalled();
     const toolResults = result.messages
       .filter((message) => message.role === 'tool')
-      .map((message) => JSON.parse(message.content!));
+      .map(toolResult);
     expect(toolResults[0].error).toContain('Unknown tool');
     expect(
       toolResults
         .slice(1)
-        .every((result) => result.error.includes('JSON object')),
+        .every((result) => typeof result.error === 'string' && result.error.includes('JSON object')),
     ).toBe(true);
     expectPaired(result.messages);
   });
@@ -240,7 +258,7 @@ describe('Home Concierge model/tool protocol', () => {
       role: 'tool',
       tool_call_id: 'set',
     });
-    expect(JSON.parse(result.messages[2].content!).error).toContain(
+    expect(toolResult(result.messages[2]).error).toContain(
       'unavailable',
     );
     expect(events).toContainEqual(
@@ -370,7 +388,7 @@ describe('Home Concierge model/tool protocol', () => {
     expect(request.mock.calls[5][0]).not.toHaveProperty('tools');
     expect(request.mock.calls[5][0]).not.toHaveProperty('tool_choice');
     expect(
-      (request.mock.calls[5][0].messages as WireMessage[])[0].content,
+      request.mock.calls[5][0].messages[0].content,
     ).toContain('No more tools');
     expect(result.text).toContain('five checks');
   });
@@ -511,7 +529,7 @@ describe('Home Concierge model/tool protocol', () => {
           type: 'function',
           function: { name: 'set_device', arguments: {} },
         },
-      ] as unknown as ToolCall[]),
+      ]),
       'protocol',
     ],
   ])(
@@ -540,7 +558,7 @@ describe('Home Concierge cancellation', () => {
 
   it('stops even when the request transport ignores its signal', async () => {
     const { options, controller, request, executeTool } = setup();
-    let release!: (response: unknown) => void;
+    let release: (response: unknown) => void = () => { throw new Error('Missing pending request.'); };
     request.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
@@ -588,7 +606,7 @@ describe('Home Concierge cancellation', () => {
         call('second', 'set_device'),
       ]),
     );
-    let release!: (value: unknown) => void;
+    let release: (value: unknown) => void = () => { throw new Error('Missing pending tool.'); };
     executeTool.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
@@ -601,8 +619,8 @@ describe('Home Concierge cancellation', () => {
     controller.abort();
     const error = await interrupted;
     const results = error.messages.filter((message) => message.role === 'tool');
-    expect(JSON.parse(results[0].content!).status).toBe('unconfirmed');
-    expect(JSON.parse(results[1].content!).status).toBe('not_executed');
+    expect(toolResult(results[0]).status).toBe('unconfirmed');
+    expect(toolResult(results[1]).status).toBe('not_executed');
     expectPaired(error.messages);
     const eventCount = events.length;
     release({ ok: true });
@@ -635,8 +653,8 @@ describe('Home Concierge cancellation', () => {
     const error = await failure(runConcierge(options));
     expect(executeTool).toHaveBeenCalledTimes(1);
     const results = error.messages.filter((message) => message.role === 'tool');
-    expect(JSON.parse(results[0].content!)).toEqual({ ok: true });
-    expect(JSON.parse(results[1].content!).status).toBe('not_executed');
+    expect(toolResult(results[0])).toEqual({ ok: true });
+    expect(toolResult(results[1]).status).toBe('not_executed');
     expectPaired(error.messages);
   });
 });
@@ -688,9 +706,8 @@ describe('Home Concierge opaque reasoning context', () => {
         withDetails(completion('The room is ready.'), finalDetails),
       );
     const result = await runConcierge(options);
-    const sentAssistant = (
-      request.mock.calls[1][0].messages as WireMessage[]
-    ).find((message) => message.role === 'assistant')!;
+    const sentAssistant = required(request.mock.calls[1][0].messages
+      .find((message) => message.role === 'assistant'));
     expect(sentAssistant.reasoning_details).toEqual(original);
     expect(result.messages[1].reasoning_details).toEqual(original);
     expect(result.messages.at(-1)?.reasoning_details).toEqual(finalDetails);
@@ -718,15 +735,13 @@ describe('Home Concierge opaque reasoning context', () => {
     });
     const original = structuredClone(options.messages);
     request.mockImplementationOnce(async (body) => {
-      const sent = (body.messages as WireMessage[]).find(
+      const sent = required(body.messages.find(
         (message) => message.role === 'assistant',
-      )!;
+      ));
       expect(sent.reasoning_details).toEqual(details);
-      (
-        sent.reasoning_details![1].future_provider_field as {
-          sequence: unknown[];
-        }
-      ).sequence[0] = 'transport-mutated-copy';
+      const sequence: unknown = object(required(sent.reasoning_details)[1].future_provider_field).sequence;
+      if (!Array.isArray(sequence)) throw new Error('Expected an opaque sequence.');
+      sequence[0] = 'transport-mutated-copy';
       return completion('A new answer.');
     });
     const result = await runConcierge(options);
@@ -750,9 +765,8 @@ describe('Home Concierge opaque reasoning context', () => {
     const next = setup();
     next.options.messages = error.messages;
     await runConcierge(next.options);
-    const assistant = (
-      next.request.mock.calls[0][0].messages as WireMessage[]
-    ).find((message) => message.role === 'assistant')!;
+    const assistant = required(next.request.mock.calls[0][0].messages
+      .find((message) => message.role === 'assistant'));
     expect(assistant.reasoning_details).toEqual(details);
     expect(next.executeTool).not.toHaveBeenCalled();
   });

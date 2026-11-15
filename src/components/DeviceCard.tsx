@@ -31,6 +31,8 @@ import {
   isUnavailable,
   isActive,
   nameOf,
+  numberAttribute,
+  textAttribute,
   supports,
   supportsBrightness,
 } from '../lib/entities';
@@ -71,13 +73,11 @@ export function DeviceCard({
   const unavailable = isUnavailable(entity);
   const locked = disabled || pending || unavailable;
   const name = nameOf(entity);
-  const brightness = Math.round(
-    Number(entity.attributes.brightness || 0) / 2.55,
-  );
+  const brightness = Math.round(numberAttribute(entity, 'brightness') / 2.55);
   const [level, setLevel] = useState(brightness);
-  const position = Number(entity.attributes.current_position ?? 0);
+  const position = numberAttribute(entity, 'current_position');
   const [coverPosition, setCoverPosition] = useState(position);
-  const rawVolume = Number(entity.attributes.volume_level);
+  const rawVolume = numberAttribute(entity, 'volume_level', NaN);
   const volumeKnown =
     entity.attributes.volume_level != null && Number.isFinite(rawVolume);
   const volume = volumeKnown
@@ -126,14 +126,13 @@ export function DeviceCard({
   const toggleable = ['light', 'switch', 'input_boolean', 'fan'].includes(
     domain,
   );
-  const temp =
-    entity.attributes.temperature == null
-      ? NaN
-      : Number(entity.attributes.temperature);
+  const temp = numberAttribute(entity, 'temperature', NaN);
   const canSetTemperature =
     domain === 'climate' && supports(entity, 1) && Number.isFinite(temp);
-  const step = Number(
-    entity.attributes.target_temp_step || (unit === '°F' ? 1 : 0.5),
+  const step = numberAttribute(
+    entity,
+    'target_temp_step',
+    unit === '°F' ? 1 : 0.5,
   );
   const mediaCanToggle =
     entity.state === 'playing' ? supports(entity, 1) : supports(entity, 16384);
@@ -146,13 +145,13 @@ export function DeviceCard({
       : 'Off';
   if (domain === 'binary_sensor')
     status = ['door', 'window', 'opening', 'garage_door'].includes(
-      entity.attributes.device_class,
+      textAttribute(entity, 'device_class'),
     )
       ? active
         ? 'Open'
         : 'Closed'
       : ['motion', 'occupancy', 'presence'].includes(
-            entity.attributes.device_class,
+            textAttribute(entity, 'device_class'),
           )
         ? active
           ? 'Detected'
@@ -161,9 +160,7 @@ export function DeviceCard({
           ? 'On'
           : 'Off';
   if (domain === 'climate')
-    status = entity.attributes.hvac_action
-      ? String(entity.attributes.hvac_action)
-      : entity.state;
+    status = textAttribute(entity, 'hvac_action', entity.state);
   if (unavailable) status = 'Unavailable';
 
   return (
@@ -206,19 +203,19 @@ export function DeviceCard({
             <span className={active ? 'heat-dot' : ''} />
             {unavailable
               ? 'Unavailable'
-              : `${status.charAt(0).toUpperCase() + status.slice(1)}${entity.attributes.current_temperature != null ? ` · Currently ${entity.attributes.current_temperature}${unit}` : ''}`}
+              : `${status.charAt(0).toUpperCase() + status.slice(1)}${typeof entity.attributes.current_temperature === 'number' && Number.isFinite(entity.attributes.current_temperature) ? ` · Currently ${entity.attributes.current_temperature}${unit}` : ''}`}
           </div>
           {canSetTemperature && (
             <div className="stepper">
               <button
                 aria-label={`Lower ${name} temperature`}
                 disabled={
-                  locked || temp <= Number(entity.attributes.min_temp ?? 7)
+                  locked || temp <= numberAttribute(entity, 'min_temp', 7)
                 }
                 onClick={() =>
                   action('set_temperature', {
                     temperature: Math.max(
-                      Number(entity.attributes.min_temp ?? 7),
+                      numberAttribute(entity, 'min_temp', 7),
                       Math.round((temp - step) * 10) / 10,
                     ),
                   })
@@ -230,12 +227,12 @@ export function DeviceCard({
               <button
                 aria-label={`Raise ${name} temperature`}
                 disabled={
-                  locked || temp >= Number(entity.attributes.max_temp ?? 35)
+                  locked || temp >= numberAttribute(entity, 'max_temp', 35)
                 }
                 onClick={() =>
                   action('set_temperature', {
                     temperature: Math.min(
-                      Number(entity.attributes.max_temp ?? 35),
+                      numberAttribute(entity, 'max_temp', 35),
                       Math.round((temp + step) * 10) / 10,
                     ),
                   })
@@ -263,10 +260,10 @@ export function DeviceCard({
             ))}
           </div>
           <p className="track-title">
-            {entity.attributes.media_title || 'Ready when you are'}
+            {textAttribute(entity, 'media_title') || 'Ready when you are'}
           </p>
           <p className="track-artist">
-            {entity.attributes.media_artist || status}
+            {textAttribute(entity, 'media_artist') || status}
           </p>
           {(canSetVolume || canMute) && (
             <div className="media-volume">
@@ -302,11 +299,11 @@ export function DeviceCard({
                     aria-label={`${name} volume`}
                     aria-valuetext={`${volumeLevel}%${muted ? ', muted' : ''}`}
                     onChange={(event) =>
-                      setVolumeLevel(Number(event.target.value))
+                      setVolumeLevel(event.target.valueAsNumber)
                     }
                     onPointerUp={(event) =>
                       action('volume_set', {
-                        volume_level: Number(event.currentTarget.value) / 100,
+                        volume_level: event.currentTarget.valueAsNumber / 100,
                       })
                     }
                     onPointerCancel={() => setVolumeLevel(latestVolume.current)}
@@ -324,7 +321,7 @@ export function DeviceCard({
                         ].includes(event.key)
                       ) {
                         action('volume_set', {
-                          volume_level: Number(event.currentTarget.value) / 100,
+                          volume_level: event.currentTarget.valueAsNumber / 100,
                         });
                       }
                     }}
@@ -393,10 +390,10 @@ export function DeviceCard({
               value={coverPosition}
               disabled={locked}
               aria-label={`${name} position`}
-              onChange={(e) => setCoverPosition(Number(e.target.value))}
+              onChange={(e) => setCoverPosition(e.target.valueAsNumber)}
               onPointerUp={(e) =>
                 action('set_cover_position', {
-                  position: Number(e.currentTarget.value),
+                  position: e.currentTarget.valueAsNumber,
                 })
               }
               onKeyUp={(e) => {
@@ -413,7 +410,7 @@ export function DeviceCard({
                   ].includes(e.key)
                 )
                   action('set_cover_position', {
-                    position: Number(e.currentTarget.value),
+                    position: e.currentTarget.valueAsNumber,
                   });
               }}
             />
@@ -458,10 +455,10 @@ export function DeviceCard({
                 value={level || 1}
                 disabled={locked || !active}
                 aria-label={`${name} brightness`}
-                onChange={(e) => setLevel(Number(e.target.value))}
+                onChange={(e) => setLevel(e.target.valueAsNumber)}
                 onPointerUp={(e) =>
                   action('turn_on', {
-                    brightness_pct: Number(e.currentTarget.value),
+                    brightness_pct: e.currentTarget.valueAsNumber,
                   })
                 }
                 onKeyUp={(e) => {
@@ -478,7 +475,7 @@ export function DeviceCard({
                     ].includes(e.key)
                   )
                     action('turn_on', {
-                      brightness_pct: Number(e.currentTarget.value),
+                      brightness_pct: e.currentTarget.valueAsNumber,
                     });
                 }}
               />
@@ -505,7 +502,7 @@ export function DeviceCard({
           {domain === 'sensor' ? (
             <>
               {unavailable ? '—' : entity.state}
-              <span>{entity.attributes.unit_of_measurement || ''}</span>
+              <span>{textAttribute(entity, 'unit_of_measurement')}</span>
             </>
           ) : (
             <span className="binary-state">{status}</span>

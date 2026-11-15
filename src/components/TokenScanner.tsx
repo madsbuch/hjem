@@ -28,7 +28,8 @@ export function TokenScanner({
   const [error, setError] = useState('');
 
   useEffect(() => {
-    const modal = dialog.current!;
+    const modal = dialog.current;
+    if (!modal) return;
     modal.showModal();
     return () => modal.close();
   }, []);
@@ -57,15 +58,20 @@ export function TokenScanner({
           setReady(true);
           stopWhenHidden();
         };
+        const camera = video.current;
+        if (!useNative && !camera) throw new CameraError('Camera preview is unavailable.');
         const content = useNative
           ? await scanNativeCamera(signal, direction, onReady)
-          : await scanBrowserCamera(video.current!, signal, direction, onReady);
+          : camera
+            ? await scanBrowserCamera(camera, signal, direction, onReady)
+            : null;
+        if (content === null) return;
         if (signal.aborted) return;
         let token: string;
         try {
           token = tokenFromQr(content);
         } catch (cause) {
-          setError((cause as Error).message);
+          setError(cause instanceof Error ? cause.message : 'This QR code does not contain a valid access token.');
           return;
         }
         callbacks.current.onToken(token);
@@ -118,7 +124,7 @@ export function TokenScanner({
           muted
           playsInline
           aria-label="Camera preview"
-          hidden={native || !!error}
+          hidden={native || error.length > 0}
         />
         {error ? (
           <div className="qr-camera-message">

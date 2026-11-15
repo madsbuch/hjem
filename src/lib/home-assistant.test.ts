@@ -5,6 +5,12 @@ import {
   type HassEntity,
   type HassSnapshot,
 } from './home-assistant';
+import { isRecord } from './home-assistant-protocol';
+
+function required<T>(value: T | undefined | null): T {
+  if (value === undefined || value === null) throw new Error('Expected a test value.');
+  return value;
+}
 
 class FakeSocket {
   static OPEN = 1;
@@ -13,12 +19,14 @@ class FakeSocket {
   onmessage: ((event: { data: string }) => void) | null = null;
   onerror: (() => void) | null = null;
   onclose: (() => void) | null = null;
-  sent: any[] = [];
+  sent: Record<string, unknown>[] = [];
   constructor(readonly url: string) {
     FakeSocket.instances.push(this);
   }
   send(data: string) {
-    this.sent.push(JSON.parse(data));
+    const value: unknown = JSON.parse(data);
+    if (!isRecord(value)) throw new Error('Expected an outgoing command object.');
+    this.sent.push(value);
   }
   close() {
     this.readyState = 3;
@@ -70,7 +78,7 @@ const flush = async () => {
 };
 const clients: HomeAssistantClient[] = [];
 
-function setup() {
+function setup(options: { retryInitial?: boolean } = {}) {
   const snapshots: HassSnapshot[] = [];
   const onStatus = vi.fn();
   const client = new HomeAssistantClient({
@@ -81,8 +89,9 @@ function setup() {
   const connection = client.connect(
     'http://homeassistant.local:8123',
     'secret-test-token',
+    options,
   );
-  const socket = FakeSocket.instances.at(-1)!;
+  const socket = required(FakeSocket.instances.at(-1));
   return { client, connection, socket, snapshots, onStatus };
 }
 
@@ -126,6 +135,102 @@ afterEach(() => {
 });
 
 describe('Home Assistant connection', () => {
+  it('retries an offline saved session until its first successful connection', async () => {
+    const { connection, socket, onStatus } = setup({ retryInitial: true });
+    const resolved = vi.fn();
+    void connection.then(resolved);
+    socket.onerror?.();
+    expect(onStatus).toHaveBeenLastCalledWith('reconnecting', expect.stringContaining('homeassistant.local:8123'));
+    await vi.advanceTimersByTimeAsync(1_000);
+    const next = required(FakeSocket.instances.at(-1));
+    expect(next).not.toBe(socket);
+    expect(onStatus).toHaveBeenLastCalledWith('reconnecting');
+    expect(resolved).not.toHaveBeenCalled();
+    await authenticate(next);
+    await initialSnapshot(next);
+    await connection;
+    expect(resolved).toHaveBeenCalledOnce();
+    expect(onStatus).toHaveBeenLastCalledWith('connected');
+  });
+
+  it('stops saved-session retries on disconnect and on rejected credentials', async () => {
+    const first = setup({ retryInitial: true });
+    first.socket.loseConnection();
+    const cancelled = expect(first.connection).rejects.toThrow('Disconnected');
+    first.client.disconnect();
+    await cancelled;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(FakeSocket.instances).toHaveLength(1);
+    const second = setup({ retryInitial: true });
+    second.socket.receive({ type: 'auth_invalid' });
+    await expect(second.connection).rejects.toThrow('rejected this token');
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(FakeSocket.instances).toHaveLength(2);
+  });
+
+  it('fails a manual offline connection promptly with its address and no token', async () => {
+    const { connection, socket } = setup();
+    socket.onerror?.();
+    await expect(connection).rejects.toThrow('Unable to reach Home Assistant at http://homeassistant.local:8123');
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(FakeSocket.instances).toHaveLength(1);
+  });
+
+  it('rejects HTTP from an HTTPS preview before creating a socket', async () => {
+    vi.stubGlobal('location', { protocol: 'https:' });
+    const client = new HomeAssistantClient({ onSnapshot: vi.fn(), onStatus: vi.fn() });
+    await expect(client.connect('http://192.168.1.105:8123', 'test-token')).rejects.toThrow('HTTPS page cannot connect');
+    expect(FakeSocket.instances).toHaveLength(0);
+  });
+
+  it('rejects malformed initial states even when saved-session network retries are enabled', async () => {
+    const { connection, socket, snapshots } = setup({ retryInitial: true });
+    const rejected = expect(connection).rejects.toThrow('invalid device state');
+    await authenticate(socket);
+    socket.answer('get_states', [{ entity_id: 'light.kitchen', state: 'on', attributes: [] }]);
+    socket.answer('config/area_registry/list', []);
+    socket.answer('config/device_registry/list', []);
+    socket.answer('config/entity_registry/list', []);
+    socket.answer('get_config', {});
+    await rejected;
+    expect(snapshots).toEqual([]);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(FakeSocket.instances).toHaveLength(1);
+  });
+
+  it('rejects malformed registry data instead of publishing an unchecked snapshot', async () => {
+    const { connection, socket, snapshots } = setup();
+    const rejected = expect(connection).rejects.toThrow('invalid entity visibility');
+    await authenticate(socket);
+    socket.answer('get_states', [entity()]);
+    socket.answer('config/area_registry/list', []);
+    socket.answer('config/device_registry/list', []);
+    socket.answer('config/entity_registry/list', [{ entity_id: 'light.kitchen', hidden_by: true }]);
+    socket.answer('get_config', {});
+    await rejected;
+    expect(snapshots).toEqual([]);
+  });
+
+  it('validates coalesced state changes atomically and rejects pending actions on protocol failure', async () => {
+    const { client, connection, socket, snapshots, onStatus } = setup();
+    await authenticate(socket);
+    await initialSnapshot(socket);
+    await connection;
+    const action = client.callService('light', 'turn_on', 'light.kitchen');
+    const rejected = expect(action).rejects.toThrow('invalid state change');
+    const subscription = required(socket.sent.find((command) => command.type === 'subscribe_events'));
+    socket.receive([
+      { type: 'event', id: subscription.id, event: { event_type: 'state_changed', data: { entity_id: 'light.kitchen', new_state: entity('on') } } },
+      { type: 'event', id: subscription.id, event: { event_type: 'state_changed', data: { entity_id: 'light.kitchen', new_state: { ...entity(), entity_id: 'lock.front' } } } },
+    ]);
+    await rejected;
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0].entities[0].state).toBe('off');
+    expect(onStatus).toHaveBeenLastCalledWith('error', expect.stringContaining('mismatched identifiers'));
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(FakeSocket.instances).toHaveLength(1);
+  });
+
   it('authenticates, subscribes before loading, and only resolves once the home is ready', async () => {
     const { client, connection, socket, snapshots, onStatus } = setup();
     const resolved = vi.fn();
@@ -268,7 +373,7 @@ describe('Home Assistant connection', () => {
       client.callService('light', 'turn_on', 'light.kitchen'),
     ).rejects.toThrow('not connected');
     await vi.advanceTimersByTimeAsync(1_000);
-    const next = FakeSocket.instances.at(-1)!;
+    const next = required(FakeSocket.instances.at(-1));
     expect(next).not.toBe(socket);
     await authenticate(next);
     await initialSnapshot(next);
@@ -280,14 +385,14 @@ describe('Home Assistant connection', () => {
 
   it('rejects replaced connects and ignores stale socket events', async () => {
     const { client, connection, socket, snapshots } = setup();
-    const staleHandler = socket.onmessage!;
+    const staleHandler = required(socket.onmessage);
     const cancelled = expect(connection).rejects.toThrow('Connection replaced');
     const nextConnection = client.connect(
       'https://home.example.com',
       'new-token',
     );
     await cancelled;
-    const next = FakeSocket.instances.at(-1)!;
+    const next = required(FakeSocket.instances.at(-1));
     expect(next.url).toBe('wss://home.example.com/api/websocket');
     staleHandler({ data: JSON.stringify({ type: 'auth_ok' }) });
     expect(snapshots).toHaveLength(0);
@@ -318,7 +423,7 @@ describe('Home Assistant connection', () => {
     await initialSnapshot(socket);
     await connection;
     await vi.advanceTimersByTimeAsync(30_000);
-    expect(socket.sent.at(-1).type).toBe('ping');
+    expect(socket.sent.at(-1)?.type).toBe('ping');
     await vi.advanceTimersByTimeAsync(12_000);
     expect(onStatus).toHaveBeenLastCalledWith(
       'reconnecting',
@@ -333,6 +438,8 @@ describe('server addresses', () => {
     expect(normalizeServerUrl(' homeassistant.local:8123/ ')).toBe(
       'http://homeassistant.local:8123',
     );
+    expect(normalizeServerUrl('192.168.1.105:8123')).toBe('http://192.168.1.105:8123');
+    expect(normalizeServerUrl('http://[fd00::12]:8123')).toBe('http://[fd00::12]:8123');
     expect(normalizeServerUrl('https://home.example/assistant/')).toBe(
       'https://home.example/assistant',
     );

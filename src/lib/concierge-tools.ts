@@ -141,12 +141,24 @@ const numberArg = (args: Record<string, unknown>, min: number, max: number) => {
     throw new Error(`value must be a number between ${min} and ${max}.`);
   return args.value;
 };
+const record = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+const temperatureBound = (value: unknown, fallback: number): number => {
+  if (value === undefined || value === null) return fallback;
+  if (typeof value !== 'number' || !Number.isFinite(value))
+    throw new Error('This thermostat reports invalid temperature limits.');
+  return value;
+};
+interface ActionAttempt {
+  confirmed: boolean;
+  result?: unknown;
+}
 
 export function createConciergeExecutor(getContext: () => ConciergeContext) {
   const sessionId = getContext().sessionId;
   const dispatchedActions = new Map<
     string,
-    { confirmed: boolean; result?: unknown }
+    ActionAttempt
   >();
   const observedEntities = new Set<string>();
   const observedApps = new Set<string>();
@@ -166,10 +178,8 @@ export function createConciergeExecutor(getContext: () => ConciergeContext) {
       (candidate) => candidate.function.name === name,
     );
     if (!definition) throw new Error('This tool is not available.');
-    const properties = definition.function.parameters.properties as Record<
-      string,
-      unknown
-    >;
+    const properties = definition.function.parameters.properties;
+    if (!record(properties)) throw new Error('This tool has invalid parameters.');
     if (Object.keys(args).some((key) => !Object.hasOwn(properties, key)))
       throw new Error(
         'This tool received unsupported arguments. Use only the supplied tool parameters.',
@@ -275,10 +285,7 @@ export function createConciergeExecutor(getContext: () => ConciergeContext) {
           preview: true,
           message: `${app.name} is a sample shortcut. App launching requires Hjem for Android.`,
         };
-      const attempt = { confirmed: false } as {
-        confirmed: boolean;
-        result?: unknown;
-      };
+      const attempt: ActionAttempt = { confirmed: false };
       dispatchedActions.set(identity, attempt);
       await context.launch(id);
       const result = { opened: true, name: app.name };
@@ -331,8 +338,8 @@ export function createConciergeExecutor(getContext: () => ConciergeContext) {
         data = {
           temperature: numberArg(
             args,
-            Number(entity.attributes.min_temp ?? 7),
-            Number(entity.attributes.max_temp ?? 35),
+            temperatureBound(entity.attributes.min_temp, 7),
+            temperatureBound(entity.attributes.max_temp, 35),
           ),
         };
       } else if (
@@ -377,6 +384,7 @@ export function createConciergeExecutor(getContext: () => ConciergeContext) {
         action === 'set_blinds_position' &&
         domain === 'cover' &&
         supports(entity, 4) &&
+        typeof entity.attributes.device_class === 'string' &&
         ['blind', 'curtain', 'shade', 'shutter'].includes(
           entity.attributes.device_class,
         )
@@ -386,10 +394,7 @@ export function createConciergeExecutor(getContext: () => ConciergeContext) {
       } else throw new Error('That action is not supported for this device.');
     }
     if (signal.aborted) throw new DOMException('Stopped.', 'AbortError');
-    const attempt = { confirmed: false } as {
-      confirmed: boolean;
-      result?: unknown;
-    };
+    const attempt: ActionAttempt = { confirmed: false };
     dispatchedActions.set(identity, attempt);
     const accepted = await context.action(entity, service, data);
     if (!accepted)

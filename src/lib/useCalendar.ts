@@ -68,7 +68,7 @@ export function useCalendar({
       });
       return;
     }
-    const ids = (JSON.parse(calendarKey) as string[][]).map(([id]) => id);
+    const ids = available.map((entity) => entity.entity_id);
     if (!ids.length) {
       setState({
         events: [],

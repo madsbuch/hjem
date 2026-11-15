@@ -5,6 +5,9 @@ import {
 } from './concierge-tools';
 import type { HassEntity, HassSnapshot } from './home-assistant';
 
+const record = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+
 const entity = (
   entity_id: string,
   state: string,
@@ -123,11 +126,8 @@ describe('Home Concierge tool guardrails', () => {
 
   it('observes only returned devices and excludes hidden, disabled, or private data', async () => {
     const { run, action } = setup();
-    const result = (await run('get_home_state', { query: 'dimmer' })) as {
-      devices: unknown[];
-      scenes: unknown[];
-    };
-    expect(result.devices).toHaveLength(1);
+    const result = await run('get_home_state', { query: 'dimmer' });
+    expect(result).toMatchObject({ devices: [expect.objectContaining({ entity_id: 'light.dimmer' })] });
     expect(JSON.stringify(result)).not.toContain('never-share-this');
     await expect(
       run('control_device', { entity_id: 'switch.coffee', action: 'turn_on' }),
@@ -146,11 +146,9 @@ describe('Home Concierge tool guardrails', () => {
     snapshot.entities = Array.from({ length: 101 }, (_, index) =>
       entity(`light.lamp_${index}`, 'on'),
     );
-    const result = (await run('get_home_state')) as {
-      truncated: boolean;
-      devices: unknown[];
-    };
-    expect(result.truncated).toBe(true);
+    const result = await run('get_home_state');
+    expect(result).toMatchObject({ truncated: true });
+    if (!record(result)) throw new Error('Expected a home state object.');
     expect(result.devices).toHaveLength(100);
     await expect(
       run('control_device', {
@@ -342,8 +340,9 @@ describe('Home Concierge tool guardrails', () => {
   it('uses current availability and refuses unavailable scenes', async () => {
     const { run, snapshot, action } = setup();
     await run('get_home_state');
-    snapshot.entities.find((item) => item.entity_id === 'light.dimmer')!.state =
-      'unavailable';
+    const dimmer = snapshot.entities.find((item) => item.entity_id === 'light.dimmer');
+    if (!dimmer) throw new Error('Missing dimmer fixture.');
+    dimmer.state = 'unavailable';
     await expect(
       run('control_device', { entity_id: 'light.dimmer', action: 'turn_off' }),
     ).rejects.toThrow('unavailable');
@@ -423,7 +422,7 @@ describe('Home Concierge tool guardrails', () => {
   it('blocks a duplicate while the first action is still in flight', async () => {
     const { run, action } = setup();
     await run('get_home_state');
-    let finish!: (accepted: boolean) => void;
+    let finish: (accepted: boolean) => void = () => { throw new Error('Missing pending action.'); };
     action.mockImplementationOnce(
       () =>
         new Promise((resolve) => {

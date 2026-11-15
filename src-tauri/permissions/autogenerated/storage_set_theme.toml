@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-storage-set-theme"
+description = "Enables the storage_set_theme command without any pre-configured scope."
+commands.allow = ["storage_set_theme"]
+
+[[permission]]
+identifier = "deny-storage-set-theme"
+description = "Denies the storage_set_theme command without any pre-configured scope."
+commands.deny = ["storage_set_theme"]

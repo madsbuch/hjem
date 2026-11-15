@@ -1,5 +1,4 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
-import { readPreference, savePreference } from './entities';
 
 export interface ConciergeSettings {
   hasApiKey: boolean;
@@ -11,13 +10,24 @@ export interface ConciergeModel {
 }
 const API = 'https://openrouter.ai/api/v1';
 let sessionKey = '';
+let sessionModel = '';
 export const nativeConcierge = () => isTauri();
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+const isArray = (value: unknown): value is unknown[] => Array.isArray(value);
+
+function settingsFromResponse(value: unknown): ConciergeSettings {
+  if (!isRecord(value) || typeof value.hasApiKey !== 'boolean' || typeof value.model !== 'string')
+    throw new Error('Concierge settings could not be read.');
+  return { hasApiKey: value.hasApiKey, model: value.model };
+}
+
 export async function getConciergeSettings(): Promise<ConciergeSettings> {
-  if (isTauri()) return invoke('concierge_get_settings');
+  if (isTauri()) return settingsFromResponse(await invoke<unknown>('concierge_get_settings'));
   return {
-    hasApiKey: !!sessionKey,
-    model: readPreference('hjem.concierge.model', ''),
+    hasApiKey: sessionKey.length > 0,
+    model: sessionModel,
   };
 }
 
@@ -31,17 +41,17 @@ export async function saveConciergeSettings(
   if (model.trim().length > 200 || /\s/.test(model.trim()))
     throw new Error('Use a valid model ID from OpenRouter.');
   if (isTauri())
-    return invoke('concierge_save_settings', {
+    return settingsFromResponse(await invoke<unknown>('concierge_save_settings', {
       apiKey: cleaned ?? null,
       model: model.trim(),
-    });
+    }));
   if (cleaned) sessionKey = cleaned;
-  savePreference('hjem.concierge.model', model.trim());
+  sessionModel = model.trim();
   return getConciergeSettings();
 }
 
 export async function clearConciergeKey(): Promise<ConciergeSettings> {
-  if (isTauri()) return invoke('concierge_clear_key');
+  if (isTauri()) return settingsFromResponse(await invoke<unknown>('concierge_clear_key'));
   sessionKey = '';
   return getConciergeSettings();
 }
@@ -62,7 +72,7 @@ async function browserRequest(
   path: string,
   body?: Record<string, unknown>,
   signal?: AbortSignal,
-) {
+): Promise<unknown> {
   const controller = new AbortController();
   const abort = () => controller.abort();
   if (signal?.aborted) throw new DOMException('Stopped.', 'AbortError');
@@ -92,7 +102,8 @@ async function browserRequest(
     if (text.length > 4 * 1024 * 1024)
       throw new Error('OpenRouter returned a response that is too large.');
     try {
-      return JSON.parse(text);
+      const parsed: unknown = JSON.parse(text);
+      return parsed;
     } catch {
       throw new Error('OpenRouter returned an unreadable response.');
     }
@@ -112,28 +123,34 @@ async function browserRequest(
 }
 
 export async function testConciergeKey(): Promise<void> {
-  if (isTauri()) return invoke('concierge_test_key');
+  if (isTauri()) {
+    await invoke<unknown>('concierge_test_key');
+    return;
+  }
   if (!sessionKey) throw new Error('Save your OpenRouter API key first.');
   await browserRequest('/key');
 }
 
 export async function listConciergeModels(): Promise<ConciergeModel[]> {
-  if (isTauri()) return invoke('concierge_list_models');
+  if (isTauri()) {
+    const response: unknown = await invoke<unknown>('concierge_list_models');
+    if (!isArray(response)) throw new Error('OpenRouter returned an unreadable model list.');
+    return response.map((model) => {
+      if (!isRecord(model) || typeof model.id !== 'string' || typeof model.name !== 'string')
+        throw new Error('OpenRouter returned an unreadable model list.');
+      return { id: model.id, name: model.name };
+    });
+  }
   const response = await browserRequest('/models');
-  if (!Array.isArray(response.data))
+  if (!isRecord(response) || !isArray(response.data))
     throw new Error('OpenRouter returned an unreadable model list.');
   return response.data
-    .filter(
-      (model: any) =>
-        typeof model.id === 'string' &&
-        model.supported_parameters?.includes('tools') &&
-        (!model.architecture?.output_modalities ||
-          model.architecture.output_modalities.includes('text')),
-    )
-    .map((model: any) => ({
-      id: model.id,
-      name: typeof model.name === 'string' ? model.name : model.id,
-    }))
+    .flatMap((model): ConciergeModel[] => {
+      if (!isRecord(model) || typeof model.id !== 'string' || !isArray(model.supported_parameters) || !model.supported_parameters.includes('tools')) return [];
+      const modalities = isRecord(model.architecture) ? model.architecture.output_modalities : undefined;
+      if (modalities !== undefined && (!isArray(modalities) || !modalities.includes('text'))) return [];
+      return [{ id: model.id, name: typeof model.name === 'string' ? model.name : model.id }];
+    })
     .sort((a: ConciergeModel, b: ConciergeModel) =>
       a.name.localeCompare(b.name),
     );
@@ -159,11 +176,11 @@ export async function requestConcierge(
   const requestId = crypto.randomUUID();
   return new Promise((resolve, reject) => {
     const abort = () => {
-      void invoke('concierge_cancel', { requestId }).catch(() => undefined);
+      void invoke<unknown>('concierge_cancel', { requestId }).catch(() => undefined);
       reject(new DOMException('Stopped.', 'AbortError'));
     };
     signal.addEventListener('abort', abort, { once: true });
-    void invoke('concierge_request', { requestId, body })
+    void invoke<unknown>('concierge_request', { requestId, body })
       .then((value) => {
         if (signal.aborted) reject(new DOMException('Stopped.', 'AbortError'));
         else resolve(value);

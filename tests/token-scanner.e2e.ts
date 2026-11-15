@@ -7,6 +7,7 @@ const token = `${part({ alg: 'HS256', typ: 'JWT' })}.${part({ iss: 'test-only-do
 
 async function openConnection(page: Page) {
   await page.goto('/');
+  await page.locator('nav:visible').first().waitFor();
   const mobile = page.getByRole('navigation', { name: 'Mobile navigation' });
   const nav = (await mobile.isVisible())
     ? mobile
@@ -223,10 +224,14 @@ async function nativeCamera(page: Page, denied = false) {
         __TAURI_INTERNALS__: {
           invoke: async (command: string, args: any) => {
             fixture.commands.push({ command, args });
+            if (command === 'storage_load') return {
+              serverUrl: '', connection: null, theme: 'system', pinnedApps: [],
+              favourites: [], selectedSpeakers: [], legacyImportComplete: true,
+            };
             if (command === 'plugin:launcher|get_status')
               return { supported: false, isDefaultHome: false };
             if (command === 'concierge_get_settings')
-              return { hasKey: false, model: '' };
+              return { hasApiKey: false, model: '' };
             if (command === 'qr_scanner_native') return true;
             if (command === 'plugin:barcode-scanner|check_permissions')
               return { camera: 'prompt' };

@@ -50,9 +50,9 @@ Install the browser needed by the end-to-end tests with `npx playwright install 
 2. In Hjem, open **Settings** and enter your Home Assistant URL, such as `http://homeassistant.local:8123` or your HTTPS remote address.
 3. Paste the token or select **Scan QR code** beside the token field. In Home Assistant’s token dialog, select **Generate QR code**, then point the camera at it. Scanning fills the masked token field; select **Connect Home Assistant** to connect. Hjem discovers supported entities, areas, and existing scenes.
 
-QR scanning uses the native camera on Android and iOS, and the browser camera in HTTPS or localhost previews. Camera permission is requested when scanning starts. You can switch between front and rear cameras, cancel, or enter the token manually. Decoding happens on the device; camera images and scanned tokens are not uploaded or saved. Home Assistant access-token QR codes are supported; login links and two-factor authentication QR codes are not access tokens.
+QR scanning uses the native camera on Android and iOS, and the browser camera in HTTPS or localhost previews. Camera permission is requested when scanning starts. You can switch between front and rear cameras, cancel, or enter the token manually. Decoding happens on the device; camera images are not uploaded or saved. The token is saved only after a successful connection. Home Assistant access-token QR codes are supported; login links and two-factor authentication QR codes are not access tokens.
 
-The token stays in memory for the current session; enter it again after restarting or reloading the app. Only the server URL, favourites, and appearance preference are stored locally. Disconnecting clears the client’s token. Hjem connects directly to your server using the [Home Assistant WebSocket API](https://developers.home-assistant.io/docs/api/websocket/) and does not need an intermediary service.
+Installed apps save the server and token in a private SQLite database and reconnect automatically after a restart, retrying while the server is temporarily unreachable. **Settings → Forget connection** removes the saved credentials. Switching to the demo disconnects the current session but keeps the saved connection for the next launch. The browser preview keeps its settings and credentials in memory only. Hjem connects directly to your server using the [Home Assistant WebSocket API](https://developers.home-assistant.io/docs/api/websocket/) and does not need an intermediary service.
 
 Use HTTPS for remote access. An HTTP address uses an unencrypted WebSocket connection, so reserve it for a trusted local network. The server must be reachable from the device running Hjem. If you use a reverse proxy, it must forward WebSocket connections to `/api/websocket`. An HTTPS browser preview cannot connect to an HTTP server because browsers block mixed content.
 
@@ -78,7 +78,7 @@ The browser, desktop, and iOS versions show clearly labeled sample app shortcuts
 
 In **Settings → Home Concierge**, enter your OpenRouter API key and choose one of three recommended models: Claude Haiku 5.5 for quick, low-cost home controls, GPT-6.1 Terra for multi-step requests, or Claude Sonnet 5.5 for more involved tasks. Save the settings, then open **Concierge**. Choose **Use another model** to enter any other model ID; **Check model** verifies its tool support against the live catalogue. These recommendations were checked against [OpenRouter’s catalogue](https://openrouter.ai/models?supported_parameters=tools) on November 15, 2026. **Test key** checks OpenRouter authentication without buying a model completion; chat requests use your OpenRouter credits.
 
-On native platforms, the key is saved in Hjem's private app configuration file and used by Rust. The settings API returns only whether a key exists; it never returns the saved key to the web interface. This is private file storage, not OS keychain encryption. Android automatic backup is disabled. In the browser preview, the key lives only in memory until reload; the model choice is saved locally. **Remove key** clears the key.
+On native platforms, the key and model are saved in Hjem's private SQLite database and used by Rust. The settings API returns only whether a key exists; it never returns the saved key to the web interface. The database is protected by the app sandbox and file permissions, without database encryption. Android automatic backup is disabled. In the browser preview, both the key and model live only in memory until reload. **Remove key** clears the saved key.
 
 Home Concierge can read current device states and apps, adjust supported lights, switches, thermostats, blinds, and media players, activate requested scenes, and open Android apps. It must discover a device or app before acting, validates actions and ranges locally, and cannot call arbitrary Home Assistant services. Browser app shortcuts remain simulated, as do device controls in demo mode. Messages and the home/app information needed for a request go to OpenRouter and the selected model provider. Home Assistant tokens never enter the conversation.
 
@@ -101,7 +101,7 @@ On every push to `main`, the GitHub workflow publishes a signed `Hjem-android.ap
 
 Release signing requires the `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD` repository secrets; without them, `main` does not publish. Run `./scripts/make-android-keystore.sh` once to create a key and print the four secrets. Keep the keystore and its password safe: later releases must use the same key to upgrade an installed copy. Pull requests sign their test APKs with a temporary key, so those cannot upgrade a released install.
 
-Android release builds allow local HTTP access to `homeassistant.local` and the app’s local origins. For a different HTTP hostname or LAN IP, add that exact address to `src-tauri/gen/android/app/src/main/res/xml/network_security_config.xml` and rebuild. HTTPS addresses do not need this exception. The debug configuration separately permits the local development server.
+Android release builds support user-configured local HTTP hostnames and LAN IP addresses, including `http://192.168.1.105:8123`, through the committed network security configuration. No address-specific rebuild is needed. HTTPS continues to use the system trust store.
 
 For iPhone and iPad, install full Xcode and `xcodegen`, configure Apple signing, and install the iOS Rust targets from the Tauri prerequisites. The iOS project has not yet been initialized. Then run:
 
@@ -112,7 +112,13 @@ npm run ios
 
 The shared `src-tauri/Info.plist` includes a local-network permission explanation and support for local network connections. Allow local-network access when prompted. See the [Tauri development guide](https://v2.tauri.app/develop/) for device selection and platform tooling.
 
-Real Home Assistant hardware and physical mobile devices have not yet been tested with this project. The included demo and automated tests exercise the interface and simulated Home Assistant/OpenRouter connections. The Android launcher has also been checked in an isolated emulator with real app discovery, Clock launching, and Home-button navigation. No paid OpenRouter calls are made by the test suite.
+Real Home Assistant hardware and physical mobile devices have not yet been tested with this project. The included demo and automated tests exercise the interface and simulated Home Assistant/OpenRouter connections. The Android release has also been checked in an isolated emulator with real app discovery, Clock launching, Home-button navigation, HTTP-IP connections to a local fixture, saved-token reconnection after a process restart, and removal of saved credentials. No paid OpenRouter calls are made by the test suite.
+
+## Persisted settings and types
+
+All durable native settings use SQLite through Diesel: Home Assistant credentials, theme, favourites, selected speakers, app pins, and Concierge credentials/model. Embedded migrations run before the interface opens. Existing browser preferences and the old Concierge JSON file are imported once, transactionally, and removed only after a successful import. An unreadable database or failed migration displays a retryable error without resetting saved data. Chat history and fetched device/calendar state remain session data.
+
+TypeScript runs in strict mode, external payloads are validated from `unknown`, and Rust forbids unsafe code. The build also rejects TypeScript type assertions, `any`, non-null assertions, and Rust casts.
 
 ## Project layout
 
@@ -134,6 +140,6 @@ Hjem is an independent interface for Home Assistant, not an official Home Assist
 - Android APK for ARM phones and tablets.
 - An unsigned iOS simulator app archive. Physical iPhone/iPad installation needs Apple signing.
 
-Download build artifacts from a completed Actions run; artifacts are retained for 14 days. Builds do not publish GitHub releases automatically. Desktop bundles are unsigned or ad-hoc signed for testing, without distribution notarization.
+Download build artifacts from a completed Actions run; artifacts are retained for 14 days. Pushes to `main` also publish the Android APK to the rolling `latest` release after the frontend checks and Android build pass. Desktop bundles are unsigned or ad-hoc signed for testing, without distribution notarization.
 
 For Android installs that can upgrade earlier builds, configure repository Actions secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD`. Without them, CI creates a temporary signing key: the APK installs, but each build requires uninstalling a previous CI build first.

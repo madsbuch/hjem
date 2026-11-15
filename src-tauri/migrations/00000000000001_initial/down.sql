@@ -1,0 +1,9 @@
+DROP TABLE import_status;
+DROP TABLE concierge_settings;
+DROP TABLE selected_speakers;
+DROP TABLE favourites;
+DROP TABLE favourite_scopes;
+DROP TABLE pinned_apps;
+DROP TABLE pin_scopes;
+DROP TABLE app_preferences;
+DROP TABLE saved_connection;

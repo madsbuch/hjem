@@ -72,7 +72,7 @@ export function ConciergeSettings({
     try {
       await action();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(cause instanceof Error ? cause.message : 'Could not update concierge settings.');
     } finally {
       setBusy('');
       onBusyChange(false);

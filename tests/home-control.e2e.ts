@@ -1,9 +1,11 @@
 import { expect, test, type Page } from '@playwright/test';
+import { nativeStorage } from './helpers/native-storage';
 
 async function navigate(
   page: Page,
   name: 'Overview' | 'Controls' | 'Apps' | 'Settings',
 ) {
+  await page.locator('nav:visible').first().waitFor();
   const mobile = page.getByRole('navigation', { name: 'Mobile navigation' });
   const nav = (await mobile.isVisible())
     ? mobile
@@ -288,6 +290,7 @@ test('demo lights, keyboard brightness, and temperature controls update their st
 test('controls, room search, pins, and persistent preferences work together', async ({
   page,
 }) => {
+  await nativeStorage(page);
   await page.goto('/');
   await navigate(page, 'Controls');
   await page
@@ -507,7 +510,7 @@ test('live Home Assistant service calls, events, and offline controls work end t
       session: { ...sessionStorage },
     }),
   );
-  expect(stored).toContain('https://ha.example');
+  expect(stored).not.toContain('https://ha.example');
   expect(stored).not.toContain('private-test-access-token');
 });
 
@@ -534,7 +537,7 @@ test('live service failures stay visible and editing connection settings keeps t
   await openConnection(page);
   await expect(
     page.getByLabel('Long-lived access token', { exact: true }),
-  ).toHaveValue('');
+  ).toHaveValue('private-test-access-token');
   await page.getByLabel('Home Assistant address', { exact: true }).fill('');
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.getByRole('button', { name: 'Close connection settings' }).click();
@@ -577,6 +580,7 @@ test('overview, controls, apps, settings, and connection dialog fit the viewport
 test('manual dark and light appearance changes persist across refresh', async ({
   page,
 }) => {
+  await nativeStorage(page);
   await page.emulateMedia({ colorScheme: 'light' });
   await page.goto('/');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
@@ -906,6 +910,7 @@ test('speaker controls respect capabilities, service failures, and offline state
 test('app search and pinned app preferences persist across refresh', async ({
   page,
 }) => {
+  await nativeStorage(page);
   await page.goto('/');
   await navigate(page, 'Apps');
   const search = page.getByRole('textbox', {
@@ -1141,4 +1146,55 @@ test('three demo Sonos systems keep playback, volume, and tracks independent', a
   await expect(
     music.getByRole('tab', { name: 'Kitchen', exact: true }),
   ).toHaveAttribute('aria-selected', 'true');
+});
+
+test('saved Home Assistant connection and selected speaker restore after reload and can be forgotten', async ({ page }) => {
+  const storage = await nativeStorage(page);
+  await mockHomeAssistant(page, true);
+  await page.goto('/');
+  await connectMock(page);
+  expect(storage.snapshot.connection).toEqual({ serverUrl: 'https://ha.example', token: 'private-test-access-token' });
+  await page.getByRole('tab', { name: 'Basic player', exact: true }).click();
+  await expect.poll(() => storage.snapshot.selectedSpeakers).toEqual([
+    { scope: 'https://ha.example', entityId: 'media_player.basic' },
+  ]);
+  await page.reload();
+  await expect(page.getByRole('tab', { name: 'Basic player', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await navigate(page, 'Settings');
+  await expect(page.locator('main .setting-row').filter({ hasText: 'Connection' })).toContainText('Home connected');
+  expect(await page.evaluate(() => Object.values(localStorage).join(''))).not.toContain('private-test-access-token');
+  await page.getByRole('button', { name: 'Forget connection', exact: true }).click();
+  await expect.poll(() => storage.snapshot.connection).toBeNull();
+  await page.reload();
+  await navigate(page, 'Settings');
+  await expect(page.locator('main .setting-row').filter({ hasText: 'Connection' })).toContainText('Demo home');
+  await expect(page.getByRole('button', { name: 'Forget connection', exact: true })).toHaveCount(0);
+});
+
+test('a failed credential write stays visible and does not create a saved connection', async ({ page }) => {
+  const storage = await nativeStorage(page);
+  storage.fail('storage_save_connection');
+  await mockHomeAssistant(page);
+  await page.goto('/');
+  await openConnection(page);
+  await page.getByLabel('Home Assistant address', { exact: true }).fill('http://192.168.1.105:8123');
+  await page.getByLabel('Long-lived access token', { exact: true }).fill('synthetic-failure-test');
+  await page.getByRole('button', { name: 'Connect Home Assistant', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('Could not save settings');
+  expect(storage.snapshot.connection).toBeNull();
+  await expect(page.getByRole('dialog')).toBeVisible();
+});
+
+test('legacy preferences migrate once before rendering and are removed only after commit', async ({ page }) => {
+  const storage = await nativeStorage(page, { legacyImportComplete: false });
+  await page.addInitScript(() => {
+    localStorage.setItem('hjem.theme', JSON.stringify('dark'));
+    localStorage.setItem('hjem.server', JSON.stringify('http://homeassistant.local:8123'));
+  });
+  await page.goto('/');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  expect(storage.snapshot.serverUrl).toBe('http://homeassistant.local:8123');
+  expect(storage.snapshot.connection).toBeNull();
+  expect(await page.evaluate(() => localStorage.getItem('hjem.theme'))).toBeNull();
+  expect(storage.commands.filter((command) => command === 'storage_import_legacy')).toHaveLength(1);
 });

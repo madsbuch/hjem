@@ -2,7 +2,9 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Basic window functionality for the local Hjem interface.",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "launcher:default",
@@ -13,6 +15,14 @@
     "allow-concierge-test-key",
     "allow-concierge-list-models",
     "allow-concierge-request",
-    "allow-concierge-cancel"
+    "allow-concierge-cancel",
+    "allow-storage-load",
+    "allow-storage-save-connection",
+    "allow-storage-clear-connection",
+    "allow-storage-set-theme",
+    "allow-storage-set-pinned-apps",
+    "allow-storage-set-favourites",
+    "allow-storage-set-selected-speaker",
+    "allow-storage-import-legacy"
   ]
 }

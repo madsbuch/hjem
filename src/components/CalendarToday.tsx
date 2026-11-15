@@ -185,7 +185,7 @@ export function CalendarToday({
                   style={{ top: `${(hour / 24) * 100}%` }}
                   aria-hidden="true"
                 >
-                  <span>{String(hour).padStart(2, '0')}:00</span>
+                  <span>{hour.toString().padStart(2, '0')}:00</span>
                   <i />
                 </div>
               ))}

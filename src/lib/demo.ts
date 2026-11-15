@@ -1,4 +1,14 @@
 import type { HassEntity, HassSnapshot } from './home-assistant';
+import { numberAttribute } from './entities';
+
+const actionNumber = (value: unknown): number => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error('A finite number is required.');
+  return value;
+};
+const actionBoolean = (value: unknown): boolean => {
+  if (typeof value !== 'boolean') throw new Error('A boolean is required.');
+  return value;
+};
 
 const entity = (
   id: string,
@@ -143,13 +153,13 @@ export function applyDemoService(
       if (service === 'set_temperature')
         return {
           ...e,
-          attributes: { ...e.attributes, temperature: data.temperature },
+          attributes: { ...e.attributes, temperature: actionNumber(data.temperature) },
         };
       if (service === 'set_cover_position')
         return {
           ...e,
-          state: Number(data.position) > 0 ? 'open' : 'closed',
-          attributes: { ...e.attributes, current_position: data.position },
+          state: actionNumber(data.position) > 0 ? 'open' : 'closed',
+          attributes: { ...e.attributes, current_position: actionNumber(data.position) },
         };
       if (service === 'open_cover' || service === 'close_cover')
         return {
@@ -170,7 +180,7 @@ export function applyDemoService(
           ...e,
           attributes: {
             ...e.attributes,
-            volume_level: Math.max(0, Math.min(1, Number(data.volume_level))),
+            volume_level: Math.max(0, Math.min(1, actionNumber(data.volume_level))),
           },
         };
       if (service === 'volume_mute')
@@ -178,7 +188,7 @@ export function applyDemoService(
           ...e,
           attributes: {
             ...e.attributes,
-            is_volume_muted: Boolean(data.is_volume_muted),
+            is_volume_muted: actionBoolean(data.is_volume_muted),
           },
         };
       if (
@@ -191,7 +201,7 @@ export function applyDemoService(
           'Somewhere to stay',
         ];
         const index =
-          (Number(e.attributes.demo_track || 0) +
+          (numberAttribute(e, 'demo_track') +
             (service === 'media_next_track' ? 1 : -1) +
             tracks.length) %
           tracks.length;
@@ -217,7 +227,7 @@ export function applyDemoService(
         attributes: {
           ...e.attributes,
           ...(data.brightness_pct !== undefined
-            ? { brightness: Math.round(Number(data.brightness_pct) * 2.55) }
+            ? { brightness: Math.round(actionNumber(data.brightness_pct) * 2.55) }
             : {}),
         },
       };

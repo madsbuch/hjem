@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-storage-set-pinned-apps"
+description = "Enables the storage_set_pinned_apps command without any pre-configured scope."
+commands.allow = ["storage_set_pinned_apps"]
+
+[[permission]]
+identifier = "deny-storage-set-pinned-apps"
+description = "Denies the storage_set_pinned_apps command without any pre-configured scope."
+commands.deny = ["storage_set_pinned_apps"]

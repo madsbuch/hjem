@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 async function navigate(page: Page, name: 'Settings' | 'Concierge') {
+  await page.locator('nav:visible').first().waitFor();
   const mobile = page.getByRole('navigation', { name: 'Mobile navigation' });
   const navigation = (await mobile.isVisible())
     ? mobile
@@ -41,6 +42,10 @@ test('native model saves block new requests and clear previous provider history'
     target.conciergeNativeFixture = fixture;
     target.__TAURI_INTERNALS__ = {
       async invoke(command: string, args: Record<string, any> = {}) {
+        if (command === 'storage_load') return {
+          serverUrl: '', connection: null, theme: 'system', pinnedApps: [],
+          favourites: [], selectedSpeakers: [], legacyImportComplete: true,
+        };
         if (command === 'plugin:launcher|get_status')
           return { supported: false, isDefaultHome: false };
         if (command === 'concierge_get_settings') return { ...settings };

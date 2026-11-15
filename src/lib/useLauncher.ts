@@ -4,7 +4,7 @@ import {
   listInstalledApps,
   type LauncherApp,
 } from './launcher';
-import { readPreference, savePreference } from './entities';
+import { savePinnedApps, useStorage } from './storage';
 
 const sampleApps: LauncherApp[] = [
   { packageName: 'preview.sonos', name: 'Sonos' },
@@ -15,23 +15,18 @@ const sampleApps: LauncherApp[] = [
   { packageName: 'preview.photos', name: 'Photos' },
 ];
 
-function loadPins(key: string, fallback: string[]): string[] {
-  const saved = readPreference<unknown>(key, fallback);
-  return Array.isArray(saved)
-    ? saved.filter((id): id is string => typeof id === 'string')
-    : fallback;
-}
-
 export function useLauncher() {
+  const storage = useStorage();
   const [apps, setApps] = useState<LauncherApp[]>([]);
-  const [pinned, setPinned] = useState<string[]>([]);
   const [preview, setPreview] = useState(true);
   const [supported, setSupported] = useState(false);
   const [isDefaultHome, setIsDefaultHome] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const generation = useRef(0);
-  const pinKey = `hjem.pinnedApps.${preview ? 'demo' : 'android'}`;
+  const pinScope = preview ? 'demo' : 'android';
+  const pinned = storage.pinnedApps.find((item) => item.scope === pinScope)?.packageNames
+    ?? apps.slice(0, 6).map((app) => app.packageName);
 
   const refresh = useCallback(async () => {
     const current = ++generation.current;
@@ -47,12 +42,6 @@ export function useLauncher() {
       setIsDefaultHome(status.isDefaultHome);
       setPreview(!status.supported);
       setApps(discovered);
-      setPinned(
-        loadPins(
-          `hjem.pinnedApps.${status.supported ? 'android' : 'demo'}`,
-          discovered.slice(0, 6).map((app) => app.packageName),
-        ),
-      );
     } catch (cause) {
       if (current !== generation.current) return;
       setPreview(false);
@@ -80,14 +69,12 @@ export function useLauncher() {
     };
   }, [refresh]);
 
-  const togglePin = (id: string) =>
-    setPinned((current) => {
-      const next = current.includes(id)
-        ? current.filter((item) => item !== id)
-        : [...current, id];
-      savePreference(pinKey, next);
-      return next;
+  const togglePin = (id: string) => {
+    const next = pinned.includes(id) ? pinned.filter((item) => item !== id) : [...pinned, id];
+    void savePinnedApps(pinScope, next).catch((cause: unknown) => {
+      setError(cause instanceof Error ? cause.message : 'Could not save pinned apps.');
     });
+  };
 
   return {
     apps,

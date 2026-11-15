@@ -1,9 +1,22 @@
 import { parseCalendarEvents, type HassCalendarEvent } from './calendar';
+import {
+  HomeAssistantProtocolError,
+  isEntityId,
+  parseAreas,
+  parseConfig,
+  parseDevices,
+  parseEntities,
+  parseRegistry,
+  parseServerMessages,
+  type ClientCommand,
+  type ServerMessage,
+  type StateChange,
+} from './home-assistant-protocol';
 
 export interface HassEntity {
   entity_id: string;
   state: string;
-  attributes: Record<string, any>;
+  attributes: Record<string, unknown>;
   last_changed?: string;
   last_updated?: string;
 }
@@ -40,18 +53,14 @@ interface Callbacks {
   onStatus: (status: ConnectionStatus, message?: string) => void;
 }
 interface PendingCommand {
-  resolve: (value: any) => void;
+  resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout>;
-}
-interface StateChange {
-  entity_id: string;
-  new_state: HassEntity | null;
-  time_fired?: string;
 }
 
 const REQUEST_TIMEOUT = 12_000;
 const CONNECTION_TIMEOUT = 15_000;
+class ServerCommandError extends Error {}
 const emptySnapshot = (): HassSnapshot => ({
   entities: [],
   areas: [],
@@ -92,8 +101,9 @@ export function normalizeServerUrl(input: string): string {
 }
 
 /**
- * Home Assistant's authenticated WebSocket protocol. Credentials are kept in
- * memory only. Service commands are never replayed after a disconnect.
+ * Home Assistant's authenticated WebSocket protocol. This client keeps its
+ * working credentials in memory; the app's storage layer handles persistence.
+ * Service commands are never replayed after a disconnect.
  */
 export class HomeAssistantClient {
   private socket?: WebSocket;
@@ -102,6 +112,7 @@ export class HomeAssistantClient {
   private generation = 0;
   private desired = false;
   private hasConnected = false;
+  private retryInitial = false;
   private ready = false;
   private authenticated = false;
   private nextId = 1;
@@ -118,12 +129,24 @@ export class HomeAssistantClient {
 
   constructor(private readonly callbacks: Callbacks) {}
 
-  connect(url: string, token: string): Promise<void> {
+  connect(
+    url: string,
+    token: string,
+    options: { retryInitial?: boolean } = {},
+  ): Promise<void> {
     let normalized: string;
     try {
       normalized = normalizeServerUrl(url);
       if (!token.trim())
         throw new Error('Enter a Home Assistant long-lived access token.');
+      if (
+        typeof location !== 'undefined' &&
+        location.protocol === 'https:' &&
+        normalized.startsWith('http:')
+      )
+        throw new Error(
+          'This HTTPS page cannot connect to an HTTP Home Assistant server. Open Hjem on your tablet, or use an HTTPS Home Assistant address.',
+        );
     } catch (error) {
       return Promise.reject(error);
     }
@@ -132,6 +155,7 @@ export class HomeAssistantClient {
     this.token = token.trim();
     this.desired = true;
     this.hasConnected = false;
+    this.retryInitial = options.retryInitial === true;
     this.retryCount = 0;
     this.snapshot = emptySnapshot();
     const promise = new Promise<void>((resolve, reject) => {
@@ -157,7 +181,11 @@ export class HomeAssistantClient {
       throw new Error(
         'Home Assistant is not connected. Reconnect before controlling a device.',
       );
-    if (!domain || !service || !entityId)
+    if (
+      !/^[a-z0-9_]+$/.test(domain) ||
+      !/^[a-z0-9_]+$/.test(service) ||
+      !isEntityId(entityId)
+    )
       throw new Error('A service and target entity are required.');
     await this.command({
       type: 'call_service',
@@ -198,7 +226,9 @@ export class HomeAssistantClient {
 
   private openSocket(): void {
     if (!this.desired) return;
-    this.callbacks.onStatus(this.hasConnected ? 'reconnecting' : 'connecting');
+    this.callbacks.onStatus(
+      this.hasConnected || this.retryCount > 0 ? 'reconnecting' : 'connecting',
+    );
     this.ready = false;
     this.authenticated = false;
     this.nextId = 1;
@@ -231,14 +261,19 @@ export class HomeAssistantClient {
     }, CONNECTION_TIMEOUT);
     socket.onmessage = (event) => {
       if (!current()) return;
-      let message: any;
+      let messages: ServerMessage[];
       try {
-        message = JSON.parse(String(event.data));
-      } catch {
-        this.fail(new Error('Home Assistant sent an invalid response.'));
+        messages = parseServerMessages(event.data);
+      } catch (error) {
+        this.fail(
+          error instanceof Error
+            ? error
+            : new Error('Home Assistant sent an invalid response.'),
+          true,
+        );
         return;
       }
-      for (const item of Array.isArray(message) ? message : [message]) {
+      for (const item of messages) {
         if (current()) this.receive(item, generation, socket);
       }
     };
@@ -246,7 +281,7 @@ export class HomeAssistantClient {
       if (current())
         this.fail(
           new Error(
-            'Unable to reach Home Assistant. Check the address, connection, and server certificate.',
+            `Unable to reach Home Assistant at ${this.serverUrl}. Check that this device can open that address on the same Wi-Fi. For HTTPS, also check the server certificate.`,
           ),
         );
     };
@@ -256,8 +291,11 @@ export class HomeAssistantClient {
     };
   }
 
-  private receive(message: any, generation: number, socket: WebSocket): void {
-    if (!message || typeof message !== 'object') return;
+  private receive(
+    message: ServerMessage,
+    generation: number,
+    socket: WebSocket,
+  ): void {
     if (message.type === 'auth_required') {
       if (this.authenticated) return;
       try {
@@ -280,29 +318,14 @@ export class HomeAssistantClient {
       if (!pending) return;
       this.pending.delete(message.id);
       clearTimeout(pending.timer);
-      if (message.type === 'pong' || message.success === true)
-        pending.resolve(message.result);
-      else
-        pending.reject(
-          new Error(
-            typeof message.error?.message === 'string'
-              ? message.error.message
-              : 'Home Assistant could not complete this action.',
-          ),
-        );
+      if (message.type === 'pong') pending.resolve(null);
+      else if (message.success) pending.resolve(message.result);
+      else pending.reject(new ServerCommandError(message.error));
     } else if (
-      message.type === 'event' &&
-      message.id === this.subscriptionId &&
-      message.event?.event_type === 'state_changed'
+      message.type === 'state_changed' &&
+      message.id === this.subscriptionId
     ) {
-      const data = message.event.data;
-      if (!data || typeof data.entity_id !== 'string' || !('new_state' in data))
-        return;
-      const change: StateChange = {
-        entity_id: data.entity_id,
-        new_state: data.new_state,
-        time_fired: message.event.time_fired,
-      };
+      const change = message.change;
       if (!this.ready) this.bufferedChanges.push(change);
       else {
         this.applyChange(change);
@@ -326,37 +349,27 @@ export class HomeAssistantClient {
       });
       if (!current()) return;
       const [entities, areas, devices, registry, config] = await Promise.all([
-        this.command<HassEntity[]>({ type: 'get_states' }),
-        this.command<HassArea[]>({ type: 'config/area_registry/list' }).catch(
-          () => [],
+        this.command({ type: 'get_states' }),
+        this.command({ type: 'config/area_registry/list' }).catch(
+          () => undefined,
         ),
-        this.command<HassDevice[]>({
+        this.command({
           type: 'config/device_registry/list',
-        }).catch(() => []),
-        this.command<HassEntityRegistryEntry[]>({
+        }).catch(() => undefined),
+        this.command({
           type: 'config/entity_registry/list',
-        }).catch(() => []),
-        this.command<{
-          location_name?: string;
-          unit_system?: { temperature: string };
-        }>({ type: 'get_config' }).catch(
-          () =>
-            ({}) as {
-              location_name?: string;
-              unit_system?: { temperature: string };
-            },
-        ),
+        }).catch(() => undefined),
+        this.command({ type: 'get_config' }).catch(() => undefined),
       ]);
       if (!current()) return;
-      if (!Array.isArray(entities))
-        throw new Error('Home Assistant returned an invalid device list.');
       this.snapshot = {
-        entities,
-        areas: Array.isArray(areas) ? areas : [],
-        devices: Array.isArray(devices) ? devices : [],
-        registry: Array.isArray(registry) ? registry : [],
-        locationName: config?.location_name || 'My home',
-        unitSystem: config?.unit_system,
+        entities: parseEntities(entities),
+        areas: areas === undefined ? [] : parseAreas(areas),
+        devices: devices === undefined ? [] : parseDevices(devices),
+        registry: registry === undefined ? [] : parseRegistry(registry),
+        ...(config === undefined
+          ? { locationName: 'My home' }
+          : parseConfig(config)),
       };
       for (const change of this.bufferedChanges) this.applyChange(change);
       this.bufferedChanges = [];
@@ -384,6 +397,8 @@ export class HomeAssistantClient {
           error instanceof Error
             ? error
             : new Error('Unable to load your Home Assistant devices.'),
+          error instanceof HomeAssistantProtocolError ||
+            error instanceof ServerCommandError,
         );
     }
   }
@@ -409,7 +424,7 @@ export class HomeAssistantClient {
     )
       return;
     let entities: HassEntity[];
-    if (change.new_state && typeof change.new_state.state === 'string') {
+    if (change.new_state) {
       const next = change.new_state;
       entities = previous
         ? this.snapshot.entities.map((entity) =>
@@ -424,7 +439,7 @@ export class HomeAssistantClient {
     this.snapshot = { ...this.snapshot, entities };
   }
 
-  private command<T = unknown>(payload: Record<string, unknown>): Promise<T> {
+  private command(payload: ClientCommand): Promise<unknown> {
     const socket = this.socket;
     if (
       !socket ||
@@ -434,7 +449,7 @@ export class HomeAssistantClient {
       return Promise.reject(new Error('Home Assistant is not connected.'));
     }
     const id = this.nextId++;
-    return new Promise<T>((resolve, reject) => {
+    return new Promise<unknown>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(
@@ -457,7 +472,7 @@ export class HomeAssistantClient {
   private fail(error: Error, terminal = false): void {
     this.cleanSocket(error);
     if (!this.desired) return;
-    if (!terminal && this.hasConnected) {
+    if (!terminal && (this.hasConnected || this.retryInitial)) {
       this.callbacks.onStatus('reconnecting', error.message);
       const delay = Math.min(1_000 * 2 ** this.retryCount++, 30_000);
       this.reconnectTimer = setTimeout(() => this.openSocket(), delay);
@@ -495,6 +510,7 @@ export class HomeAssistantClient {
   private stop(error: Error): void {
     this.generation++;
     this.desired = false;
+    this.retryInitial = false;
     this.token = '';
     clearTimeout(this.reconnectTimer);
     this.cleanSocket(error);

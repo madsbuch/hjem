@@ -1,11 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <base-config cleartextTrafficPermitted="false" />
-    <!-- Local app origin and Home Assistant's standard local hostname only.
-         Add your exact LAN hostname/IP here if it does not support HTTPS. -->
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="false">localhost</domain>
-        <domain includeSubdomains="false">tauri.localhost</domain>
-        <domain includeSubdomains="false">homeassistant.local</domain>
-    </domain-config>
+    <!-- Home Assistant addresses are supplied by the user and may be arbitrary
+         LAN IPs or local hostnames using HTTP/WebSocket. Android's static domain
+         rules cannot express user-configured destinations or private-IP ranges.
+         Keep TLS certificate validation at the platform default; this enables
+         cleartext connections without changing HTTPS trust anchors. -->
+    <base-config cleartextTrafficPermitted="true" />
 </network-security-config>

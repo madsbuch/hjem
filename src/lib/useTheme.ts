@@ -1,13 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { readPreference, savePreference } from './entities';
-
-export type Theme = 'system' | 'light' | 'dark';
+import { saveTheme, useStorage } from './storage';
+export type { Theme } from './storage';
 
 export function useTheme() {
-  const [theme, setPreference] = useState<Theme>(() => {
-    const saved = readPreference<string>('hjem.theme', 'system');
-    return saved === 'dark' || saved === 'light' ? saved : 'system';
-  });
+  const { theme } = useStorage();
   const [systemDark, setSystemDark] = useState(
     () => window.matchMedia('(prefers-color-scheme: dark)').matches,
   );
@@ -77,9 +73,5 @@ export function useTheme() {
     [],
   );
 
-  const setTheme = (next: Theme) => {
-    setPreference(next);
-    savePreference('hjem.theme', next);
-  };
-  return { theme, resolvedTheme, setTheme };
+  return { theme, resolvedTheme, setTheme: saveTheme };
 }

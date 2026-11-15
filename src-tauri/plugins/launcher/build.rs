@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 const COMMANDS: &[&str] = &[
     "get_status",
     "list_apps",

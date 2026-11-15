@@ -10,7 +10,7 @@ export interface HassCalendarEvent {
 
 export function calendarDate(value: string): Date {
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    const [year, month, day] = value.split('-').map(Number);
+    const [year = NaN, month = NaN, day = NaN] = value.split('-').map((part) => Number.parseInt(part, 10));
     const date = new Date(year, month - 1, day);
     return date.getFullYear() === year &&
       date.getMonth() === month - 1 &&
@@ -24,7 +24,7 @@ export function calendarDate(value: string): Date {
 export function calendarDay(now: Date) {
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-  const date = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`;
+  const date = `${start.getFullYear()}-${(start.getMonth() + 1).toString().padStart(2, '0')}-${start.getDate().toString().padStart(2, '0')}`;
   return { start: start.toISOString(), end: end.toISOString(), date };
 }
 
@@ -73,7 +73,7 @@ export function parseCalendarEvents(
   }
   return events.sort(
     (a, b) =>
-      Number(b.allDay) - Number(a.allDay) ||
+      (b.allDay ? 1 : 0) - (a.allDay ? 1 : 0) ||
       calendarDate(a.start).getTime() - calendarDate(b.start).getTime() ||
       a.summary.localeCompare(b.summary),
   );

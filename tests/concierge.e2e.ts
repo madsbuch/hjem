@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
+import { nativeStorage } from './helpers/native-storage';
 
 const fakeKey = 'sk-or-v1-hjem-e2e-only-not-a-real-key';
 const fakeModel = 'fake/test-tool-model';
@@ -135,6 +136,7 @@ async function navigate(
   page: Page,
   name: 'Overview' | 'Controls' | 'Settings' | 'Concierge',
 ) {
+  await page.locator('nav:visible').first().waitFor();
   const mobile = page.getByRole('navigation', { name: 'Mobile navigation' });
   const navigation = (await mobile.isVisible())
     ? mobile
@@ -243,7 +245,7 @@ test('settings check a custom model and key, and keep browser keys out of storag
     }),
   );
   expect(storage).not.toContain(fakeKey);
-  expect(storage).toContain(fakeModel);
+  expect(storage).not.toContain(fakeModel);
   await page.reload();
   await navigate(page, 'Concierge');
   await expect(
@@ -253,9 +255,7 @@ test('settings check a custom model and key, and keep browser keys out of storag
     page.getByRole('textbox', { name: 'Message Home Concierge' }),
   ).toBeDisabled();
   await navigate(page, 'Settings');
-  await expect(page.getByLabel('Custom model ID', { exact: true })).toHaveValue(
-    fakeModel,
-  );
+  await expect(page.getByLabel('Custom model ID', { exact: true })).toHaveCount(0);
   await expect(
     page.getByRole('button', { name: 'Test key', exact: true }),
   ).toBeDisabled();
@@ -550,6 +550,7 @@ for (const [status, message] of [
 test('model recommendations are concise, selectable, and preserve a saved custom choice', async ({
   page,
 }) => {
+  await nativeStorage(page);
   const mock = await mockOpenRouter(page);
   await page.goto('/');
   await navigate(page, 'Settings');

@@ -47,12 +47,22 @@ export interface ConciergeResult {
   usage: AgentUsage;
 }
 
+export interface ConciergeRequest extends Record<string, unknown> {
+  messages: WireMessage[];
+  max_tokens: number;
+  stream: false;
+  usage: { include: true };
+  tools?: ToolDefinition[];
+  tool_choice?: 'auto';
+  parallel_tool_calls?: false;
+}
+
 export interface ConciergeOptions {
   messages: WireMessage[];
   systemPrompt: string;
   tools: ToolDefinition[];
   request: (
-    body: Record<string, unknown>,
+    body: ConciergeRequest,
     signal: AbortSignal,
   ) => Promise<unknown>;
   executeTool: (
@@ -104,6 +114,7 @@ class RunFailure extends Error {
 
 const record = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
+const array = (value: unknown): value is unknown[] => Array.isArray(value);
 const messageOf = (error: unknown, fallback: string) =>
   error instanceof Error && error.message ? error.message : fallback;
 const errorResult = (error: string, status = 'failed') =>
@@ -114,7 +125,7 @@ function copyReasoningDetails(
 ): Record<string, unknown>[] | undefined {
   if (value == null) return undefined;
   if (
-    !Array.isArray(value) ||
+    !array(value) ||
     value.length > MAX_REASONING_BLOCKS ||
     !value.every(record)
   ) {
@@ -139,7 +150,9 @@ function copyReasoningDetails(
     });
     if (new TextEncoder().encode(json).byteLength > MAX_REASONING_BYTES)
       throw new Error('Metadata too large');
-    return JSON.parse(json) as Record<string, unknown>[];
+    const copy: unknown = JSON.parse(json);
+    if (!array(copy) || !copy.every(record)) throw new Error('Invalid metadata');
+    return copy;
   } catch {
     throw new RunFailure(
       'protocol',
@@ -227,7 +240,7 @@ function providerError(value: unknown): string | null {
 function contentText(content: unknown): string {
   if (content == null) return '';
   if (typeof content === 'string') return content.trim();
-  if (Array.isArray(content)) {
+  if (array(content)) {
     // Only public text content is surfaced; provider reasoning fields are not read.
     return content
       .flatMap((part) =>
@@ -258,7 +271,7 @@ function parseTurn(response: unknown): {
     throw new RunFailure('protocol', 'The model returned an invalid response.');
   const topError = providerError(response.error);
   if (topError) throw new RunFailure('request', topError);
-  const choice = Array.isArray(response.choices) ? response.choices[0] : null;
+  const choice = array(response.choices) ? response.choices[0] : null;
   if (!record(choice))
     throw new RunFailure(
       'protocol',
@@ -288,13 +301,13 @@ function parseTurn(response: unknown): {
   }
   const reasoningDetails = copyReasoningDetails(message.reasoning_details);
   const text = contentText(message.content);
-  if (message.tool_calls != null && !Array.isArray(message.tool_calls)) {
+  if (message.tool_calls != null && !array(message.tool_calls)) {
     throw new RunFailure(
       'protocol',
       'The model returned a malformed tool-call list.',
     );
   }
-  const rawCalls = (message.tool_calls || []) as unknown[];
+  const rawCalls: unknown[] = message.tool_calls ?? [];
   if (rawCalls.length > MAX_CALLS_IN_RESPONSE)
     throw new RunFailure(
       'limit',
@@ -348,19 +361,22 @@ function parseArguments(text: string): Record<string, unknown> {
 }
 
 function canonical(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+  if (array(value)) return `[${value.map(canonical).join(',')}]`;
   if (record(value))
     return `{${Object.keys(value)
       .sort()
       .map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`)
       .join(',')}}`;
-  return JSON.stringify(value);
+  const serialized = JSON.stringify(value);
+  if (serialized === undefined) throw new Error('Unsupported JSON value.');
+  return serialized;
 }
 
 function fingerprint(call: ToolCall): string {
   let args = call.function.arguments;
   try {
-    args = canonical(JSON.parse(args));
+    const parsed: unknown = JSON.parse(args);
+    args = canonical(parsed);
   } catch {
     /* Invalid JSON is reported as a tool result. */
   }
@@ -376,13 +392,15 @@ interface CompletedCall {
 function failedResult(content: string): boolean {
   try {
     const value: unknown = JSON.parse(content);
-    return (
-      record(value) &&
-      (Boolean(value.error) ||
-        ['failed', 'unconfirmed', 'not_executed'].includes(
-          String(value.status),
-        ))
-    );
+    if (!record(value)) return false;
+    const error = value.error;
+    const hasError =
+      (typeof error === 'string' && error.length > 0) ||
+      error === true ||
+      (typeof error === 'number' && Number.isFinite(error) && error !== 0) ||
+      record(error) || array(error);
+    return hasError || (typeof value.status === 'string' &&
+      ['failed', 'unconfirmed', 'not_executed'].includes(value.status));
   } catch {
     return false;
   }
@@ -493,7 +511,7 @@ export async function runConcierge(
         (summaryOnly
           ? '\n\nNo more tools are available in this run. Summarize only the results already obtained. Clearly distinguish completed, failed, and unconfirmed actions; do not claim further actions were performed.'
           : '');
-      const body: Record<string, unknown> = {
+      const body: ConciergeRequest = {
         messages: [
           { role: 'system', content: prompt },
           ...copyMessages(messages),
