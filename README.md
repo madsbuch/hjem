@@ -76,6 +76,8 @@ Speaker cards show the current track and artist, with play/pause, previous/next 
 
 On Android, Hjem lists launchable apps in the current profile, using their names and icons from Android. Open **Apps** to search, launch, or pin an app in the drawer’s Pinned view. The list refreshes when you return to Hjem, and pinned choices stay on this device. Apps work independently of your Home Assistant connection. Hold an app to open its options: **App info** opens Android’s settings for that app, and **Uninstall app** opens Android’s uninstall confirmation. You can cancel there; Hjem refreshes the app list when you return. Right-click and Shift+F10 also open the options menu.
 
+Open **Settings → App visibility** to hide unused apps from Hjem. Search by name or package, then turn off the app’s switch. Hidden apps disappear from the app drawer, search, pinned view, and Concierge’s app list. Use the **Hidden** filter in Settings to show them again; their pins are preserved. Visibility choices are saved in SQLite on native platforms, independently for Android and sample apps. Hiding an app does not uninstall it or change Android settings.
+
 To use Hjem as the tablet's home screen, choose **Settings → Choose default home app**, then select **Hjem** in Android's settings. Hjem never changes the default automatically. You can choose your previous launcher from the same Android setting.
 
 The browser, desktop, and iOS versions show clearly labeled sample app shortcuts for exploring the layout. They do not enumerate or launch installed apps. The native launcher uses Android's scoped package visibility for launcher activities; it does not request broad access to every installed package. Work profiles, widgets, and notification badges are outside this first version.
@@ -122,7 +124,7 @@ Real Home Assistant hardware and physical mobile devices have not yet been teste
 
 ## Persisted settings and types
 
-All durable native settings use SQLite through Diesel: Home Assistant credentials, calendar subscriptions, theme, favourites, selected speakers, app pins, and Concierge credentials/model. Embedded migrations run before the interface opens. Existing browser preferences and the old Concierge JSON file are imported once, transactionally, and removed only after a successful import. An unreadable database or failed migration displays a retryable error without resetting saved data. Chat history and fetched device/calendar state remain session data.
+All durable native settings use SQLite through Diesel: Home Assistant credentials, calendar subscriptions, theme, favourites, selected speakers, app pins and visibility, and Concierge credentials/model. Embedded migrations run before the interface opens. Existing browser preferences and the old Concierge JSON file are imported once, transactionally, and removed only after a successful import. An unreadable database or failed migration displays a retryable error without resetting saved data. Chat history and fetched device/calendar state remain session data.
 
 TypeScript runs in strict mode, external payloads are validated from `unknown`, and Rust forbids unsafe code. The build also rejects TypeScript type assertions, `any`, non-null assertions, and Rust casts.
 

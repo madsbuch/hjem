@@ -13,6 +13,7 @@ fn main() {
             "storage_clear_connection",
             "storage_set_theme",
             "storage_set_pinned_apps",
+            "storage_set_app_hidden",
             "storage_set_favourites",
             "storage_set_selected_speaker",
             "storage_import_legacy",

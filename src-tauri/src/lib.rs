@@ -30,6 +30,7 @@ pub fn run() {
             database::storage_clear_connection,
             database::storage_set_theme,
             database::storage_set_pinned_apps,
+            database::storage_set_app_hidden,
             database::storage_set_favourites,
             database::storage_set_selected_speaker,
             database::storage_import_legacy,

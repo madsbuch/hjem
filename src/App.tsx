@@ -47,6 +47,7 @@ import { MusicPanel } from './components/MusicPanel';
 import { TokenScanner } from './components/TokenScanner';
 import { useTheme, type Theme } from './lib/useTheme';
 import { AppLauncher } from './components/AppLauncher';
+import { AppVisibilitySettings } from './components/AppVisibilitySettings';
 import { useLauncher } from './lib/useLauncher';
 import { useConcierge } from './lib/useConcierge';
 import { useCalendar } from './lib/useCalendar';
@@ -253,6 +254,7 @@ export default function App() {
   }
   const launcherProps = {
     apps: launcher.apps,
+    allAppsHidden: launcher.allApps.length > 0 && launcher.apps.length === 0,
     pinned: launcher.pinned,
     onTogglePin: launcher.togglePin,
     onLaunch: (app: LauncherApp) => void openApp(app),
@@ -918,6 +920,15 @@ export default function App() {
                     <ArrowRight size={17} />
                   </button>
                 </section>
+                <AppVisibilitySettings
+                  apps={launcher.allApps}
+                  hidden={launcher.hidden}
+                  preview={launcher.preview}
+                  loading={launcher.loading}
+                  error={launcher.error}
+                  onSetHidden={launcher.setHidden}
+                  onRefresh={() => void launcher.refresh()}
+                />
                 <section className="settings-card home-screen-card">
                   <span className="settings-icon">
                     <House size={25} />

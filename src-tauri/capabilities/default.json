@@ -21,6 +21,7 @@
     "allow-storage-clear-connection",
     "allow-storage-set-theme",
     "allow-storage-set-pinned-apps",
+    "allow-storage-set-app-hidden",
     "allow-storage-set-favourites",
     "allow-storage-set-selected-speaker",
     "allow-storage-import-legacy",

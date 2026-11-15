@@ -54,3 +54,9 @@ diesel::table! {
         url -> Text,
     }
 }
+diesel::table! {
+    hidden_apps (scope, package_name) {
+        scope -> Text,
+        package_name -> Text,
+    }
+}

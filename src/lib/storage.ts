@@ -16,6 +16,10 @@ export interface PinnedApps {
   scope: PinScope;
   packageNames: string[];
 }
+export interface HiddenApps {
+  scope: PinScope;
+  packageNames: string[];
+}
 export interface Favourites {
   scope: string;
   entityIds: string[];
@@ -29,6 +33,7 @@ export interface StorageSnapshot {
   serverUrl: string;
   theme: Theme;
   pinnedApps: PinnedApps[];
+  hiddenApps: HiddenApps[];
   favourites: Favourites[];
   selectedSpeakers: SelectedSpeaker[];
   legacyImportComplete: boolean;
@@ -78,6 +83,7 @@ export function parseStorageSnapshot(value: unknown): StorageSnapshot {
     typeof value.serverUrl !== 'string' ||
     !isTheme(value.theme) ||
     !array(value.pinnedApps) ||
+    !array(value.hiddenApps) ||
     !array(value.favourites) ||
     !array(value.selectedSpeakers) ||
     !array(value.calendarFeeds) ||
@@ -113,6 +119,15 @@ export function parseStorageSnapshot(value: unknown): StorageSnapshot {
         throw unreadable();
       return { scope: item.scope, packageNames: item.packageNames };
     }),
+    hiddenApps: value.hiddenApps.map((item) => {
+      if (
+        !record(item) ||
+        !isPinScope(item.scope) ||
+        !strings(item.packageNames)
+      )
+        throw unreadable();
+      return { scope: item.scope, packageNames: item.packageNames };
+    }),
     favourites: value.favourites.map((item) => {
       if (
         !record(item) ||
@@ -139,6 +154,7 @@ const emptySnapshot = (): StorageSnapshot => ({
   serverUrl: '',
   theme: 'system',
   pinnedApps: [],
+  hiddenApps: [],
   favourites: [],
   selectedSpeakers: [],
   legacyImportComplete: false,
@@ -267,6 +283,20 @@ export const savePinnedApps = (scope: PinScope, packageNames: string[]) =>
       { scope, packageNames },
     ],
   }));
+export const setAppHidden = (scope: PinScope, packageName: string, hidden: boolean) =>
+  change('storage_set_app_hidden', { scope, packageName, hidden }, (current) => {
+    const previous = current.hiddenApps.find((item) => item.scope === scope)?.packageNames ?? [];
+    const packageNames = hidden
+      ? [...new Set([...previous, packageName])]
+      : previous.filter((item) => item !== packageName);
+    return {
+      ...current,
+      hiddenApps: [
+        ...current.hiddenApps.filter((item) => item.scope !== scope),
+        { scope, packageNames },
+      ],
+    };
+  });
 export const saveFavourites = (scope: string, entityIds: string[]) =>
   change('storage_set_favourites', { scope, entityIds }, (current) => ({
     ...current,

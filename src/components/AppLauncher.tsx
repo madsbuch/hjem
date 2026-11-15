@@ -29,6 +29,7 @@ interface AppLauncherProps {
   loading: boolean;
   error: string | null;
   onRefresh: () => void;
+  allAppsHidden?: boolean;
   compact?: boolean;
 }
 
@@ -226,6 +227,7 @@ export function AppLauncher({
   loading,
   error,
   onRefresh,
+  allAppsHidden = false,
   compact = false,
 }: AppLauncherProps) {
   const [query, setQuery] = useState('');
@@ -411,16 +413,20 @@ export function AppLauncher({
           <h3>
             {query
               ? 'No apps found.'
-              : onlyPinned
-                ? 'Make room for your favourites.'
-                : 'Your apps will feel at home here.'}
+              : allAppsHidden
+                ? 'All apps are hidden.'
+                : onlyPinned
+                  ? 'Make room for your favourites.'
+                  : 'Your apps will feel at home here.'}
           </h3>
           <p>
             {query
               ? 'Try another app name.'
-              : onlyPinned
-                ? 'Pin an app to find it in your favourites.'
-                : 'Refresh to find apps installed on this device.'}
+              : allAppsHidden
+                ? 'Show apps in Settings → App visibility.'
+                : onlyPinned
+                  ? 'Pin an app to find it in your favourites.'
+                  : 'Refresh to find apps installed on this device.'}
           </p>
           {(query || onlyPinned) && (
             <button

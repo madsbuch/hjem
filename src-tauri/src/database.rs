@@ -85,6 +85,13 @@ pub struct PinnedApps {
     package_names: Vec<String>,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HiddenApps {
+    scope: AppScope,
+    package_names: Vec<String>,
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Favourites {
@@ -116,6 +123,7 @@ pub struct StorageSnapshot {
     connection: Option<SavedConnection>,
     theme: Theme,
     pinned_apps: Vec<PinnedApps>,
+    hidden_apps: Vec<HiddenApps>,
     favourites: Vec<Favourites>,
     selected_speakers: Vec<SelectedSpeaker>,
     calendar_feeds: Vec<CalendarFeed>,
@@ -280,6 +288,34 @@ impl Database {
 
     fn snapshot(&mut self) -> Result<StorageSnapshot> {
         self.connection.transaction(read_snapshot)
+    }
+
+    fn set_app_hidden(
+        &mut self,
+        scope: AppScope,
+        package_name: String,
+        hidden: bool,
+    ) -> Result<()> {
+        if !valid_package_name(&package_name) {
+            return Err(error("Choose a valid app package name."));
+        }
+        self.connection.transaction(|connection| {
+            if hidden {
+                diesel::insert_into(hidden_apps::table)
+                    .values((
+                        hidden_apps::scope.eq(scope),
+                        hidden_apps::package_name.eq(&package_name),
+                    ))
+                    .on_conflict_do_nothing()
+                    .execute(connection)?;
+            } else {
+                diesel::delete(hidden_apps::table.find((scope, &package_name)))
+                    .execute(connection)?;
+            }
+            // Visibility is independent of installed-app discovery and pins.
+            // Restoring an app therefore also restores its existing pin.
+            Ok(())
+        })
     }
 
     fn add_calendar_feed(&mut self, name: String, url: String) -> Result<CalendarFeed> {
@@ -460,6 +496,23 @@ fn read_snapshot(connection: &mut SqliteConnection) -> Result<StorageSnapshot> {
             package_names,
         });
     }
+    let mut hidden = Vec::new();
+    for scope in hidden_apps::table
+        .select(hidden_apps::scope)
+        .distinct()
+        .order(hidden_apps::scope)
+        .load::<AppScope>(connection)?
+    {
+        let package_names = hidden_apps::table
+            .filter(hidden_apps::scope.eq(scope))
+            .order(hidden_apps::package_name)
+            .select(hidden_apps::package_name)
+            .load(connection)?;
+        hidden.push(HiddenApps {
+            scope,
+            package_names,
+        });
+    }
     let mut favourite_lists = Vec::new();
     for scope in favourite_scopes::table
         .order(favourite_scopes::scope)
@@ -485,6 +538,7 @@ fn read_snapshot(connection: &mut SqliteConnection) -> Result<StorageSnapshot> {
         connection: saved,
         theme,
         pinned_apps: pinned,
+        hidden_apps: hidden,
         favourites: favourite_lists,
         selected_speakers: speakers,
         calendar_feeds: calendar_feeds::table
@@ -592,17 +646,18 @@ fn set_theme(connection: &mut SqliteConnection, theme: Theme) -> Result<()> {
         .execute(connection)?;
     Ok(())
 }
+fn valid_package_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 255
+        && name.bytes().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, b'.' | b'_' | b'-')
+        })
+}
 fn set_pins(connection: &mut SqliteConnection, scope: AppScope, names: Vec<String>) -> Result<()> {
     validate_list(
         &names,
         256,
-        |name| {
-            !name.is_empty()
-                && name.len() <= 255
-                && name.bytes().all(|character| {
-                    character.is_ascii_alphanumeric() || matches!(character, b'.' | b'_' | b'-')
-                })
-        },
+        valid_package_name,
         "The pinned app list is invalid.",
     )?;
     diesel::insert_into(pin_scopes::table)
@@ -716,6 +771,18 @@ pub fn storage_set_pinned_apps(
         database
             .connection
             .transaction(|connection| set_pins(connection, scope, package_names))
+    })
+}
+#[tauri::command]
+pub fn storage_set_app_hidden(
+    app: AppHandle,
+    state: State<'_, DatabaseState>,
+    scope: AppScope,
+    package_name: String,
+    hidden: bool,
+) -> std::result::Result<(), String> {
+    with_database(&app, &state, |database| {
+        database.set_app_hidden(scope, package_name, hidden)
     })
 }
 #[tauri::command]
@@ -894,6 +961,170 @@ mod tests {
     use super::*;
     use diesel::migration::MigrationSource;
     use serde_json::json;
+
+    #[test]
+    fn hidden_apps_survive_restart_without_changing_pins_or_requiring_installation() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("hjem.sqlite3");
+        let legacy = directory.path().join("missing.json");
+        let mut database = Database::open(&path, &legacy).unwrap();
+        let pins = vec![
+            "org.example.music".to_owned(),
+            "org.example.clock".to_owned(),
+        ];
+        set_pins(&mut database.connection, AppScope::Android, pins.clone()).unwrap();
+        database
+            .set_app_hidden(AppScope::Android, "org.example.music".into(), true)
+            .unwrap();
+        database
+            .set_app_hidden(AppScope::Android, "org.example.uninstalled".into(), true)
+            .unwrap();
+        drop(database);
+        let mut reopened = Database::open(&path, &legacy).unwrap();
+        let snapshot = serde_json::to_value(reopened.snapshot().unwrap()).unwrap();
+        assert_eq!(
+            snapshot["hiddenApps"],
+            json!([{"scope":"android","packageNames":["org.example.music","org.example.uninstalled"]}])
+        );
+        assert_eq!(
+            snapshot["pinnedApps"],
+            json!([{"scope":"android","packageNames":pins}])
+        );
+        reopened
+            .set_app_hidden(AppScope::Android, "org.example.music".into(), false)
+            .unwrap();
+        drop(reopened);
+        let snapshot =
+            serde_json::to_value(Database::open(&path, &legacy).unwrap().snapshot().unwrap())
+                .unwrap();
+        assert_eq!(
+            snapshot["hiddenApps"],
+            json!([{"scope":"android","packageNames":["org.example.uninstalled"]}])
+        );
+        assert_eq!(
+            snapshot["pinnedApps"],
+            json!([{"scope":"android","packageNames":pins}])
+        );
+    }
+
+    #[test]
+    fn hidden_app_updates_are_idempotent_and_scoped() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut database = Database::open(
+            &directory.path().join("hjem.sqlite3"),
+            &directory.path().join("missing.json"),
+        )
+        .unwrap();
+        for scope in [AppScope::Android, AppScope::Demo] {
+            database
+                .set_app_hidden(scope, "org.example.clock".into(), true)
+                .unwrap();
+            database
+                .set_app_hidden(scope, "org.example.clock".into(), true)
+                .unwrap();
+        }
+        assert_eq!(
+            hidden_apps::table
+                .count()
+                .get_result::<i64>(&mut database.connection)
+                .unwrap(),
+            2
+        );
+        database
+            .set_app_hidden(AppScope::Demo, "org.example.clock".into(), false)
+            .unwrap();
+        database
+            .set_app_hidden(AppScope::Demo, "org.example.clock".into(), false)
+            .unwrap();
+        let snapshot = serde_json::to_value(database.snapshot().unwrap()).unwrap();
+        assert_eq!(
+            snapshot["hiddenApps"],
+            json!([{"scope":"android","packageNames":["org.example.clock"]}])
+        );
+        assert_eq!(snapshot["pinnedApps"], json!([]));
+        database
+            .set_app_hidden(AppScope::Android, "org.example.clock".into(), false)
+            .unwrap();
+        assert!(database.snapshot().unwrap().hidden_apps.is_empty());
+    }
+
+    #[test]
+    fn hidden_app_migration_preserves_existing_version_two_data() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("hjem.sqlite3");
+        let mut connection = SqliteConnection::establish(path.to_str().unwrap()).unwrap();
+        assert!(connection.applied_migrations().unwrap().is_empty());
+        for migration in MIGRATIONS.migrations().unwrap().iter().take(2) {
+            connection.run_migration(migration.as_ref()).unwrap();
+        }
+        set_theme(&mut connection, Theme::Dark).unwrap();
+        set_pins(&mut connection, AppScope::Demo, vec!["demo.clock".into()]).unwrap();
+        set_favourites(&mut connection, "demo".into(), vec!["light.kitchen".into()]).unwrap();
+        let mut previous = Database { connection };
+        previous
+            .save_connection(SavedConnection {
+                server_url: "https://home.example".into(),
+                token: "synthetic-token".into(),
+            })
+            .unwrap();
+        previous
+            .add_calendar_feed("Family".into(), "https://calendar.example/feed.ics".into())
+            .unwrap();
+        drop(previous);
+        let mut upgraded = Database::open(&path, &directory.path().join("missing.json")).unwrap();
+        let snapshot = serde_json::to_value(upgraded.snapshot().unwrap()).unwrap();
+        assert_eq!(snapshot["hiddenApps"], json!([]));
+        assert_eq!(snapshot["theme"], "dark");
+        assert_eq!(
+            snapshot["pinnedApps"],
+            json!([{"scope":"demo","packageNames":["demo.clock"]}])
+        );
+        assert_eq!(
+            snapshot["favourites"],
+            json!([{"scope":"demo","entityIds":["light.kitchen"]}])
+        );
+        assert_eq!(snapshot["connection"]["token"], "synthetic-token");
+        assert_eq!(snapshot["calendarFeeds"][0]["name"], "Family");
+        upgraded
+            .set_app_hidden(AppScope::Demo, "demo.clock".into(), true)
+            .unwrap();
+        assert_eq!(upgraded.snapshot().unwrap().hidden_apps.len(), 1);
+    }
+
+    #[test]
+    fn invalid_hidden_app_updates_leave_existing_choices_unchanged() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut database = Database::open(
+            &directory.path().join("hjem.sqlite3"),
+            &directory.path().join("missing.json"),
+        )
+        .unwrap();
+        database
+            .set_app_hidden(AppScope::Android, "org.example.clock".into(), true)
+            .unwrap();
+        for name in [
+            "",
+            "org.example clock",
+            "org/example",
+            "org.example\nclock",
+            "org.example.ø",
+        ] {
+            for hidden in [true, false] {
+                assert!(database
+                    .set_app_hidden(AppScope::Android, name.into(), hidden)
+                    .is_err());
+            }
+        }
+        assert!(database
+            .set_app_hidden(AppScope::Android, "a".repeat(256), true)
+            .is_err());
+        assert!(serde_json::from_value::<AppScope>(json!("other")).is_err());
+        let snapshot = serde_json::to_value(database.snapshot().unwrap()).unwrap();
+        assert_eq!(
+            snapshot["hiddenApps"],
+            json!([{"scope":"android","packageNames":["org.example.clock"]}])
+        );
+    }
 
     #[test]
     fn calendar_subscriptions_survive_restart_and_removal_does_not_reuse_ids() {

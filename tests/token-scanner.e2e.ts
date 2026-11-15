@@ -226,7 +226,7 @@ async function nativeCamera(page: Page, denied = false) {
             fixture.commands.push({ command, args });
             if (command === 'storage_load') return {
               serverUrl: '', connection: null, theme: 'system', pinnedApps: [],
-              favourites: [], selectedSpeakers: [], legacyImportComplete: true, calendarFeeds: [],
+              favourites: [], selectedSpeakers: [], legacyImportComplete: true, calendarFeeds: [], hiddenApps: [],
             };
             if (command === 'plugin:launcher|get_status')
               return { supported: false, isDefaultHome: false };

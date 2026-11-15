@@ -1,0 +1,281 @@
+.app-visibility-settings {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+.settings-card.app-visibility-settings > p {
+  color: #626d79;
+}
+.app-visibility-toolbar,
+.app-visibility-list-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+.app-visibility-toolbar {
+  margin-top: 2px;
+}
+.app-visibility-search {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  gap: 10px;
+  padding: 0 13px;
+  min-height: 46px;
+  border: 1px solid #cbd4df;
+  border-radius: 10px;
+  background: #fff;
+  color: #596d84;
+}
+.app-visibility-search:focus-within {
+  outline: 2px solid var(--forest);
+  outline-offset: 2px;
+}
+.app-visibility-search input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #29323c;
+  font-size: 14px;
+}
+.app-visibility-search input::placeholder {
+  color: #626d79;
+  opacity: 1;
+}
+.app-visibility-search button,
+.app-visibility-refresh {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #4d627a;
+}
+.app-visibility-search button {
+  margin-right: -8px;
+}
+.app-visibility-refresh {
+  border: 1px solid #cbd4df;
+}
+.app-visibility-refresh:hover:not(:disabled),
+.app-visibility-search button:hover:not(:disabled) {
+  background: #e9eef4;
+}
+.app-visibility-list-heading {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  margin: 18px 0 12px;
+}
+.app-visibility-list-heading > span {
+  color: #626d79;
+  font-size: 12px;
+}
+.app-visibility-filter {
+  display: flex;
+  gap: 4px;
+  border-radius: 10px;
+  padding: 3px;
+  background: #e9eef4;
+}
+.app-visibility-filter button {
+  min-height: 44px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: transparent;
+  color: #4d627a;
+  font-size: 13px;
+}
+.app-visibility-filter button[aria-pressed='true'] {
+  background: #fff;
+  color: #21354c;
+  box-shadow: 0 1px 4px #182c4012;
+}
+.app-visibility-list {
+  width: 100%;
+  max-height: 360px;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #a8b5c5 transparent;
+  margin: 0;
+  padding: 0 8px;
+  list-style: none;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.app-visibility-list li {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  min-height: 76px;
+  padding: 12px 0;
+}
+.app-visibility-list li + li {
+  border-top: 1px solid var(--border);
+}
+.app-visibility-icon {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #e6ecf3;
+  color: #566b83;
+}
+.app-visibility-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.app-visibility-name {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 4px;
+  overflow-wrap: anywhere;
+}
+.app-visibility-name strong {
+  font-size: 14px;
+  font-weight: 550;
+  line-height: 1.4;
+}
+.app-visibility-name > span {
+  color: #626d79;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.app-visibility-switch {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  min-width: 52px;
+  min-height: 48px;
+  padding: 0;
+  border-radius: 9px;
+  background: transparent;
+}
+.app-visibility-switch-track {
+  display: flex;
+  align-items: center;
+  width: 44px;
+  height: 26px;
+  padding: 3px;
+  border-radius: 15px;
+  background: #9aa7b6;
+}
+.app-visibility-switch[aria-disabled='true'] {
+  opacity: 0.55;
+  cursor: wait;
+}
+.app-visibility-switch-track > span {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px #15243426;
+}
+.app-visibility-switch[aria-checked='true'] .app-visibility-switch-track {
+  justify-content: flex-end;
+  background: #365574;
+}
+.app-visibility-settings > .app-visibility-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 110px;
+  margin: 0;
+  text-align: center;
+  font-size: 13px;
+}
+.app-visibility-settings > .app-visibility-error {
+  width: 100%;
+  padding: 12px 14px;
+  margin: 0 0 12px;
+  border-radius: 9px;
+  background: #fff0eb;
+  color: #943e2d;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.app-visibility-settings > .app-visibility-preview {
+  margin: 15px 0 0;
+  font-size: 12px;
+}
+html[data-theme='dark'] .app-visibility-search {
+  background: #22272d;
+  border-color: #526174;
+  color: #b4c5d8;
+}
+html[data-theme='dark'] .settings-card.app-visibility-settings > p {
+  color: #aab6c4;
+}
+html[data-theme='dark'] .app-visibility-search input {
+  color: #e2e7ed;
+}
+html[data-theme='dark'] .app-visibility-search input::placeholder,
+html[data-theme='dark'] .app-visibility-list-heading > span,
+html[data-theme='dark'] .app-visibility-name > span {
+  color: #aab6c4;
+}
+html[data-theme='dark'] .app-visibility-search button,
+html[data-theme='dark'] .app-visibility-refresh {
+  color: #b4c5d8;
+  border-color: #526174;
+}
+html[data-theme='dark'] .app-visibility-refresh:hover:not(:disabled),
+html[data-theme='dark'] .app-visibility-search button:hover:not(:disabled) {
+  background: #2e3b4a;
+}
+html[data-theme='dark'] .app-visibility-filter {
+  background: #18212c;
+}
+html[data-theme='dark'] .app-visibility-filter button {
+  color: #b4c5d8;
+}
+html[data-theme='dark'] .app-visibility-filter button[aria-pressed='true'] {
+  color: #e2e7ed;
+  background: #35475c;
+}
+html[data-theme='dark'] .app-visibility-list {
+  scrollbar-color: #60748e transparent;
+}
+html[data-theme='dark'] .app-visibility-icon {
+  color: #b4c5d8;
+  background: #2e3c4d;
+}
+html[data-theme='dark'] .app-visibility-switch-track {
+  background: #59697a;
+}
+html[data-theme='dark'] .app-visibility-switch[aria-checked='true'] .app-visibility-switch-track {
+  background: #a5bdd7;
+}
+html[data-theme='dark'] .app-visibility-switch[aria-checked='true'] .app-visibility-switch-track > span {
+  background: #26384c;
+}
+html[data-theme='dark'] .settings-card.app-visibility-settings > .app-visibility-error {
+  background: #482f29;
+  color: #f3bba7;
+}
+@media (max-width: 700px) {
+  .app-visibility-search input {
+    font-size: 16px;
+  }
+  .app-visibility-list {
+    padding: 0 4px;
+  }
+  .app-visibility-list li {
+    gap: 10px;
+  }
+}

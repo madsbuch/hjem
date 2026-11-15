@@ -33,7 +33,7 @@ async function mockAndroid(page: Page) {
       async invoke(command: string, args: Record<string, unknown> = {}) {
         if (command === 'storage_load') return {
           serverUrl: '', connection: null, theme: 'system', pinnedApps: [],
-          favourites: [], selectedSpeakers: [], calendarFeeds: [], legacyImportComplete: true,
+          favourites: [], selectedSpeakers: [], calendarFeeds: [], hiddenApps: [], legacyImportComplete: true,
         };
         if (command === 'plugin:launcher|get_status') return { supported: true, isDefaultHome: true };
         if (command === 'plugin:launcher|list_apps') return fixture.apps;

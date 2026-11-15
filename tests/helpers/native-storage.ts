@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test';
+import type { LauncherApp } from '../../src/lib/launcher';
 import {
   parseStorageSnapshot,
   type StorageSnapshot,
@@ -23,6 +24,7 @@ export async function nativeStorage(
     connection: null,
     theme: 'system',
     pinnedApps: [],
+    hiddenApps: [],
     favourites: [],
     selectedSpeakers: [],
     calendarFeeds: [],
@@ -31,6 +33,8 @@ export async function nativeStorage(
   };
   let failedCommand = '';
   let concierge = { hasApiKey: false, model: '' };
+  let launcherSupported = false;
+  let launcherApps: LauncherApp[] = [];
   const commands: string[] = [];
   const feedResponses = new Map<string, string | Error>();
   const feedFetches: number[] = [];
@@ -81,6 +85,21 @@ export async function nativeStorage(
             raw,
           ],
         });
+      } else if (command === 'storage_set_app_hidden') {
+        if ((raw.scope !== 'demo' && raw.scope !== 'android') ||
+          typeof raw.packageName !== 'string' || typeof raw.hidden !== 'boolean')
+          throw new Error('Missing app visibility settings');
+        const previous = snapshot.hiddenApps.find((item) => item.scope === raw.scope)?.packageNames ?? [];
+        const packageNames = raw.hidden
+          ? [...new Set([...previous, raw.packageName])]
+          : previous.filter((name) => name !== raw.packageName);
+        snapshot = parseStorageSnapshot({
+          ...snapshot,
+          hiddenApps: [
+            ...snapshot.hiddenApps.filter((item) => item.scope !== raw.scope),
+            { scope: raw.scope, packageNames },
+          ],
+        });
       } else if (command === 'storage_set_favourites') {
         snapshot = parseStorageSnapshot({
           ...snapshot,
@@ -108,7 +127,14 @@ export async function nativeStorage(
         });
         return structuredClone(snapshot);
       } else if (command === 'plugin:launcher|get_status')
-        return { supported: false, isDefaultHome: false };
+        return { supported: launcherSupported, isDefaultHome: launcherSupported };
+      else if (command === 'plugin:launcher|list_apps') return structuredClone(launcherApps);
+      else if (command === 'plugin:launcher|register_listener' || command === 'plugin:launcher|remove_listener') return null;
+      else if (command === 'plugin:launcher|launch_app') {
+        if (typeof raw.packageName !== 'string' || !launcherApps.some((app) => app.packageName === raw.packageName))
+          throw new Error('App is not installed.');
+        return null;
+      }
       else if (command === 'concierge_get_settings') return { ...concierge };
       else if (command === 'concierge_save_settings') {
         if (typeof raw.model !== 'string') throw new Error('Expected model');
@@ -128,7 +154,7 @@ export async function nativeStorage(
   await page.addInitScript(() => {
     Object.assign(window, {
       isTauri: true,
-      __TAURI_INTERNALS__: { invoke: window.__hjemStorageInvoke },
+      __TAURI_INTERNALS__: { invoke: window.__hjemStorageInvoke, transformCallback: () => 1 },
     });
   });
   return {
@@ -137,6 +163,13 @@ export async function nativeStorage(
     },
     commands,
     feedFetches,
+    setAndroidApps(apps: LauncherApp[]) {
+      launcherSupported = true;
+      launcherApps = structuredClone(apps);
+    },
+    setPreviewLauncher() {
+      launcherSupported = false;
+    },
     setFeedResponse(url: string, text: string) {
       feedResponses.set(url, text);
     },

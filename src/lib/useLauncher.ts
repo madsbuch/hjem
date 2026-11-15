@@ -4,7 +4,7 @@ import {
   listInstalledApps,
   type LauncherApp,
 } from './launcher';
-import { savePinnedApps, useStorage } from './storage';
+import { savePinnedApps, setAppHidden, useStorage } from './storage';
 
 const sampleApps: LauncherApp[] = [
   { packageName: 'preview.sonos', name: 'Sonos' },
@@ -27,6 +27,7 @@ export function useLauncher() {
   const pinScope = preview ? 'demo' : 'android';
   const pinned = storage.pinnedApps.find((item) => item.scope === pinScope)?.packageNames
     ?? apps.slice(0, 6).map((app) => app.packageName);
+  const hidden = storage.hiddenApps.find((item) => item.scope === pinScope)?.packageNames ?? [];
 
   const refresh = useCallback(async () => {
     const current = ++generation.current;
@@ -77,7 +78,10 @@ export function useLauncher() {
   };
 
   return {
-    apps,
+    apps: apps.filter((app) => !hidden.includes(app.packageName)),
+    allApps: apps,
+    hidden,
+    setHidden: (packageName: string, value: boolean) => setAppHidden(pinScope, packageName, value),
     pinned,
     preview,
     supported,
