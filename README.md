@@ -48,7 +48,9 @@ Install the browser needed by the end-to-end tests with `npx playwright install 
 
 1. In Home Assistant, open **User profile → Security → Long-lived access tokens** and create a token for Hjem. See [Home Assistant authentication](https://www.home-assistant.io/docs/authentication/).
 2. In Hjem, open **Settings** and enter your Home Assistant URL, such as `http://homeassistant.local:8123` or your HTTPS remote address.
-3. Paste the token and connect. Hjem discovers supported entities, areas, and existing scenes.
+3. Paste the token or select **Scan QR code** beside the token field. In Home Assistant’s token dialog, select **Generate QR code**, then point the camera at it. Scanning fills the masked token field; select **Connect Home Assistant** to connect. Hjem discovers supported entities, areas, and existing scenes.
+
+QR scanning uses the native camera on Android and iOS, and the browser camera in HTTPS or localhost previews. Camera permission is requested when scanning starts. You can switch between front and rear cameras, cancel, or enter the token manually. Decoding happens on the device; camera images and scanned tokens are not uploaded or saved. Home Assistant access-token QR codes are supported; login links and two-factor authentication QR codes are not access tokens.
 
 The token stays in memory for the current session; enter it again after restarting or reloading the app. Only the server URL, favourites, and appearance preference are stored locally. Disconnecting clears the client’s token. Hjem connects directly to your server using the [Home Assistant WebSocket API](https://developers.home-assistant.io/docs/api/websocket/) and does not need an intermediary service.
 

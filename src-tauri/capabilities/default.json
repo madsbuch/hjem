@@ -6,6 +6,7 @@
   "permissions": [
     "core:default",
     "launcher:default",
+    "allow-qr-scanner-native",
     "allow-concierge-get-settings",
     "allow-concierge-save-settings",
     "allow-concierge-clear-key",

@@ -6,6 +6,7 @@ import './themes.css';
 import './launcher.css';
 import './concierge.css';
 import './home.css';
+import './scanner.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

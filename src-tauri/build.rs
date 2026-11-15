@@ -1,6 +1,7 @@
 fn main() {
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
+            "qr_scanner_native",
             "concierge_get_settings",
             "concierge_save_settings",
             "concierge_clear_key",

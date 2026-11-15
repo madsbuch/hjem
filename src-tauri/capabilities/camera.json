@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "camera",
+  "description": "Scan a Home Assistant access token using the mobile camera.",
+  "windows": ["main"],
+  "platforms": ["iOS", "android"],
+  "permissions": [
+    "barcode-scanner:allow-check-permissions",
+    "barcode-scanner:allow-request-permissions",
+    "barcode-scanner:allow-scan",
+    "barcode-scanner:allow-cancel"
+  ]
+}

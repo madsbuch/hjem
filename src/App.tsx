@@ -24,6 +24,7 @@ import {
   PlugZap,
   ShieldCheck,
   MessageCircle,
+  ScanLine,
 } from 'lucide-react';
 import {
   HomeAssistantClient,
@@ -44,6 +45,7 @@ import {
 } from './lib/entities';
 import { DeviceCard } from './components/DeviceCard';
 import { MusicPanel } from './components/MusicPanel';
+import { TokenScanner } from './components/TokenScanner';
 import { useTheme, type Theme } from './lib/useTheme';
 import { AppLauncher } from './components/AppLauncher';
 import { useLauncher } from './lib/useLauncher';
@@ -95,6 +97,7 @@ export default function App() {
   const [server, setServer] = useState(() => readPreference('hjem.server', ''));
   const [connectedServer, setConnectedServer] = useState('');
   const [token, setToken] = useState('');
+  const [scanningToken, setScanningToken] = useState(false);
   const [formError, setFormError] = useState('');
   const [room, setRoom] = useState('all');
   const [query, setQuery] = useState('');
@@ -130,6 +133,7 @@ export default function App() {
       setQuery('');
       setOnlyFavourites(false);
       dialog.current?.close();
+      setScanningToken(false);
       window.scrollTo({ top: 0 });
     })
       .then((remove) => {
@@ -940,6 +944,7 @@ export default function App() {
       <dialog
         ref={dialog}
         className="connection-dialog"
+        onClose={() => setScanningToken(false)}
         onCancel={(event) => {
           if (formIsBusy) event.preventDefault();
         }}
@@ -981,9 +986,20 @@ export default function App() {
             required
             disabled={formIsBusy}
           />
-          <label className="field-label" htmlFor="token">
-            Long-lived access token
-          </label>
+          <div className="token-label-row">
+            <label className="field-label" htmlFor="token">
+              Long-lived access token
+            </label>
+            <button
+              type="button"
+              className="scan-token-button"
+              disabled={formIsBusy}
+              onClick={() => setScanningToken(true)}
+            >
+              <ScanLine size={18} />
+              Scan QR code
+            </button>
+          </div>
           <input
             id="token"
             className="text-input"
@@ -997,7 +1013,7 @@ export default function App() {
           />
           <p className="field-help">
             In Home Assistant, open your profile → Security → Long-lived access
-            tokens. Create a token for Hjem.
+            tokens. Create a token for Hjem, then select Generate QR code.
           </p>
           <div className="privacy-note">
             <ShieldCheck size={17} />
@@ -1041,6 +1057,20 @@ export default function App() {
           </button>
         </form>
       </dialog>
+      {scanningToken && (
+        <TokenScanner
+          onClose={() => setScanningToken(false)}
+          onToken={(scanned) => {
+            setToken(scanned);
+            setFormError('');
+            setScanningToken(false);
+            notify('Access token scanned');
+            requestAnimationFrame(() =>
+              document.getElementById('token')?.focus(),
+            );
+          }}
+        />
+      )}
       {toast && (
         <div
           className={`toast ${toast.error ? 'error' : ''}`}

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-qr-scanner-native"
+description = "Enables the qr_scanner_native command without any pre-configured scope."
+commands.allow = ["qr_scanner_native"]
+
+[[permission]]
+identifier = "deny-qr-scanner-native"
+description = "Denies the qr_scanner_native command without any pre-configured scope."
+commands.deny = ["qr_scanner_native"]
