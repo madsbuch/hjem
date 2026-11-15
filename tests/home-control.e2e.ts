@@ -86,7 +86,8 @@ async function mockHomeAssistant(page: Page, includeMedia = false) {
         state: string,
         attributes: Record<string, unknown> = {},
       ) {
-        const entity = states.find((item) => item.entity_id === entityId)!;
+        const entity = states.find((item) => item.entity_id === entityId);
+        if (!entity) throw new Error(`Unknown fixture entity: ${entityId}`);
         Object.assign(entity, {
           state,
           attributes: { ...entity.attributes, ...attributes },
@@ -110,6 +111,10 @@ async function mockHomeAssistant(page: Page, includeMedia = false) {
           state: 'off',
           attributes: { friendly_name: 'Family' },
         });
+      },
+      addDevice(entityId: string, state: string, attributes: Record<string, unknown>) {
+        states.push({ entity_id: entityId, state, attributes });
+        server.changeState(entityId, state);
       },
       addScene(entityId: string, name: string) {
         states.push({
@@ -907,6 +912,63 @@ test('speaker controls respect capabilities, service failures, and offline state
   ).toBeDisabled();
 });
 
+test('missing live readings stay unknown until Home Assistant reports valid values', async ({ page }) => {
+  await mockHomeAssistant(page, true);
+  await page.goto('/');
+  await connectMock(page);
+  await page.evaluate(() => {
+    const fixture: unknown = Reflect.get(window, '__ha');
+    if (!fixture || typeof fixture !== 'object') throw new Error('Missing Home Assistant fixture');
+    const changeState: unknown = Reflect.get(fixture, 'changeState');
+    const addDevice: unknown = Reflect.get(fixture, 'addDevice');
+    if (typeof changeState !== 'function' || typeof addDevice !== 'function') throw new Error('Missing fixture controls');
+    changeState('light.office', 'on', { brightness: null });
+    changeState('media_player.speaker', 'playing', { volume_level: null, is_volume_muted: 'false', media_title: null });
+    addDevice('cover.office', 'open', { friendly_name: 'Office blinds', current_position: 'unknown', supported_features: 15 });
+  });
+  await navigate(page, 'Controls');
+  const light = page.getByRole('article', { name: 'Office light', exact: true });
+  const brightness = light.getByRole('slider', { name: 'Office light brightness' });
+  await expect(brightness).toBeDisabled();
+  await expect(brightness).toHaveAttribute('aria-valuetext', 'Brightness unavailable');
+  await expect(light.locator('.brightness-control')).toContainText('—');
+  await expect(light.locator('.device-status')).toHaveText('On');
+  const cover = page.getByRole('article', { name: 'Office blinds', exact: true });
+  const position = cover.getByRole('slider', { name: 'Office blinds position' });
+  await expect(position).toBeDisabled();
+  await expect(position).toHaveAttribute('aria-valuetext', 'Position unavailable');
+  await expect(cover.locator('.cover-value')).toHaveText('open');
+  await expect(cover.getByRole('button', { name: 'Close Office blinds' })).toBeEnabled();
+  const speaker = page.getByRole('article', { name: 'Office Sonos', exact: true });
+  const volume = speaker.getByRole('slider', { name: 'Office Sonos volume' });
+  const mute = speaker.getByRole('button', { name: 'Mute Office Sonos', exact: true });
+  await expect(volume).toBeDisabled();
+  await expect(volume).toHaveAttribute('aria-valuetext', 'Volume unavailable');
+  await expect(speaker.locator('.volume-caption')).toContainText('—');
+  await expect(mute).toBeDisabled();
+  expect(await mute.getAttribute('aria-pressed')).toBeNull();
+  await expect(speaker.locator('.track-title')).toHaveText('No track information');
+
+  await page.evaluate(() => {
+    const fixture: unknown = Reflect.get(window, '__ha');
+    if (!fixture || typeof fixture !== 'object') throw new Error('Missing Home Assistant fixture');
+    const changeState: unknown = Reflect.get(fixture, 'changeState');
+    if (typeof changeState !== 'function') throw new Error('Missing fixture controls');
+    changeState('light.office', 'on', { brightness: 64 });
+    changeState('cover.office', 'closed', { current_position: 0 });
+    changeState('media_player.speaker', 'playing', { volume_level: 0, is_volume_muted: false, media_title: 'A reported track' });
+  });
+  await expect(brightness).toBeEnabled();
+  await expect(brightness).toHaveValue('25');
+  await expect(position).toBeEnabled();
+  await expect(cover.locator('.cover-value')).toHaveText('0%open');
+  await expect(volume).toBeEnabled();
+  await expect(volume).toHaveValue('0');
+  await expect(mute).toBeEnabled();
+  await expect(mute).toHaveAttribute('aria-pressed', 'false');
+  await expect(speaker.locator('.track-title')).toHaveText('A reported track');
+});
+
 test('app search and pinned app preferences persist across refresh', async ({
   page,
 }) => {
@@ -1183,6 +1245,10 @@ test('a failed credential write stays visible and does not create a saved connec
   await expect(page.getByRole('alert')).toContainText('Could not save settings');
   expect(storage.snapshot.connection).toBeNull();
   await expect(page.getByRole('dialog')).toBeVisible();
+  await page.getByRole('button', { name: 'Close connection settings', exact: true }).click();
+  await navigate(page, 'Controls');
+  await expect(page.getByRole('article', { name: 'Office light', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('article', { name: 'Pendant lights', exact: true })).toBeVisible();
 });
 
 test('legacy preferences migrate once before rendering and are removed only after commit', async ({ page }) => {

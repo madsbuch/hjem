@@ -86,7 +86,7 @@ export function MusicPanel({
           key={selected.entity_id}
           entity={selected}
           room={roomName(selected) || ''}
-          unit={snapshot.unitSystem?.temperature || '°C'}
+          unit={snapshot.unitSystem?.temperature ?? ''}
           favourite={false}
           onFavourite={() => {}}
           onAction={onAction}

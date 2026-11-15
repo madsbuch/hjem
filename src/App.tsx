@@ -39,8 +39,6 @@ import {
   domainOf,
   isActive,
   nameOf,
-  numberAttribute,
-  textAttribute,
   roomFor,
   visibleEntities,
 } from './lib/entities';
@@ -54,6 +52,7 @@ import { useConcierge } from './lib/useConcierge';
 import { useCalendar } from './lib/useCalendar';
 import { CalendarToday } from './components/CalendarToday';
 import { CalendarSettings } from './components/CalendarSettings';
+import { selectWeather, WeatherSummary } from './components/WeatherSummary';
 import { ConciergeChat } from './components/ConciergeChat';
 import { ConciergeSettings } from './components/ConciergeSettings';
 import {
@@ -111,13 +110,25 @@ export default function App() {
   const launching = useRef(false);
   const [page, setPage] = useState<Page>('home');
   const [snapshot, setSnapshot] = useState<HassSnapshot>(() =>
-    structuredClone(demoSnapshot),
+    storage.connection
+      ? {
+          entities: [],
+          areas: [],
+          devices: [],
+          registry: [],
+          locationName: 'My home',
+        }
+      : structuredClone(demoSnapshot),
   );
-  const [mode, setMode] = useState<'demo' | 'live'>('demo');
+  const [mode, setMode] = useState<'demo' | 'live'>(
+    storage.connection ? 'live' : 'demo',
+  );
   const [status, setStatus] = useState<ConnectionStatus>('disconnected');
   const [connectionMessage, setConnectionMessage] = useState('');
   const [server, setServer] = useState(() => storage.serverUrl);
-  const [connectedServer, setConnectedServer] = useState('');
+  const [connectedServer, setConnectedServer] = useState(
+    storage.connection?.serverUrl ?? '',
+  );
   const [token, setToken] = useState('');
   const [scanningToken, setScanningToken] = useState(false);
   const [formError, setFormError] = useState('');
@@ -293,6 +304,7 @@ export default function App() {
         await saveConnection({ serverUrl: normalized, token: token.trim() });
       } catch (cause) {
         connection.disconnect();
+        if (mode === 'demo') setSnapshot(structuredClone(demoSnapshot));
         throw cause;
       }
       if (sessionVersion.current !== version) return;
@@ -428,16 +440,14 @@ export default function App() {
         .toLowerCase()
         .includes(query.toLowerCase()),
   );
-  const weather = snapshot.entities.find(
-    (entity) => domainOf(entity) === 'weather',
-  );
+  const weather = selectWeather(snapshot);
   const greeting =
     now.getHours() < 12
       ? 'Good morning'
       : now.getHours() < 18
         ? 'Good afternoon'
         : 'Good evening';
-  const unit = snapshot.unitSystem?.temperature || '°C';
+  const unit = snapshot.unitSystem?.temperature ?? '';
   const connectionLabel = formIsBusy
     ? 'Connecting…'
     : mode === 'demo'
@@ -591,22 +601,7 @@ export default function App() {
                       minute: '2-digit',
                     })}
                   </time>
-                  {weather && weather.attributes.temperature != null && (
-                    <div className="weather">
-                      <Sun size={29} strokeWidth={1.5} />
-                      <div>
-                        <strong>
-                          {numberAttribute(weather, 'temperature')}
-                          {textAttribute(weather, 'temperature_unit', unit)}
-                        </strong>
-                        <span>
-                          {weather.state
-                            .replace('partlycloudy', 'Partly cloudy')
-                            .replaceAll('_', ' ')}
-                        </span>
-                      </div>
-                    </div>
-                  )}
+                  <WeatherSummary weather={weather} />
                 </div>
               </section>
               <div className="home-overview-grid">

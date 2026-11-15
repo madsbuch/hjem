@@ -233,7 +233,7 @@ export function createConciergeExecutor(getContext: () => ConciergeContext) {
       return {
         demo: context.demo,
         connected: context.demo || context.connected,
-        temperature_unit: snapshot.unitSystem?.temperature || '°C',
+        temperature_unit: snapshot.unitSystem?.temperature ?? null,
         devices: result,
         scenes: sceneList,
         total_matches: devices.length,

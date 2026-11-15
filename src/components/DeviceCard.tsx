@@ -73,13 +73,17 @@ export function DeviceCard({
   const unavailable = isUnavailable(entity);
   const locked = disabled || pending || unavailable;
   const name = nameOf(entity);
-  const brightness = Math.round(numberAttribute(entity, 'brightness') / 2.55);
+  const rawBrightness = numberAttribute(entity, 'brightness', NaN);
+  const brightnessKnown = Number.isFinite(rawBrightness) && rawBrightness >= 0 && rawBrightness <= 255;
+  const brightness = brightnessKnown ? Math.round(rawBrightness / 2.55) : 0;
   const [level, setLevel] = useState(brightness);
-  const position = numberAttribute(entity, 'current_position');
+  const rawPosition = numberAttribute(entity, 'current_position', NaN);
+  const positionKnown = Number.isFinite(rawPosition) && rawPosition >= 0 && rawPosition <= 100;
+  const position = positionKnown ? rawPosition : 0;
   const [coverPosition, setCoverPosition] = useState(position);
   const rawVolume = numberAttribute(entity, 'volume_level', NaN);
   const volumeKnown =
-    entity.attributes.volume_level != null && Number.isFinite(rawVolume);
+    Number.isFinite(rawVolume) && rawVolume >= 0 && rawVolume <= 1;
   const volume = volumeKnown
     ? Math.round(Math.min(1, Math.max(0, rawVolume)) * 100)
     : 0;
@@ -87,6 +91,7 @@ export function DeviceCard({
   const latestVolume = useRef(volume);
   latestVolume.current = volume;
   const muted = entity.attributes.is_volume_muted === true;
+  const muteKnown = typeof entity.attributes.is_volume_muted === 'boolean';
   const canSetVolume = supports(entity, 4);
   const canMute = supports(entity, 8);
   useEffect(() => setLevel(brightness), [brightness]);
@@ -139,7 +144,7 @@ export function DeviceCard({
   let status = entity.state.replaceAll('_', ' ');
   if (toggleable)
     status = active
-      ? domain === 'light' && supportsBrightness(entity)
+      ? domain === 'light' && supportsBrightness(entity) && brightnessKnown
         ? `On · ${brightness}%`
         : 'On'
       : 'Off';
@@ -260,7 +265,7 @@ export function DeviceCard({
             ))}
           </div>
           <p className="track-title">
-            {textAttribute(entity, 'media_title') || 'Ready when you are'}
+            {textAttribute(entity, 'media_title') || 'No track information'}
           </p>
           <p className="track-artist">
             {textAttribute(entity, 'media_artist') || status}
@@ -277,9 +282,10 @@ export function DeviceCard({
                 {canMute && (
                   <button
                     className={`media-icon-button volume-mute ${muted ? 'muted' : ''}`}
-                    disabled={locked}
+                    disabled={locked || !muteKnown}
                     aria-label={`${muted ? 'Unmute' : 'Mute'} ${name}`}
-                    aria-pressed={muted}
+                    aria-pressed={muteKnown ? muted : undefined}
+                    title={muteKnown ? undefined : 'Mute status is unavailable'}
                     onClick={() =>
                       action('volume_mute', { is_volume_muted: !muted })
                     }
@@ -295,9 +301,9 @@ export function DeviceCard({
                     max="100"
                     step="1"
                     value={volumeLevel}
-                    disabled={locked}
+                    disabled={locked || !volumeKnown}
                     aria-label={`${name} volume`}
-                    aria-valuetext={`${volumeLevel}%${muted ? ', muted' : ''}`}
+                    aria-valuetext={volumeKnown ? `${volumeLevel}%${muted ? ', muted' : ''}` : 'Volume unavailable'}
                     onChange={(event) =>
                       setVolumeLevel(event.target.valueAsNumber)
                     }
@@ -374,11 +380,11 @@ export function DeviceCard({
           <div className="cover-value">
             {unavailable
               ? '—'
-              : entity.attributes.current_position != null
+              : positionKnown
                 ? `${position}%`
                 : status}
             <span>
-              {entity.attributes.current_position != null ? 'open' : ''}
+              {positionKnown ? 'open' : ''}
             </span>
           </div>
           {supports(entity, 4) && (
@@ -388,8 +394,9 @@ export function DeviceCard({
               min="0"
               max="100"
               value={coverPosition}
-              disabled={locked}
+              disabled={locked || !positionKnown}
               aria-label={`${name} position`}
+              aria-valuetext={positionKnown ? `${coverPosition}% open` : 'Position unavailable'}
               onChange={(e) => setCoverPosition(e.target.valueAsNumber)}
               onPointerUp={(e) =>
                 action('set_cover_position', {
@@ -445,7 +452,7 @@ export function DeviceCard({
             <div className="brightness-control">
               <div>
                 <span>Brightness</span>
-                <span>{level}%</span>
+                <span>{brightnessKnown ? `${level}%` : '—'}</span>
               </div>
               <input
                 className="device-range"
@@ -453,8 +460,9 @@ export function DeviceCard({
                 min="1"
                 max="100"
                 value={level || 1}
-                disabled={locked || !active}
+                disabled={locked || !active || !brightnessKnown}
                 aria-label={`${name} brightness`}
+                aria-valuetext={brightnessKnown ? `${level}%` : 'Brightness unavailable'}
                 onChange={(e) => setLevel(e.target.valueAsNumber)}
                 onPointerUp={(e) =>
                   action('turn_on', {
