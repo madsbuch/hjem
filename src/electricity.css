@@ -1,0 +1,463 @@
+/* Electricity page and its charts. Bar colours are validated per theme. */
+.electricity,
+.electricity-settings {
+  --el-card: #fff;
+  --el-border: #dfe4e9;
+  --el-text: #29323c;
+  --el-muted: #626d79;
+  --el-grid: #e8ecf0;
+  --el-bar: #21354c;
+  --el-bar-past: #a9b6c4;
+  --el-bar-now: #b07a2a;
+  --el-band: #eef2f6;
+  --el-low: #2f7a52;
+  --el-high: #a1561c;
+  --el-tooltip: #21354c;
+  --el-tooltip-text: #f8f7ed;
+  min-width: 0;
+}
+html[data-theme='dark'] .electricity,
+html[data-theme='dark'] .electricity-settings {
+  --el-card: #20262c;
+  --el-border: #343b44;
+  --el-text: #e2e7ed;
+  --el-muted: #a7aeb6;
+  --el-grid: #2c333b;
+  --el-bar: #7d95b0;
+  --el-bar-past: #46515e;
+  --el-bar-now: #e9b45c;
+  --el-band: #282f37;
+  --el-low: #7fc79d;
+  --el-high: #e6a46c;
+  --el-tooltip: #e2e7ed;
+  --el-tooltip-text: #14181d;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.electricity-refresh {
+  flex-shrink: 0;
+}
+.electricity-error,
+.electricity-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  font-size: 13px;
+}
+.electricity-error {
+  color: var(--el-high);
+}
+.electricity-card {
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--el-border);
+  border-radius: 14px;
+  background: var(--el-card);
+  color: var(--el-text);
+}
+.electricity-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.electricity-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tile-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--el-muted);
+  font-size: 12px;
+}
+.tile-value {
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.8px;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.tile-value small {
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--el-muted);
+}
+.tile-note {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  color: var(--el-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.tile-note.level-low {
+  color: var(--el-low);
+  font-weight: 550;
+}
+.tile-note.level-high {
+  color: var(--el-high);
+  font-weight: 550;
+}
+.electricity-card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.electricity-card-heading h2 {
+  font-size: 16px;
+  font-weight: 550;
+}
+.electricity-card-heading p,
+.electricity-footnote,
+.electricity-empty {
+  margin-top: 4px;
+  color: var(--el-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.electricity-empty {
+  padding: 24px 0;
+}
+.electricity-days button {
+  font-size: 12px;
+}
+.electricity-days button:disabled {
+  opacity: 0.5;
+}
+.electricity-prices {
+  margin-bottom: 14px;
+}
+.electricity-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 14px;
+}
+.electricity-stack {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+.electricity-setup {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  max-width: 560px;
+}
+.electricity-setup h2 {
+  font-size: 18px;
+  font-weight: 550;
+}
+.electricity-setup p {
+  color: var(--el-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* Column chart */
+.bar-chart {
+  position: relative;
+  margin: 0;
+}
+.bar-chart-plot {
+  position: relative;
+  height: 220px;
+  margin-left: 34px;
+  padding-bottom: 22px;
+}
+.bar-chart-grid {
+  position: absolute;
+  inset: 0 0 22px 0;
+  pointer-events: none;
+}
+.bar-chart-grid span {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px solid var(--el-grid);
+}
+.bar-chart-grid i {
+  position: absolute;
+  right: calc(100% + 8px);
+  top: -7px;
+  color: var(--el-muted);
+  font-size: 10px;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.bar-chart-columns {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: stretch;
+}
+.bar-chart-column {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  padding: 0 1px 22px;
+  border-radius: 6px;
+  background: transparent;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.bar-chart-column.band {
+  background: var(--el-band);
+  border-radius: 0;
+}
+.bar-chart-column.band:not(.band + .band) {
+  border-radius: 6px 0 0 6px;
+}
+.bar-chart-column.band:not(:has(+ .band)) {
+  border-top-right-radius: 6px;
+  border-bottom-right-radius: 6px;
+}
+.bar-chart-column:focus-visible {
+  outline: 2px solid var(--el-bar);
+  outline-offset: -2px;
+}
+.bar-chart-bar {
+  display: block;
+  width: 100%;
+  max-width: 24px;
+  min-height: 2px;
+  border-radius: 4px 4px 0 0;
+  background: var(--el-bar);
+  transition: opacity 0.15s;
+}
+.bar-chart-column.past .bar-chart-bar {
+  background: var(--el-bar-past);
+}
+.bar-chart-column.now .bar-chart-bar {
+  background: var(--el-bar-now);
+}
+.bar-chart-columns:hover .bar-chart-column:not(.active) .bar-chart-bar {
+  opacity: 0.55;
+}
+.bar-chart-tick {
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--el-muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.bar-chart-tooltip {
+  position: absolute;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 160px;
+  max-width: 230px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--el-tooltip);
+  color: var(--el-tooltip-text);
+  font-size: 12px;
+  line-height: 1.4;
+  box-shadow: 0 8px 24px #00000026;
+  pointer-events: none;
+}
+.bar-chart-tooltip.right {
+  margin-left: 6px;
+}
+.bar-chart-tooltip.left {
+  margin-right: 6px;
+}
+.bar-chart-tooltip .tooltip-value {
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.bar-chart-tooltip dl {
+  display: grid;
+  gap: 1px;
+  margin: 4px 0 0;
+}
+.bar-chart-tooltip dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.bar-chart-tooltip dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.bar-chart-tooltip small {
+  opacity: 0.75;
+  font-size: 10px;
+}
+.chart-key {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 10px;
+  color: var(--el-muted);
+  font-size: 11px;
+}
+.chart-key span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.chart-key i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+.chart-key .key-now {
+  background: var(--el-bar-now);
+}
+.chart-key .key-band {
+  background: var(--el-band);
+  border: 1px solid var(--el-border);
+}
+.chart-key .chart-unit {
+  margin-left: auto;
+}
+.bar-chart-table {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--el-muted);
+}
+.bar-chart-table summary {
+  min-height: 32px;
+  cursor: pointer;
+}
+.bar-chart-table table {
+  border-collapse: collapse;
+  margin-top: 6px;
+  color: var(--el-text);
+}
+.bar-chart-table th,
+.bar-chart-table td {
+  padding: 3px 16px 3px 0;
+  text-align: left;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.bar-chart-table thead th {
+  color: var(--el-muted);
+}
+
+/* Settings */
+.electricity-settings-note,
+.electricity-settings .field-help {
+  color: var(--el-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.electricity-key-form {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+.electricity-locations {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.electricity-locations legend {
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+.electricity-locations p {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.electricity-location {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 52px;
+  padding: 10px 14px;
+  border: 1px solid var(--el-border);
+  border-radius: 10px;
+  background: var(--el-card);
+  color: var(--el-text);
+  text-align: left;
+  font-size: 13px;
+}
+.electricity-location span {
+  color: var(--el-muted);
+  font-size: 12px;
+}
+.electricity-location.selected {
+  border-color: var(--el-bar);
+  box-shadow: inset 0 0 0 1px var(--el-bar);
+}
+.electricity-location:disabled {
+  opacity: 0.55;
+}
+.electricity-settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin-top: 16px;
+}
+.settings-card .electricity-settings-actions .secondary-button {
+  width: auto;
+  margin-top: 0;
+}
+.electricity-settings-actions .disconnect {
+  margin-top: 0;
+}
+
+@media (max-width: 920px) {
+  .electricity-tiles {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .electricity-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 700px) {
+  .electricity-card {
+    padding: 16px;
+  }
+  .bar-chart-plot {
+    height: 180px;
+  }
+  .tile-value {
+    font-size: 26px;
+  }
+  .electricity-refresh span {
+    display: none;
+  }
+}

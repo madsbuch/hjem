@@ -48,6 +48,13 @@ diesel::table! {
     import_status (migration) { migration -> Text, }
 }
 diesel::table! {
+    electricity_settings (id) {
+        id -> Integer,
+        api_key -> Nullable<Text>,
+        location_id -> Nullable<Text>,
+    }
+}
+diesel::table! {
     calendar_feeds (id) {
         id -> Integer,
         name -> Text,

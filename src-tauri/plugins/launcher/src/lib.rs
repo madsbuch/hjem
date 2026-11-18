@@ -151,11 +151,13 @@ async fn open_home_settings<R: Runtime>(_app: AppHandle<R>) -> Result<(), String
 /// Matches the limit the Android side enforces when reading a chosen file.
 const MAX_DOCUMENT_BYTES: usize = 2 * 1024 * 1024;
 
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
 #[derive(Serialize, Deserialize)]
 struct SavedDocument {
     saved: bool,
 }
 
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
 #[derive(Serialize, Deserialize)]
 struct OpenedDocument {
     #[serde(default)]

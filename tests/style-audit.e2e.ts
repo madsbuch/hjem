@@ -2,7 +2,7 @@ import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { writeFile } from 'node:fs/promises';
 import { nativeStorage } from './helpers/native-storage';
 
-const pages = ['Controls', 'Planner', 'Overview', 'Apps', 'Concierge', 'Settings'] as const;
+const pages = ['Controls', 'Electricity', 'Planner', 'Overview', 'Apps', 'Concierge', 'Settings'] as const;
 const longRoom = 'Family room and kitchen overlooking the garden';
 const unbrokenRoom = 'UpstairsBedroomAndHomeOfficeWithReadingCorner';
 

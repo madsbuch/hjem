@@ -131,6 +131,32 @@ Denies the open_app_info command without any pre-configured scope.
 <tr>
 <td>
 
+`launcher:allow-open-document`
+
+</td>
+<td>
+
+Enables the open_document command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`launcher:deny-open-document`
+
+</td>
+<td>
+
+Denies the open_document command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `launcher:allow-open-home-settings`
 
 </td>
@@ -209,57 +235,6 @@ Denies the remove_listener command without any pre-configured scope.
 <tr>
 <td>
 
-`launcher:allow-uninstall-app`
-
-</td>
-<td>
-
-Enables the uninstall_app command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`launcher:deny-uninstall-app`
-
-</td>
-<td>
-
-Denies the uninstall_app command without any pre-configured scope.
-
-</td>
-</tr>
-<tr>
-<td>
-
-`launcher:allow-open-document`
-
-</td>
-<td>
-
-Enables the open_document command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`launcher:deny-open-document`
-
-</td>
-<td>
-
-Denies the open_document command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
 `launcher:allow-save-document`
 
 </td>
@@ -279,6 +254,32 @@ Enables the save_document command without any pre-configured scope.
 <td>
 
 Denies the save_document command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`launcher:allow-uninstall-app`
+
+</td>
+<td>
+
+Enables the uninstall_app command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`launcher:deny-uninstall-app`
+
+</td>
+<td>
+
+Denies the uninstall_app command without any pre-configured scope.
 
 </td>
 </tr>

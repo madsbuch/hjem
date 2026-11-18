@@ -33,6 +33,11 @@
     "allow-calendar-add-feed",
     "allow-calendar-update-feed",
     "allow-calendar-remove-feed",
-    "allow-calendar-fetch-feed"
+    "allow-calendar-fetch-feed",
+    "allow-electricity-get-settings",
+    "allow-electricity-save-key",
+    "allow-electricity-set-location",
+    "allow-electricity-clear",
+    "allow-electricity-fetch"
   ]
 }

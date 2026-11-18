@@ -34,6 +34,9 @@ export async function nativeStorage(
   };
   let failedCommand = '';
   let concierge = { hasApiKey: false, model: '' };
+  let electricity: { hasApiKey: boolean; locationId: string | null } = { hasApiKey: false, locationId: null };
+  const electricityResponses = new Map<string, unknown>();
+  const electricityRequests: Record<string, unknown>[] = [];
   const chats = new Map<string, ChatRecord>();
   let launcherSupported = false;
   let launcherApps: LauncherApp[] = [];
@@ -171,6 +174,28 @@ export async function nativeStorage(
         concierge.hasApiKey = false;
         return { ...concierge };
       } else if (command === 'concierge_list_models') return [];
+      else if (command === 'electricity_get_settings') return { ...electricity };
+      else if (command === 'electricity_save_key') {
+        // Mirrors Rust: the key is checked with Osmund before it is saved.
+        if (raw.apiKey !== 'osm_fixture') throw new Error('Osmund did not accept the API key.');
+        electricity = { hasApiKey: true, locationId: null };
+        return { ...electricity };
+      } else if (command === 'electricity_set_location') {
+        if (!electricity.hasApiKey || typeof raw.locationId !== 'string') throw new Error('Add your Osmund API key first.');
+        electricity = { ...electricity, locationId: raw.locationId };
+        return { ...electricity };
+      } else if (command === 'electricity_clear') {
+        electricity = { hasApiKey: false, locationId: null };
+        return { ...electricity };
+      } else if (command === 'electricity_fetch') {
+        const request = record(raw.request) ? raw.request : {};
+        electricityRequests.push(structuredClone(request));
+        const answer = electricityResponses.get(String(request.kind));
+        if (answer === undefined) throw new Error('Osmund could not answer right now.');
+        const value = typeof answer === 'function' ? answer(request) : answer;
+        if (value instanceof Error) throw value;
+        return structuredClone(value);
+      }
       else throw new Error(`Unexpected IPC command: ${command}`);
       return null;
     },
@@ -192,6 +217,17 @@ export async function nativeStorage(
     setChats(records: ChatRecord[]) {
       chats.clear();
       for (const chat of records) chats.set(chat.id, structuredClone(chat));
+    },
+    electricityRequests,
+    get electricity() {
+      return { ...electricity };
+    },
+    setElectricitySettings(settings: { hasApiKey: boolean; locationId: string | null }) {
+      electricity = { ...settings };
+    },
+    /** A body, an Error, or a function of the request returning either, per request kind. */
+    setElectricityResponse(kind: string, answer: unknown) {
+      electricityResponses.set(kind, answer);
     },
     setConciergeSettings(settings: { hasApiKey: boolean; model: string }) {
       concierge = { ...settings };

@@ -11,6 +11,7 @@ Start with the interactive demo home, then connect your own Home Assistant in Se
 - Open installed Android apps from a searchable app drawer.
 - Browse rooms using your Home Assistant areas and device assignments.
 - Search devices and filter by room or pinned favourites.
+- See electricity prices by the hour, the cheapest hours, and your use and cost from Osmund.
 - Use the Home planner in Settings to pair new Zigbee appliances, name lights and remotes, put them in rooms, blink a lamp to find it, and see which remote you just pressed.
 - Choose Light, Dark, or System appearance in Settings. Changes fade over 800 ms; System follows the device’s appearance schedule immediately, checks again when the app returns to the foreground, and polls every ten minutes as a fallback. Reduced-motion preferences disable the fade.
 - Ask Home Concierge to organize rooms and devices, create and maintain moods, adjust devices, control Sonos, or open tablet apps.
@@ -82,6 +83,24 @@ Open **Settings → Home planner** to add appliances and tidy up names and rooms
 Hjem pairs through Home Assistant, using whichever Zigbee setup it finds there: ZHA (through Home Assistant's `zha/devices/permit` command) or Zigbee2MQTT (by publishing to `zigbee2mqtt/bridge/request/permit_join` through the MQTT integration, so a custom base topic is not supported yet). When it can't tell, or finds both, it asks which one to use. Pairing needs administrator access. The demo home adds a sample appliance a few seconds after pairing starts.
 
 Renames and room changes are written to Home Assistant's device and entity registries, need administrator access, and appear in **Recent setup changes** under Concierge, where they can be undone. Blinking sends ordinary light commands; nothing else in Home Assistant is changed.
+
+## Electricity
+
+**Electricity** shows your electricity from [Osmund](https://osmundenergi.dk), read through the Osmund API:
+
+- **Right now:** the price for the current hour in kr/kWh incl. VAT, and whether that is cheap, average, or expensive compared with the rest of today.
+- **Cheapest 3 hours:** the cheapest three consecutive hours that have not started yet, across today and tomorrow, for running the dishwasher or charging.
+- **Prices by the hour:** a chart of today's prices, and tomorrow's once Osmund publishes them in the afternoon. Tap or hover a bar to see the spot price, tariffs, and taxes behind it; **Show as a table** lists every hour.
+- **This month so far:** cost including subscriptions, kWh used, and a straight-line estimate for the whole month.
+- **Your use:** kWh per day for the last two weeks. Meter readings arrive a day later.
+- **With everything off:** the standby draw for the last full month, and what that adds up to in a year.
+- **Latest invoice:** amount, and whether it is paid or when it is due.
+
+To connect, create an API key on Min side at osmundenergi.dk (API access is part of Osmund Pro), then open **Settings → Electricity** and paste it. Hjem checks the key with Osmund before saving it. If the account has one location with API access, it is chosen automatically; otherwise choose it from the list. The key is stored in Hjem's private SQLite database, only the native app sends it, and only to `api.osmundenergi.dk`; the interface never receives it. Hjem calls a fixed set of read-only routes: locations, prices, consumption, standby, rated cost, and invoices. **Remove key** forgets the key and location.
+
+Hjem loads six requests when the page opens, then every hour, at the start of a new day, and when the app returns to the foreground, never more often than every five minutes. That is far inside Osmund's limits of 60 requests a minute, 120 an hour, and 1000 a day. Each section loads on its own, so if one part is unavailable, such as standby for a location without enough readings, the rest still shows. The Osmund API is in beta; Hjem ignores fields it does not know.
+
+The demo home and the browser preview show clearly labelled sample prices shaped like a winter day in DK1.
 
 ## Moving or backing up your home
 

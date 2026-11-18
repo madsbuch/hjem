@@ -3,6 +3,7 @@
 mod concierge;
 mod concierge_history;
 mod database;
+mod electricity;
 mod home_setup;
 mod schema;
 
@@ -49,6 +50,11 @@ pub fn run() {
             concierge_history::concierge_list_chats,
             concierge_history::concierge_load_chat,
             concierge_history::concierge_save_chat,
+            electricity::electricity_get_settings,
+            electricity::electricity_save_key,
+            electricity::electricity_set_location,
+            electricity::electricity_clear,
+            electricity::electricity_fetch,
         ])
         .run(tauri::generate_context!())
         .expect("Hjem could not start");

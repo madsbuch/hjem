@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-electricity-get-settings"
+description = "Enables the electricity_get_settings command without any pre-configured scope."
+commands.allow = ["electricity_get_settings"]
+
+[[permission]]
+identifier = "deny-electricity-get-settings"
+description = "Denies the electricity_get_settings command without any pre-configured scope."
+commands.deny = ["electricity_get_settings"]

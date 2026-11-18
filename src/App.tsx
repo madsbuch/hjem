@@ -26,6 +26,7 @@ import {
   MessageCircle,
   ScanLine,
   PencilRuler,
+  Zap,
 } from 'lucide-react';
 import {
   HomeAssistantClient,
@@ -66,6 +67,9 @@ import { HomePlanner } from './components/HomePlanner';
 import type { PairingStack } from './components/AddAppliance';
 import type { LightStep } from './lib/home-planner';
 import { ConfigurationTransfer } from './components/ConfigurationTransfer';
+import { ElectricityPage } from './components/ElectricityPage';
+import { ElectricitySettings } from './components/ElectricitySettings';
+import { useElectricity } from './lib/useElectricity';
 import { entityReference, resolveReferences, type ExportedSettings } from './lib/home-configuration';
 import { saveConciergeSettings } from './lib/concierge-api';
 import {
@@ -86,11 +90,12 @@ import {
   setAppHidden,
 } from './lib/storage';
 
-type Page = 'home' | 'apps' | 'controls' | 'planner' | 'concierge' | 'settings';
+type Page = 'home' | 'apps' | 'controls' | 'electricity' | 'planner' | 'concierge' | 'settings';
 const navigation: { id: Page; label: string; Icon: typeof House }[] = [
   { id: 'home', label: 'Overview', Icon: House },
   { id: 'apps', label: 'Apps', Icon: LayoutGrid },
   { id: 'controls', label: 'Controls', Icon: SlidersHorizontal },
+  { id: 'electricity', label: 'Electricity', Icon: Zap },
   { id: 'concierge', label: 'Concierge', Icon: MessageCircle },
   { id: 'settings', label: 'Settings', Icon: Settings },
 ];
@@ -564,6 +569,7 @@ export default function App() {
     }
   }
 
+  const electricity = useElectricity(mode === 'demo', now);
   const calendar = useCalendar({
     client: client.current,
     status,
@@ -961,6 +967,14 @@ export default function App() {
             </section>
           )}
 
+          {page === 'electricity' && (
+            <ElectricityPage
+              electricity={electricity}
+              now={now}
+              onOpenSettings={() => navigate('settings')}
+            />
+          )}
+
           {page === 'planner' && (
             <HomePlanner
               snapshot={snapshot}
@@ -1165,6 +1179,11 @@ export default function App() {
                   error={launcher.error}
                   onSetHidden={launcher.setHidden}
                   onRefresh={() => void launcher.refresh()}
+                />
+                <ElectricitySettings
+                  settings={electricity.settings}
+                  onChange={electricity.setSettings}
+                  notify={notify}
                 />
                 <section className="settings-card home-screen-card">
                   <span className="settings-icon">

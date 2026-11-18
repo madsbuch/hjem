@@ -3,6 +3,7 @@
 
 use crate::concierge::{apply_settings, StoredSettings};
 use crate::concierge_history::{ChatRecord, ChatSummary};
+use crate::electricity::StoredElectricity;
 use crate::schema::*;
 use diesel::connection::SimpleConnection;
 use diesel::prelude::*;
@@ -342,6 +343,27 @@ impl Database {
         })
     }
 
+    pub(crate) fn electricity_settings(&mut self) -> Result<StoredElectricity> {
+        read_electricity(&mut self.connection)
+    }
+
+    pub(crate) fn update_electricity(
+        &mut self,
+        update: impl FnOnce(&mut StoredElectricity) -> std::result::Result<(), String>,
+    ) -> Result<StoredElectricity> {
+        self.connection.transaction(|connection| {
+            let mut settings = read_electricity(connection)?;
+            update(&mut settings).map_err(error_owned)?;
+            diesel::update(electricity_settings::table.find(1))
+                .set((
+                    electricity_settings::api_key.eq(&settings.api_key),
+                    electricity_settings::location_id.eq(&settings.location_id),
+                ))
+                .execute(connection)?;
+            Ok(settings)
+        })
+    }
+
     fn snapshot(&mut self) -> Result<StorageSnapshot> {
         self.connection.transaction(read_snapshot)
     }
@@ -590,6 +612,19 @@ fn read_concierge(connection: &mut SqliteConnection) -> Result<StoredSettings> {
         .select((concierge_settings::api_key, concierge_settings::model))
         .first::<(Option<String>, String)>(connection)?;
     Ok(StoredSettings { api_key, model })
+}
+fn read_electricity(connection: &mut SqliteConnection) -> Result<StoredElectricity> {
+    let (api_key, location_id) = electricity_settings::table
+        .find(1)
+        .select((
+            electricity_settings::api_key,
+            electricity_settings::location_id,
+        ))
+        .first::<(Option<String>, Option<String>)>(connection)?;
+    Ok(StoredElectricity {
+        api_key,
+        location_id,
+    })
 }
 fn write_concierge(connection: &mut SqliteConnection, settings: &StoredSettings) -> Result<()> {
     diesel::update(concierge_settings::table.find(1))
@@ -1837,6 +1872,38 @@ mod tests {
         assert!(reopened.snapshot().unwrap().connection.is_none());
         assert!(reopened.snapshot().unwrap().server_url.is_empty());
         assert!(reopened.concierge_settings().unwrap().api_key.is_none());
+    }
+
+    #[test]
+    fn electricity_settings_survive_restart_and_clear_completely() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("hjem.sqlite3");
+        let legacy = directory.path().join("concierge.json");
+        let mut database = Database::open(&path, &legacy).unwrap();
+        let empty = database.electricity_settings().unwrap();
+        assert!(empty.api_key.is_none() && empty.location_id.is_none());
+        database
+            .update_electricity(|settings| {
+                settings.api_key = Some("osm_synthetic".into());
+                settings.location_id = Some("location-1".into());
+                Ok(())
+            })
+            .unwrap();
+        assert!(database
+            .update_electricity(|_| Err("rejected".into()))
+            .is_err());
+        drop(database);
+        let mut reopened = Database::open(&path, &legacy).unwrap();
+        let saved = reopened.electricity_settings().unwrap();
+        assert_eq!(saved.api_key.as_deref(), Some("osm_synthetic"));
+        assert_eq!(saved.location_id.as_deref(), Some("location-1"));
+        reopened
+            .update_electricity(|settings| {
+                *settings = crate::electricity::StoredElectricity::default();
+                Ok(())
+            })
+            .unwrap();
+        assert!(reopened.electricity_settings().unwrap().api_key.is_none());
     }
 
     #[test]

@@ -30,6 +30,11 @@ fn main() {
             "concierge_list_chats",
             "concierge_load_chat",
             "concierge_save_chat",
+            "electricity_get_settings",
+            "electricity_save_key",
+            "electricity_set_location",
+            "electricity_clear",
+            "electricity_fetch",
         ]),
     ))
     .expect("Could not build Hjem's native command permissions")

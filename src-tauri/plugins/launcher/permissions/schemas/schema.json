@@ -343,18 +343,6 @@
           "markdownDescription": "Denies the open_app_info command without any pre-configured scope."
         },
         {
-          "description": "Enables the save_document command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-save-document",
-          "markdownDescription": "Enables the save_document command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the save_document command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-save-document",
-          "markdownDescription": "Denies the save_document command without any pre-configured scope."
-        },
-        {
           "description": "Enables the open_document command without any pre-configured scope.",
           "type": "string",
           "const": "allow-open-document",
@@ -401,6 +389,18 @@
           "type": "string",
           "const": "deny-remove-listener",
           "markdownDescription": "Denies the remove_listener command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the save_document command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-save-document",
+          "markdownDescription": "Enables the save_document command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the save_document command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-save-document",
+          "markdownDescription": "Denies the save_document command without any pre-configured scope."
         },
         {
           "description": "Enables the uninstall_app command without any pre-configured scope.",
