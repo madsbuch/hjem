@@ -21,6 +21,8 @@ Start with the interactive demo home, then connect your own Home Assistant in Se
 
 Controls follow the capabilities each entity reports. Hidden and disabled registry entities are excluded. Devices without an area appear together as unassigned. Concierge and the Planner can manage areas, device names and assignments, and Concierge can manage persistent scenes, through specific validated operations. Cameras, lock controls, integrations, and general system administration remain outside the current scope.
 
+The principles behind Hjem's design are recorded in [PRINCIPLES.md](PRINCIPLES.md).
+
 ## Run locally
 
 Install Node.js and npm. Native builds also need Rust and the dependencies for your operating system listed in the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/).
