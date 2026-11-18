@@ -21,9 +21,22 @@ export interface PriceDay {
 }
 export interface ConsumptionValue { start: string; end: string; kwh: number }
 export interface Consumption { resolution: string; totalKwh: number; values: ConsumptionValue[] }
+export interface RatedCostDay {
+  date: string;
+  kwh: number;
+  /** The charges per kWh that day, incl. VAT. */
+  incVat: number;
+  /** The day's share of the fixed subscriptions, incl. VAT. */
+  subscriptionsIncVat: number;
+  totalIncVat: number;
+}
 export interface RatedCost {
   month: string;
   complete: boolean;
+  /** Supplied days up to yesterday that Osmund has not costed yet. */
+  missingDays: string[];
+  days: RatedCostDay[];
+  subscriptions: Amount;
   daysInMonth: number;
   daysWithData: number;
   totalKwh: number;
@@ -114,6 +127,14 @@ export function parseRatedCost(value: unknown): RatedCost {
   return {
     month: value.month,
     complete: value.complete === true,
+    missingDays: list(value.missingDays).filter((day): day is string => typeof day === 'string'),
+    days: list(value.days).flatMap((day) => {
+      if (!isRecord(day) || typeof day.date !== 'string' || !finite(day.kwh) || !finite(day.incVat)) return [];
+      const subscriptions = isRecord(day.subscriptions) && finite(day.subscriptions.incVat) ? day.subscriptions.incVat : 0;
+      const total = isRecord(day.totalWithSubscriptions) && finite(day.totalWithSubscriptions.incVat) ? day.totalWithSubscriptions.incVat : day.incVat + subscriptions;
+      return [{ date: day.date, kwh: day.kwh, incVat: day.incVat, subscriptionsIncVat: subscriptions, totalIncVat: total }];
+    }),
+    subscriptions: isRecord(value.subscriptions) ? amount(value.subscriptions) : { exVat: 0, incVat: 0 },
     daysInMonth: value.daysInMonth,
     daysWithData: value.daysWithData,
     totalKwh: value.totalKwh,
@@ -247,9 +268,12 @@ export const intervalAt = (intervals: PriceInterval[], at: Date): PriceInterval 
 
 export interface PriceWindow { start: string; end: string; average: number }
 
-/** The cheapest run of `hours` consecutive hourly intervals that has not started yet, so it is still usable. */
-export function cheapestWindow(intervals: PriceInterval[], hours: number, from: Date): PriceWindow | null {
-  const upcoming = intervals.filter((interval) => Date.parse(interval.start) >= from.getTime());
+/**
+ * The cheapest run of `hours` consecutive hourly intervals that has not started
+ * yet, so it is still usable, and that ends by `until` when given.
+ */
+export function cheapestWindow(intervals: PriceInterval[], hours: number, from: Date, until?: Date): PriceWindow | null {
+  const upcoming = withinRange(intervals, from, until);
   let best: PriceWindow | null = null;
   for (let index = 0; index + hours <= upcoming.length; index++) {
     const run = upcoming.slice(index, index + hours);
@@ -262,6 +286,21 @@ export function cheapestWindow(intervals: PriceInterval[], hours: number, from: 
     if (!best || average < best.average) best = { start: first.start, end: last.end, average };
   }
   return best;
+}
+
+function withinRange(intervals: PriceInterval[], from: Date, until?: Date): PriceInterval[] {
+  return intervals.filter((interval) => Date.parse(interval.start) >= from.getTime() &&
+    (!until || Date.parse(interval.end) <= until.getTime()));
+}
+
+/** The cheapest `count` hours in a range, not necessarily together, in time order. */
+export function cheapestHours(intervals: PriceInterval[], count: number, from: Date, until?: Date): PriceInterval[] {
+  const candidates = withinRange(intervals, from, until);
+  if (candidates.length < count) return [];
+  return [...candidates]
+    .sort((first, second) => first.totalIncVat - second.totalIncVat || Date.parse(first.start) - Date.parse(second.start))
+    .slice(0, count)
+    .sort((first, second) => Date.parse(first.start) - Date.parse(second.start));
 }
 
 export type PriceLevel = 'low' | 'normal' | 'high';
@@ -328,6 +367,15 @@ export function demoElectricity(now: Date): ElectricityData {
     month: {
       month: localMonth(now),
       complete: false,
+      missingDays: [],
+      days: Array.from({ length: daysWithData }, (_, index) => ({
+        date: localDate(new Date(now.getFullYear(), now.getMonth(), index + 1)),
+        kwh: 12.6,
+        incVat: round(12.6 * 1.71, 2),
+        subscriptionsIncVat: 3.89,
+        totalIncVat: round(12.6 * 1.71 + 3.89, 2),
+      })),
+      subscriptions: { exVat: round(subscriptions / 1.25, 2), incVat: subscriptions },
       daysInMonth,
       daysWithData,
       totalKwh: monthKwh,

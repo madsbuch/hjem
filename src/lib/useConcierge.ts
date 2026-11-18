@@ -41,6 +41,9 @@ const labels: Record<string, string> = {
   undo_setup_change: 'Undoing your setup change',
   list_apps: 'Finding your apps',
   open_app: 'Opening your app',
+  get_electricity_prices: 'Checking electricity prices',
+  find_cheapest_hours: 'Finding the cheapest hours',
+  get_electricity_usage: 'Checking your electricity use',
 };
 
 export function useConcierge(context: ConciergeContext, homeKey: string) {

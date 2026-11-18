@@ -102,6 +102,8 @@ Hjem loads six requests when the page opens, then every hour, at the start of a 
 
 The demo home and the browser preview show clearly labelled sample prices shaped like a winter day in DK1.
 
+Home Concierge can answer questions such as “When should I run the dishwasher before 7?”, “Is power cheap right now?”, or “What has November cost so far?”. It has three read-only tools: hourly prices for today and tomorrow with their parts, the cheapest hours for a task (one block or separate hours, with an earliest start and a deadline, worked out by Hjem rather than estimated by the model), and use and cost day by day, including the share of fixed subscriptions and the days Osmund has not costed yet. They read the data the Electricity page has already loaded, so asking makes no extra Osmund requests. Concierge cannot schedule devices to run later; it suggests a time instead. The prices and use needed for an answer are sent to OpenRouter with the request; the Osmund key never is.
+
 ## Moving or backing up your home
 
 **Settings → Move or back up your home → Export configuration** saves a JSON file with your rooms, the names and rooms of your lights, remotes, and other devices, your moods, and Hjem's settings: appearance, calendar links, pinned devices, music speaker, hidden and pinned apps, and the Concierge model. On Android you choose where to save it, such as Downloads or a cloud drive; the browser preview downloads it. Access tokens and the OpenRouter key are never included. Calendar links are, so keep the file private.
@@ -150,7 +152,7 @@ OpenRouter [does not expose the Realtime WebSocket API](https://openrouter.ai/do
 
 On native platforms, the key and model are saved in Hjem's private SQLite database and used by Rust. The settings API returns only whether a key exists; it never returns the saved key to the web interface. The database is protected by the app sandbox and file permissions, without database encryption. Android automatic backup is disabled. In the browser preview, both the key and model live only in memory until reload. **Remove key** clears the saved key.
 
-Home Concierge can read current device states and apps, adjust supported lights, switches, thermostats, blinds, and media players, activate requested scenes, and open Android apps. It must discover a device or app before acting, validates actions and ranges locally, and cannot call arbitrary Home Assistant services. Browser app shortcuts remain simulated, as do device controls in demo mode. Messages and the home/app information needed for a request go to OpenRouter and the selected model provider. Home Assistant tokens never enter the conversation.
+Home Concierge can read current device states, apps, and electricity prices and use, adjust supported lights, switches, thermostats, blinds, and media players, activate requested scenes, and open Android apps. It must discover a device or app before acting, validates actions and ranges locally, and cannot call arbitrary Home Assistant services. Browser app shortcuts remain simulated, as do device controls in demo mode. Messages and the home, app, and electricity information needed for a request go to OpenRouter and the selected model provider. Home Assistant tokens never enter the conversation.
 
 ### Rooms and moods
 

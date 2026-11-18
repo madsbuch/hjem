@@ -494,6 +494,7 @@ export default function App() {
     return client.current?.onActivity(listener) ?? (() => undefined);
   }, [mode]);
 
+  const electricity = useElectricity(mode === 'demo', now);
   const concierge = useConcierge({
     sessionId: `${mode}:${sessionVersion.current}`,
     snapshot,
@@ -504,6 +505,12 @@ export default function App() {
     action: act,
     launch: launchApp,
     setup,
+    electricity: {
+      source: electricity.source,
+      data: electricity.data,
+      loading: electricity.loading,
+      error: electricity.error,
+    },
   }, mode === 'demo' ? 'demo' : connectedServer);
 
   /** Hjem's own settings for a configuration file; entities are keyed by device. */
@@ -569,7 +576,6 @@ export default function App() {
     }
   }
 
-  const electricity = useElectricity(mode === 'demo', now);
   const calendar = useCalendar({
     client: client.current,
     status,
