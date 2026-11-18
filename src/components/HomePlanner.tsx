@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
+  ArrowLeft,
   BatteryLow,
   BatteryMedium,
   CirclePlus,
@@ -48,6 +49,8 @@ interface Props {
   onLightStep: (entity: HassEntity, step: LightStep) => Promise<void>;
   subscribe: (listener: ActivityListener) => () => void;
   onPermit: (stack: PairingStack, seconds: number) => Promise<void>;
+  /** Return to Settings, where the planner is opened from. */
+  onBack: () => void;
   notify: (text: string, error?: boolean) => void;
 }
 
@@ -79,7 +82,7 @@ function RemoteVisual({ press, glowing }: { press: RemotePress | undefined; glow
   );
 }
 
-export function HomePlanner({ snapshot, demo, disabled, setupBusy, setup, onLightStep, subscribe, onPermit, notify }: Props) {
+export function HomePlanner({ snapshot, demo, disabled, setupBusy, setup, onLightStep, subscribe, onPermit, onBack, notify }: Props) {
   const [tab, setTab] = useState<Tab>('lights');
   const [filter, setFilter] = useState<Filter>('all');
   const [saving, setSaving] = useState<string | null>(null);
@@ -336,6 +339,9 @@ export function HomePlanner({ snapshot, demo, disabled, setupBusy, setup, onLigh
 
   return (
     <div className="home-planner">
+      <button className="planner-back" onClick={onBack}>
+        <ArrowLeft size={16} /> Settings
+      </button>
       <section className="page-intro">
         <div>
           <span className="eyebrow date-label">HOME PLANNER</span>

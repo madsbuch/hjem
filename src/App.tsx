@@ -91,7 +91,6 @@ const navigation: { id: Page; label: string; Icon: typeof House }[] = [
   { id: 'home', label: 'Overview', Icon: House },
   { id: 'apps', label: 'Apps', Icon: LayoutGrid },
   { id: 'controls', label: 'Controls', Icon: SlidersHorizontal },
-  { id: 'planner', label: 'Planner', Icon: PencilRuler },
   { id: 'concierge', label: 'Concierge', Icon: MessageCircle },
   { id: 'settings', label: 'Settings', Icon: Settings },
 ];
@@ -308,6 +307,8 @@ export default function App() {
     error: launcher.error,
     onRefresh: () => void launcher.refresh(),
   };
+  /** The Planner opens from Settings, so Settings stays highlighted there. */
+  const section: Page = page === 'planner' ? 'settings' : page;
   const navigate = (next: Page) => {
     setPage(next);
     setRoom('all');
@@ -713,28 +714,28 @@ export default function App() {
             {navigation.filter(({ id }) => id !== 'settings').map(({ id, label, Icon }) => (
               <button
                 key={id}
-                className={`nav-item ${page === id ? 'selected' : ''}`}
+                className={`nav-item ${section === id ? 'selected' : ''}`}
                 aria-label={label}
-                aria-current={page === id ? 'page' : undefined}
+                aria-current={section === id ? 'page' : undefined}
                 onClick={() => navigate(id)}
               >
                 <Icon size={20} strokeWidth={1.8} />
                 <span>{label}</span>
-                {page === id && <i />}
+                {section === id && <i />}
               </button>
             ))}
           </div>
           <div className="sidebar-footer-actions">
             <div className="connection-status-slot">{connectionNotice}</div>
             <button
-              className={`nav-item nav-settings ${page === 'settings' ? 'selected' : ''}`}
+              className={`nav-item nav-settings ${section === 'settings' ? 'selected' : ''}`}
               aria-label="Settings"
-              aria-current={page === 'settings' ? 'page' : undefined}
+              aria-current={section === 'settings' ? 'page' : undefined}
               onClick={() => navigate('settings')}
             >
               <Settings size={20} strokeWidth={1.8} />
               <span>Settings</span>
-              {page === 'settings' && <i />}
+              {section === 'settings' && <i />}
             </button>
           </div>
         </nav>
@@ -970,6 +971,7 @@ export default function App() {
               onLightStep={sendLightStep}
               subscribe={subscribeActivity}
               onPermit={permitJoin}
+              onBack={() => navigate('settings')}
               notify={notify}
             />
           )}
@@ -1105,6 +1107,21 @@ export default function App() {
                   )}
                 </section>
                 <section className="settings-card">
+                  <span className="settings-icon">
+                    <PencilRuler size={25} />
+                  </span>
+                  <h2>Home planner</h2>
+                  <p>
+                    Add new lights and remotes, give them names you recognise,
+                    and put them in the right rooms. Blink a lamp or press a
+                    remote to see which one it is.
+                  </p>
+                  <button className="primary-button" onClick={() => navigate('planner')}>
+                    Open home planner
+                    <ArrowRight size={17} />
+                  </button>
+                </section>
+                <section className="settings-card">
                   <span className="settings-icon amber">
                     <Star size={25} />
                   </span>
@@ -1236,9 +1253,9 @@ export default function App() {
           {navigation.map(({ id, label, Icon }) => (
             <button
               key={id}
-              className={page === id ? 'selected' : ''}
+              className={section === id ? 'selected' : ''}
               aria-label={label}
-              aria-current={page === id ? 'page' : undefined}
+              aria-current={section === id ? 'page' : undefined}
               onClick={() => navigate(id)}
             >
               <Icon size={22} strokeWidth={1.7} />

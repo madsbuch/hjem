@@ -193,7 +193,7 @@ export function ConfigurationTransfer({
           {plan.unmatched.length > 0 && (
             <details className="configuration-unmatched">
               <summary>{plural(plan.unmatched.length, 'device')} not on this server yet</summary>
-              <p>Pair them with Add appliance in the Planner, then import this file again. Hjem matches Zigbee devices by their hardware address, so their names and rooms come back.</p>
+              <p>Pair them with Add appliance in the Home planner, then import this file again. Hjem matches Zigbee devices by their hardware address, so their names and rooms come back.</p>
               <ul>
                 {plan.unmatched.map((device) => (
                   <li key={device.key}>

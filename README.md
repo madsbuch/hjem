@@ -11,7 +11,7 @@ Start with the interactive demo home, then connect your own Home Assistant in Se
 - Open installed Android apps from a searchable app drawer.
 - Browse rooms using your Home Assistant areas and device assignments.
 - Search devices and filter by room or pinned favourites.
-- Use the Planner to pair new Zigbee appliances, name lights and remotes, put them in rooms, blink a lamp to find it, and see which remote you just pressed.
+- Use the Home planner in Settings to pair new Zigbee appliances, name lights and remotes, put them in rooms, blink a lamp to find it, and see which remote you just pressed.
 - Choose Light, Dark, or System appearance in Settings. Changes fade over 800 ms; System follows the device’s appearance schedule immediately, checks again when the app returns to the foreground, and polls every ten minutes as a fallback. Reduced-motion preferences disable the fade.
 - Ask Home Concierge to organize rooms and devices, create and maintain moods, adjust devices, control Sonos, or open tablet apps.
 - Toggle lights, switches, fans, and input booleans; adjust supported light brightness.
@@ -19,7 +19,7 @@ Start with the interactive demo home, then connect your own Home Assistant in Se
 - Run existing Home Assistant scenes from “A whole mood” on the home screen and view sensor readings.
 - Receive live state changes, connection feedback, and automatic reconnection after an interrupted session.
 
-Controls follow the capabilities each entity reports. Hidden and disabled registry entities are excluded. Devices without an area appear together as unassigned. Concierge and the Planner can manage areas, device names and assignments, and Concierge can manage persistent scenes, through specific validated operations. Cameras, lock controls, integrations, and general system administration remain outside the current scope.
+Controls follow the capabilities each entity reports. Hidden and disabled registry entities are excluded. Devices without an area appear together as unassigned. Concierge and the Home planner can manage areas, device names and assignments, and Concierge can manage persistent scenes, through specific validated operations. Cameras, lock controls, integrations, and general system administration remain outside the current scope.
 
 The principles behind Hjem's design are recorded in [PRINCIPLES.md](PRINCIPLES.md).
 
@@ -71,13 +71,13 @@ Music and the calendar share the top of the home screen, with the full-width moo
 
 ## Home planner
 
-Open **Planner** to tidy up names and rooms, one light or remote at a time. Each card has a name you can edit in place (press Enter or move away to save, Escape to cancel) and a room picker. **Needs a room** shows only what is still unplaced, and **New room** adds a room without leaving the page.
+Open **Settings → Home planner** to add appliances and tidy up names and rooms, one light or remote at a time. It lives under Settings rather than the main menu because it is for occasional setup, not everyday use; **Settings** at the top of the planner returns there. Each card has a name you can edit in place (press Enter or move away to save, Escape to cancel) and a room picker. **Needs a room** shows only what is still unplaced, and **New room** adds a room without leaving the page.
 
 **Lights.** Select **Blink** on a card and the lamp switches off and on three times, then returns to its original on/off state and brightness. Look around the room to see which lamp it is; select **Stop blinking** to end early and restore it. Light groups and hidden lights are left out. A light that is the only light on its device is renamed and placed as that device, as Home Assistant shows it; otherwise the light entity itself is changed. Lights without a unique ID can blink but cannot be renamed by Home Assistant.
 
 **Remotes.** All remotes are shown together, with battery level when the remote reports one. Press a button on any remote and its card glows, shows the button that was pressed, and scrolls into view; the banner above the cards names it too. Remotes are recognised from Home Assistant event entities, Zigbee2MQTT-style `…_action` sensors, device models such as remote, dimmer, or button, and button events from ZHA, deCONZ, Philips Hue, Z-Wave JS, and Lutron Caséta. A device that sends one of those button events appears as soon as it is pressed, even if it was not recognised before. The demo home includes three remotes and a **Simulate a press** button.
 
-**Adding appliances.** Select **Add appliance** to pair a new Zigbee bulb, remote, or other device. The panel gives reset steps for IKEA bulbs and remotes and a tip for placing a USB Zigbee dongle such as Sonoff's, then **Start pairing** opens the Zigbee network for 4 minutes 14 seconds (the longest both Zigbee stacks allow), or until **Stop pairing**. Each appliance that joins appears in the panel straight away, where you can name it, put it in a room, and blink a new bulb to check which one it is. It moves into the Lights or Remotes list when you close the panel. Leaving the Planner stops pairing.
+**Adding appliances.** Select **Add appliance** to pair a new Zigbee bulb, remote, or other device. The panel gives reset steps for IKEA bulbs and remotes and a tip for placing a USB Zigbee dongle such as Sonoff's, then **Start pairing** opens the Zigbee network for 4 minutes 14 seconds (the longest both Zigbee stacks allow), or until **Stop pairing**. Each appliance that joins appears in the panel straight away, where you can name it, put it in a room, and blink a new bulb to check which one it is. It moves into the Lights or Remotes list when you close the panel. Leaving the Home planner stops pairing.
 
 Hjem pairs through Home Assistant, using whichever Zigbee setup it finds there: ZHA (through Home Assistant's `zha/devices/permit` command) or Zigbee2MQTT (by publishing to `zigbee2mqtt/bridge/request/permit_join` through the MQTT integration, so a custom base topic is not supported yet). When it can't tell, or finds both, it asks which one to use. Pairing needs administrator access. The demo home adds a sample appliance a few seconds after pairing starts.
 
@@ -87,9 +87,9 @@ Renames and room changes are written to Home Assistant's device and entity regis
 
 **Settings → Move or back up your home → Export configuration** saves a JSON file with your rooms, the names and rooms of your lights, remotes, and other devices, your moods, and Hjem's settings: appearance, calendar links, pinned devices, music speaker, hidden and pinned apps, and the Concierge model. On Android you choose where to save it, such as Downloads or a cloud drive; the browser preview downloads it. Access tokens and the OpenRouter key are never included. Calendar links are, so keep the file private.
 
-**Import configuration** reads a file, shows what it will change, and applies it only after you confirm. Each change goes through the same validated setup steps as the Planner, so it appears in **Recent setup changes** under Concierge and can be undone. Import only adds and updates: it creates missing rooms, restores names and rooms, creates moods that don't exist yet, and merges settings. It never deletes anything, and running it twice is safe.
+**Import configuration** reads a file, shows what it will change, and applies it only after you confirm. Each change goes through the same validated setup steps as the Home planner, so it appears in **Recent setup changes** under Concierge and can be undone. Import only adds and updates: it creates missing rooms, restores names and rooms, creates moods that don't exist yet, and merges settings. It never deletes anything, and running it twice is safe.
 
-Devices are matched by hardware identity, not by Home Assistant's internal IDs, which change on a new server. Zigbee devices are matched by their IEEE address, whether they use ZHA or Zigbee2MQTT. Other devices use their integration's identifier, or their default name as a last resort. Devices that aren't on the new server yet are listed in the preview; pair them with **Add appliance** in the Planner, then import the same file again.
+Devices are matched by hardware identity, not by Home Assistant's internal IDs, which change on a new server. Zigbee devices are matched by their IEEE address, whether they use ZHA or Zigbee2MQTT. Other devices use their integration's identifier, or their default name as a last resort. Devices that aren't on the new server yet are listed in the preview; pair them with **Add appliance** in the Home planner, then import the same file again.
 
 ### Moving to a new Raspberry Pi
 

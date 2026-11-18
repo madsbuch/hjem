@@ -6,7 +6,8 @@ async function navigate(page: Page, name: string) {
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
   const mobile = page.getByRole('navigation', { name: 'Mobile navigation' });
   const navigation = await mobile.isVisible() ? mobile : page.getByRole('navigation', { name: 'Main navigation' });
-  await navigation.getByRole('button', { name, exact: true }).click();
+  await navigation.getByRole('button', { name: name === 'Planner' ? 'Settings' : name, exact: true }).click();
+  if (name === 'Planner') await page.getByRole('button', { name: 'Open home planner' }).click();
 }
 async function rename(page: Page, from: string, to: string) {
   await navigate(page, 'Planner');

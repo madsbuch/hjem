@@ -6,8 +6,11 @@ async function openPlanner(page: Page) {
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
   const mobile = page.getByRole('navigation', { name: 'Mobile navigation' });
   const navigation = await mobile.isVisible() ? mobile : page.getByRole('navigation', { name: 'Main navigation' });
-  await navigation.getByRole('button', { name: 'Planner', exact: true }).click();
+  // The planner is opened from Settings rather than the main menu.
+  await navigation.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('button', { name: 'Open home planner' }).click();
   await expect(page.getByRole('heading', { level: 1, name: 'Find, name, and place.' })).toBeVisible();
+  await expect(navigation.getByRole('button', { name: 'Settings', exact: true })).toHaveAttribute('aria-current', 'page');
 }
 
 test('names lights, places them in rooms, and blinks a lamp in the demo home', async ({ page }) => {
@@ -189,4 +192,13 @@ test('opens ZHA pairing on a live home and shows the device that joins', async (
   await panel.getByRole('button', { name: 'Stop pairing' }).click();
   await expect(page.getByText('Pairing stopped.')).toBeVisible();
   expect(commands).toContainEqual(expect.objectContaining({ type: 'zha/devices/permit', duration: 0 }));
+});
+
+test('the planner lives under Settings and returns there', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Planner', exact: true })).toHaveCount(0);
+  await openPlanner(page);
+  await page.locator('.planner-back').click();
+  await expect(page.getByRole('heading', { level: 1, name: 'A home that fits you.' })).toBeVisible();
 });

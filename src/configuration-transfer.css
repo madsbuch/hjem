@@ -1,6 +1,5 @@
 /* Settings: exporting and importing the home configuration. */
 .configuration-card {
-  grid-column: 1 / -1;
   gap: 4px;
 }
 .settings-card.configuration-card > p {
