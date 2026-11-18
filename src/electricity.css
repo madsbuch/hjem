@@ -343,30 +343,6 @@ html[data-theme='dark'] .electricity-settings {
 .chart-key .chart-unit {
   margin-left: auto;
 }
-.bar-chart-table {
-  margin-top: 10px;
-  font-size: 12px;
-  color: var(--el-muted);
-}
-.bar-chart-table summary {
-  min-height: 32px;
-  cursor: pointer;
-}
-.bar-chart-table table {
-  border-collapse: collapse;
-  margin-top: 6px;
-  color: var(--el-text);
-}
-.bar-chart-table th,
-.bar-chart-table td {
-  padding: 3px 16px 3px 0;
-  text-align: left;
-  font-weight: 400;
-  font-variant-numeric: tabular-nums;
-}
-.bar-chart-table thead th {
-  color: var(--el-muted);
-}
 
 /* Settings */
 .electricity-settings-note,

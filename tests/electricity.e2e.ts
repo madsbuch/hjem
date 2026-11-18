@@ -35,11 +35,15 @@ test('the demo home shows sample prices, the cheapest hours, and use', async ({ 
   await expect(page.getByRole('region', { name: 'Latest invoice' })).toContainText('827.98');
 
   const chart = page.getByRole('figure', { name: /Electricity price/ });
-  const now = chart.getByRole('listitem', { name: /15:00–16:00, .* now/ });
-  await now.focus();
-  await expect(chart.getByRole('status')).toContainText('Spotpris');
-  await chart.getByText('Show as a table').click();
-  await expect(chart.getByRole('table')).toContainText('23:00');
+  // Tapping a column shows Osmund's exact price, not a rounded one, and it stays shown.
+  const evening = chart.getByRole('listitem', { name: /^18:00–19:00, \d\.\d{3,5} kr per kWh/ });
+  await evening.tap();
+  await page.waitForTimeout(300);
+  const tooltip = chart.getByRole('status');
+  await expect(tooltip).toContainText('18:00–19:00');
+  await expect(tooltip).toContainText(/\d\.\d{3,5} kr\/kWh/);
+  await expect(tooltip).toContainText('Spotpris');
+  await expect(page.getByText('Show as a table')).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Tomorrow', exact: true }).click();
   await expect(page.getByRole('figure', { name: /Electricity price, Thursday/ })).toBeVisible();

@@ -22,6 +22,9 @@ interface Props {
 const WINDOW_HOURS = 3;
 const kr = (value: number, digits = 2) =>
   value.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
+/** Osmund's price as given, e.g. 0.97375, never rounded away. */
+const exact = (value: number) =>
+  value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 5 });
 const time = (value: string | Date) =>
   new Date(value).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 const hourTick = (value: string) => String(new Date(value).getHours()).padStart(2, '0');
@@ -32,7 +35,8 @@ function priceTooltip(interval: PriceInterval) {
   return (
     <>
       <strong>{time(interval.start)}–{time(interval.end)}</strong>
-      <span className="tooltip-value">{kr(interval.totalIncVat)} kr/kWh incl. VAT</span>
+      <span className="tooltip-value">{exact(interval.totalIncVat)} kr/kWh</span>
+      <span>incl. VAT · {exact(interval.totalExVat)} kr excl. VAT</span>
       <dl>
         {interval.components.map((component) => (
           <div key={`${component.type}-${component.description}`}>
@@ -56,7 +60,7 @@ function PriceChart({ day, now, max, cheapest }: { day: PriceDay; now: Date; max
       key: interval.start,
       value: interval.totalIncVat,
       name: time(interval.start),
-      label: `${time(interval.start)}–${time(interval.end)}, ${kr(interval.totalIncVat)} kr per kWh${current ? ', now' : ''}${inWindow(interval) ? ', cheapest hours' : ''}`,
+      label: `${time(interval.start)}–${time(interval.end)}, ${exact(interval.totalIncVat)} kr per kWh${current ? ', now' : ''}${inWindow(interval) ? ', cheapest hours' : ''}`,
       tick: index % 3 === 0 ? hourTick(interval.start) : '',
       tone: current ? 'now' : ended ? 'past' : 'normal',
       band: inWindow(interval),
@@ -71,8 +75,6 @@ function PriceChart({ day, now, max, cheapest }: { day: PriceDay; now: Date; max
         format={(value) => kr(value, value < 10 && value % 1 !== 0 ? 1 : 0)}
         title={`Electricity price, ${dayName(day.date)}`}
         unit="kr per kWh incl. VAT"
-        tableHeading={['Hour', 'kr/kWh incl. VAT']}
-        formatValue={(value) => kr(value)}
       >
       <div className="chart-key" aria-hidden="true">
         {day.intervals.some((interval) => intervalAt([interval], now)) && <span><i className="key-now" />Now</span>}
@@ -194,7 +196,7 @@ export function ElectricityPage({ electricity, now, onOpenSettings }: Props) {
             <div className="electricity-card-heading">
               <div>
                 <h2 id="prices-title">Prices by the hour</h2>
-                <p>Spot price, grid tariffs, and taxes together, incl. VAT. Tap a bar for details.</p>
+                <p>Spot price, grid tariffs, and taxes together, incl. VAT. Tap a bar for its exact price.</p>
               </div>
               <div className="room-tabs electricity-days" role="group" aria-label="Day">
                 <button className={day === 'today' ? 'active' : ''} aria-pressed={day === 'today'} onClick={() => setDay('today')}>Today</button>
@@ -246,8 +248,6 @@ export function ElectricityPage({ electricity, now, onOpenSettings }: Props) {
                   format={(value) => kr(value, 0)}
                   title="Daily electricity use, last two weeks"
                   unit="kWh"
-                  tableHeading={['Day', 'kWh']}
-                  formatValue={(value) => kr(value, 1)}
                 />
               ) : (
                 <p className="electricity-empty">{errors.recent ?? 'No readings for the last two weeks yet.'}</p>

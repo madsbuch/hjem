@@ -23,8 +23,6 @@ interface Props {
   format: (value: number) => string;
   title: string;
   unit: string;
-  tableHeading: [string, string];
-  formatValue: (value: number) => string;
   /** A key or note shown directly under the plot. */
   children?: ReactNode;
 }
@@ -42,10 +40,10 @@ function ticks(max: number): number[] {
 
 /**
  * A single-series column chart in plain HTML: columns grow from one baseline,
- * each column is a focusable hit target with a tooltip, and a table view
- * carries every value.
+ * and each column is a focusable hit target. Tapping, hovering, or focusing a
+ * column shows its exact value; tapping elsewhere hides it.
  */
-export function BarChart({ items, max, format, title, unit, tableHeading, formatValue, children }: Props) {
+export function BarChart({ items, max, format, title, unit, children }: Props) {
   const [active, setActive] = useState<string | null>(null);
   const id = useId();
   const scale = ticks(max);
@@ -55,7 +53,8 @@ export function BarChart({ items, max, format, title, unit, tableHeading, format
   return (
     <figure className="bar-chart" aria-labelledby={`${id}-title`}>
       <figcaption id={`${id}-title`} className="visually-hidden">{title}, in {unit}</figcaption>
-      <div className="bar-chart-plot" onMouseLeave={() => setActive(null)}>
+      {/* Hover only follows a real mouse; touch devices send compatibility mouse events that would close a tapped tooltip. */}
+      <div className="bar-chart-plot" onPointerLeave={(event) => { if (event.pointerType === 'mouse') setActive(null); }}>
         <div className="bar-chart-grid" aria-hidden="true">
           {scale.map((value) => (
             <span key={value} style={{ bottom: `${(value / top) * 100}%` }}>
@@ -71,10 +70,11 @@ export function BarChart({ items, max, format, title, unit, tableHeading, format
               role="listitem"
               className={`bar-chart-column ${item.tone ?? 'normal'} ${item.band ? 'band' : ''} ${active === item.key ? 'active' : ''}`}
               aria-label={item.label}
-              onMouseEnter={() => setActive(item.key)}
+              onPointerEnter={(event) => { if (event.pointerType === 'mouse') setActive(item.key); }}
               onFocus={() => setActive(item.key)}
               onBlur={() => setActive((current) => current === item.key ? null : current)}
-              onClick={() => setActive((current) => current === item.key ? null : item.key)}
+              // A tap focuses and then clicks; both must leave the column selected.
+              onClick={() => setActive(item.key)}
             >
               <span className="bar-chart-bar" style={{ height: `${Math.max(0, Math.min(1, item.value / top)) * 100}%` }} />
               <span className="bar-chart-tick" aria-hidden="true">{item.tick ?? ''}</span>
@@ -92,19 +92,6 @@ export function BarChart({ items, max, format, title, unit, tableHeading, format
         )}
       </div>
       {children}
-      <details className="bar-chart-table">
-        <summary>Show as a table</summary>
-        <table>
-          <thead>
-            <tr><th scope="col">{tableHeading[0]}</th><th scope="col">{tableHeading[1]}</th></tr>
-          </thead>
-          <tbody>
-            {items.map((item) => (
-              <tr key={item.key}><th scope="row">{item.name}</th><td>{formatValue(item.value)}</td></tr>
-            ))}
-          </tbody>
-        </table>
-      </details>
     </figure>
   );
 }
