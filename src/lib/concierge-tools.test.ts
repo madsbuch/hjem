@@ -528,9 +528,11 @@ function setupHome() {
     { id: 'change-1', description: 'Created Office', createdAt: '2026-11-15T12:00:00Z' },
   ]);
   const undo = vi.fn<HomeSetup['undo']>().mockResolvedValue({ changed: true });
+  const renameDevice = vi.fn<HomeSetup['renameDevice']>().mockResolvedValue({ changed: true });
+  const renameEntity = vi.fn<HomeSetup['renameEntity']>().mockResolvedValue({ changed: true });
   fixture.context.setup = {
     inspect, createRoom, renameRoom, assignDevice, assignEntity,
-    inspectMood, saveMood, activateMood, changes, undo,
+    renameDevice, renameEntity, inspectMood, saveMood, activateMood, changes, undo,
   };
   return {
     ...fixture, structure, inspect, createRoom, renameRoom, assignDevice,

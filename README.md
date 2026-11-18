@@ -11,6 +11,7 @@ Start with the interactive demo home, then connect your own Home Assistant in Se
 - Open installed Android apps from a searchable app drawer.
 - Browse rooms using your Home Assistant areas and device assignments.
 - Search devices and filter by room or pinned favourites.
+- Use the Planner to name lights and remotes, put them in rooms, blink a lamp to find it, and see which remote you just pressed.
 - Choose Light, Dark, or System appearance in Settings. Changes fade over 800 ms; System follows the device’s appearance schedule immediately, checks again when the app returns to the foreground, and polls every ten minutes as a fallback. Reduced-motion preferences disable the fade.
 - Ask Home Concierge to organize rooms and devices, create and maintain moods, adjust devices, control Sonos, or open tablet apps.
 - Toggle lights, switches, fans, and input booleans; adjust supported light brightness.
@@ -18,7 +19,7 @@ Start with the interactive demo home, then connect your own Home Assistant in Se
 - Run existing Home Assistant scenes from “A whole mood” on the home screen and view sensor readings.
 - Receive live state changes, connection feedback, and automatic reconnection after an interrupted session.
 
-Controls follow the capabilities each entity reports. Hidden and disabled registry entities are excluded. Devices without an area appear together as unassigned. Concierge can manage areas, device assignments, and persistent scenes through specific validated operations. Cameras, lock controls, integrations, and general system administration remain outside the current scope.
+Controls follow the capabilities each entity reports. Hidden and disabled registry entities are excluded. Devices without an area appear together as unassigned. Concierge and the Planner can manage areas, device names and assignments, and Concierge can manage persistent scenes, through specific validated operations. Cameras, lock controls, integrations, and general system administration remain outside the current scope.
 
 ## Run locally
 
@@ -65,6 +66,16 @@ For Google Calendar, open its settings on your own device, select a calendar, ch
 Linked calendars are read only and refresh every five minutes, when Hjem returns to the foreground, and when you select Refresh. Recurrence rules, exclusions, moved/cancelled occurrences, time zones, daylight-saving changes, and all-day events are supported. A failed feed shows an error while other feeds continue to load. Downloads are limited to 2 MiB and 30 seconds, and parsing runs in a bounded worker so a malformed feed cannot freeze the interface. Native apps download directly; browser previews require the feed provider to allow browser access and keep subscriptions only until reload.
 
 Music and the calendar share the top of the home screen, with the full-width mood buttons below. The calendar shows all 24 hours, events sized by duration, overlapping events side by side, and a thicker current-time line that updates every minute. The compact calendar scrolls through the day and glides back to the current-time line shortly after release; reduced-motion settings make the return instant. All-day events sit above the timeline. The home screen reads today’s events from visible, enabled Home Assistant calendar entities using `calendar.get_events`. The day runs from local midnight to the next local midnight on the tablet, including daylight-saving changes. Events refresh when the connection or calendars change, when Hjem returns to the foreground, every five minutes, and on demand. Calendar events are read only; Hjem does not create or change them. Add your preferred calendar integration in Home Assistant to make it appear here. Demo mode uses sample events only when no calendar links are configured.
+
+## Home planner
+
+Open **Planner** to tidy up names and rooms, one light or remote at a time. Each card has a name you can edit in place (press Enter or move away to save, Escape to cancel) and a room picker. **Needs a room** shows only what is still unplaced, and **New room** adds a room without leaving the page.
+
+**Lights.** Select **Blink** on a card and the lamp switches off and on three times, then returns to its original on/off state and brightness. Look around the room to see which lamp it is; select **Stop blinking** to end early and restore it. Light groups and hidden lights are left out. A light that is the only light on its device is renamed and placed as that device, as Home Assistant shows it; otherwise the light entity itself is changed. Lights without a unique ID can blink but cannot be renamed by Home Assistant.
+
+**Remotes.** All remotes are shown together, with battery level when the remote reports one. Press a button on any remote and its card glows, shows the button that was pressed, and scrolls into view; the banner above the cards names it too. Remotes are recognised from Home Assistant event entities, Zigbee2MQTT-style `…_action` sensors, device models such as remote, dimmer, or button, and button events from ZHA, deCONZ, Philips Hue, Z-Wave JS, and Lutron Caséta. A device that sends one of those button events appears as soon as it is pressed, even if it was not recognised before. The demo home includes three remotes and a **Simulate a press** button.
+
+Renames and room changes are written to Home Assistant's device and entity registries, need administrator access, and appear in **Recent setup changes** under Concierge, where they can be undone. Blinking sends ordinary light commands; nothing else in Home Assistant is changed.
 
 ## Sonos
 

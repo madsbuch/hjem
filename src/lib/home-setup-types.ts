@@ -41,6 +41,9 @@ export interface HomeSetupTransport {
   deleteArea(areaId: string): Promise<void>;
   assignDeviceArea(deviceId: string, areaId: string | null): Promise<void>;
   assignEntityArea(entityId: string, areaId: string | null): Promise<void>;
+  /** `null` restores the integration's default name. */
+  renameDevice(deviceId: string, name: string | null): Promise<void>;
+  renameEntity(entityId: string, name: string | null): Promise<void>;
   readScene(configId: string): Promise<SceneConfig>;
   saveScene(configId: string, config: SceneConfig): Promise<void>;
   deleteScene(configId: string): Promise<void>;
@@ -61,6 +64,8 @@ export interface HomeSetup {
   renameRoom(areaId: string, name: string, signal?: AbortSignal): Promise<unknown>;
   assignDevice(deviceId: string, areaId: string | null, signal?: AbortSignal): Promise<unknown>;
   assignEntity(entityId: string, areaId: string | null, signal?: AbortSignal): Promise<unknown>;
+  renameDevice(deviceId: string, name: string | null, signal?: AbortSignal): Promise<unknown>;
+  renameEntity(entityId: string, name: string | null, signal?: AbortSignal): Promise<unknown>;
   inspectMood(entityId: string, signal?: AbortSignal): Promise<unknown>;
   saveMood(request: SaveMoodRequest, signal?: AbortSignal): Promise<unknown>;
   activateMood(entityId: string, signal?: AbortSignal): Promise<unknown>;

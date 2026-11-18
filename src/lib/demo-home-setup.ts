@@ -1,7 +1,14 @@
-import type { HassArea, HassSnapshot } from './home-assistant';
+import type { HassArea, HassDevice, HassSnapshot } from './home-assistant';
 import type { HomeSetupTransport, SceneConfig } from './home-setup-types';
 import { demoSceneConfigs } from './demo';
 import { SceneConfigNotFoundError } from './home-assistant-scenes';
+
+/** Keep an entity suffix such as "battery" when its device is renamed. */
+function demoEntityName(current: unknown, device: HassDevice, next: string): string {
+  const previous = device.name_by_user || device.name || '';
+  if (typeof current !== 'string' || !previous || current === previous) return next;
+  return current.startsWith(`${previous} `) ? `${next}${current.slice(previous.length)}` : current;
+}
 
 interface DemoOptions {
   getSnapshot: () => HassSnapshot;
@@ -63,6 +70,37 @@ export class DemoHomeSetupTransport implements HomeSetupTransport {
     if (!snapshot.registry.some((item) => item.entity_id === entityId)) throw new Error('The demo entity no longer exists.');
     if (areaId !== null && !snapshot.areas.some((item) => item.area_id === areaId)) throw new Error('The demo room no longer exists.');
     this.publish({ ...snapshot, registry: snapshot.registry.map((item) => item.entity_id === entityId ? { ...item, area_id: areaId } : item) });
+  }
+  async renameDevice(deviceId: string, name: string | null): Promise<void> {
+    const snapshot = this.getSnapshot();
+    const device = snapshot.devices.find((item) => item.id === deviceId);
+    if (!device) throw new Error('The demo device no longer exists.');
+    const shown = name ?? device.name ?? deviceId;
+    // Like Home Assistant, entities without their own name follow the device name.
+    const following = new Set(snapshot.registry
+      .filter((entry) => entry.device_id === deviceId && !entry.name)
+      .map((entry) => entry.entity_id));
+    this.publish({
+      ...snapshot,
+      devices: snapshot.devices.map((item) => item.id === deviceId ? { ...item, name_by_user: name } : item),
+      entities: snapshot.entities.map((entity) => following.has(entity.entity_id)
+        ? { ...entity, attributes: { ...entity.attributes, friendly_name: demoEntityName(entity.attributes.friendly_name, device, shown) } }
+        : entity),
+    });
+  }
+  async renameEntity(entityId: string, name: string | null): Promise<void> {
+    const snapshot = this.getSnapshot();
+    const entry = snapshot.registry.find((item) => item.entity_id === entityId);
+    if (!entry) throw new Error('The demo entity no longer exists.');
+    const device = snapshot.devices.find((item) => item.id === entry.device_id);
+    const shown = name ?? entry.original_name ?? device?.name_by_user ?? device?.name ?? entityId;
+    this.publish({
+      ...snapshot,
+      registry: snapshot.registry.map((item) => item.entity_id === entityId ? { ...item, name } : item),
+      entities: snapshot.entities.map((entity) => entity.entity_id === entityId
+        ? { ...entity, attributes: { ...entity.attributes, friendly_name: shown } }
+        : entity),
+    });
   }
   async readScene(configId: string): Promise<SceneConfig> {
     this.guard();

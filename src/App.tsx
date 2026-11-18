@@ -25,10 +25,12 @@ import {
   ShieldCheck,
   MessageCircle,
   ScanLine,
+  PencilRuler,
 } from 'lucide-react';
 import {
   HomeAssistantClient,
   normalizeServerUrl,
+  type ActivityListener,
   type ConnectionStatus,
   type HassEntity,
   type HassSnapshot,
@@ -60,6 +62,8 @@ import { CalendarSettings } from './components/CalendarSettings';
 import { selectWeather, WeatherSummary } from './components/WeatherSummary';
 import { ConciergeChat } from './components/ConciergeChat';
 import { ConciergeSettings } from './components/ConciergeSettings';
+import { HomePlanner } from './components/HomePlanner';
+import type { LightStep } from './lib/home-planner';
 import {
   launchApp,
   openHomeSettings,
@@ -75,11 +79,12 @@ import {
   saveSelectedSpeaker,
 } from './lib/storage';
 
-type Page = 'home' | 'apps' | 'controls' | 'concierge' | 'settings';
+type Page = 'home' | 'apps' | 'controls' | 'planner' | 'concierge' | 'settings';
 const navigation: { id: Page; label: string; Icon: typeof House }[] = [
   { id: 'home', label: 'Overview', Icon: House },
   { id: 'apps', label: 'Apps', Icon: LayoutGrid },
   { id: 'controls', label: 'Controls', Icon: SlidersHorizontal },
+  { id: 'planner', label: 'Planner', Icon: PencilRuler },
   { id: 'concierge', label: 'Concierge', Icon: MessageCircle },
   { id: 'settings', label: 'Settings', Icon: Settings },
 ];
@@ -440,6 +445,22 @@ export default function App() {
       setPending(new Set(pendingRef.current));
     }
   }
+
+  /** The planner's identify blink: a plain light command, without per-device locking. */
+  async function sendLightStep(entity: HassEntity, step: LightStep) {
+    if (!canControl) throw new Error('Home Assistant is not connected.');
+    if (mode === 'demo') {
+      setSnapshot((current) => applyDemoService(current, 'light', step.service, entity.entity_id, step.data));
+      return;
+    }
+    const connection = client.current;
+    if (!connection) throw new Error('Home Assistant is not connected.');
+    await connection.callService('light', step.service, entity.entity_id, step.data);
+  }
+  const subscribeActivity = useCallback((listener: ActivityListener) => {
+    if (mode !== 'live') return () => undefined;
+    return client.current?.onActivity(listener) ?? (() => undefined);
+  }, [mode]);
 
   const concierge = useConcierge({
     sessionId: `${mode}:${sessionVersion.current}`,
@@ -863,6 +884,19 @@ export default function App() {
                 </div>
               )}
             </section>
+          )}
+
+          {page === 'planner' && (
+            <HomePlanner
+              snapshot={snapshot}
+              demo={mode === 'demo'}
+              disabled={!canControl}
+              setupBusy={concierge.busy || setupUiBusy}
+              setup={setup}
+              onLightStep={sendLightStep}
+              subscribe={subscribeActivity}
+              notify={notify}
+            />
           )}
 
           {page === 'apps' && (

@@ -1,0 +1,428 @@
+/* Home planner: naming lights and remotes and placing them in rooms. */
+.home-planner {
+  --plan-card: #fff;
+  --plan-border: #dfe4e9;
+  --plan-text: #29323c;
+  --plan-muted: #6c7783;
+  --plan-field: #f4f7fa;
+  --plan-field-border: #d5dce3;
+  --plan-accent: #21354c;
+  --plan-glow: #d5a35e;
+  --plan-glow-soft: #f6e7c8;
+  --plan-on: #faf4e5;
+  --plan-on-border: #eee4cb;
+  --plan-warn: #a1561c;
+  min-width: 0;
+}
+html[data-theme='dark'] .home-planner {
+  --plan-card: #20262c;
+  --plan-border: #343b44;
+  --plan-text: #e2e7ed;
+  --plan-muted: #a7aeb6;
+  --plan-field: #191e24;
+  --plan-field-border: #3d4650;
+  --plan-accent: #adbfd3;
+  --plan-glow: #dcb675;
+  --plan-glow-soft: #3e3522;
+  --plan-on: #393323;
+  --plan-on-border: #5c5033;
+  --plan-warn: #e6a46c;
+}
+
+.planner-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.planner-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--plan-border);
+  border-radius: 11px;
+  background: var(--plan-card);
+}
+.planner-tabs button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--plan-muted);
+  font-size: 13px;
+}
+.planner-tabs button.active {
+  background: var(--plan-accent);
+  color: var(--plan-card);
+  font-weight: 550;
+}
+.planner-count {
+  min-width: 22px;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: color-mix(in srgb, currentColor 16%, transparent);
+  font-size: 11px;
+  text-align: center;
+}
+.planner-add-room {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.planner-add-room input {
+  width: 180px;
+  min-width: 0;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--plan-field-border);
+  border-radius: 9px;
+  background: var(--plan-card);
+  color: var(--plan-text);
+  font-size: 13px;
+}
+.planner-add-room button {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  border-radius: 9px;
+  background: var(--plan-accent);
+  color: var(--plan-card);
+}
+.planner-add-room button:disabled {
+  opacity: 0.45;
+}
+.planner-note,
+.planner-empty {
+  color: var(--plan-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.planner-empty {
+  padding: 40px 20px;
+  border: 1px dashed var(--plan-border);
+  border-radius: 12px;
+  text-align: center;
+}
+.planner-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.planner-panel-heading p {
+  color: var(--plan-muted);
+  font-size: 13px;
+}
+.planner-filter button {
+  font-size: 11px;
+}
+
+.planner-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 14px;
+}
+.planner-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--plan-border);
+  border-radius: 12px;
+  background: var(--plan-card);
+  color: var(--plan-text);
+  transition:
+    border-color 0.2s,
+    box-shadow 0.3s,
+    background 0.3s;
+}
+.planner-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.planner-name {
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 10px;
+  margin: 0 -10px;
+  width: calc(100% + 20px);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--plan-text);
+  font-size: 15px;
+  font-weight: 550;
+  text-overflow: ellipsis;
+}
+.planner-name:hover:not(:disabled),
+.planner-name:focus {
+  border-color: var(--plan-field-border);
+  background: var(--plan-field);
+  outline: none;
+}
+.planner-name:focus-visible {
+  outline: 2px solid var(--plan-accent);
+  outline-offset: 1px;
+}
+.planner-name.static {
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.planner-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 16px;
+  color: var(--plan-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.planner-room {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  margin-top: auto;
+  padding: 0 12px;
+  border: 1px solid var(--plan-field-border);
+  border-radius: 9px;
+  background: var(--plan-field);
+  color: var(--plan-text);
+  font: inherit;
+  font-size: 13px;
+}
+.planner-room.needs-room {
+  border-style: dashed;
+  color: var(--plan-warn);
+}
+.planner-name:disabled,
+.planner-room:disabled {
+  opacity: 0.65;
+}
+
+/* Lights */
+.light-plan.is-on {
+  background: var(--plan-on);
+  border-color: var(--plan-on-border);
+}
+.light-visual {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--plan-field);
+  color: var(--plan-muted);
+  transition:
+    background 0.25s,
+    color 0.25s,
+    box-shadow 0.25s;
+}
+.light-plan.is-on .light-visual {
+  background: var(--plan-glow);
+  color: #fffaf0;
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--plan-glow) 25%, transparent);
+}
+.light-plan.is-identifying {
+  border-color: var(--plan-glow);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--plan-glow) 35%, transparent);
+}
+.identify-button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--plan-field-border);
+  border-radius: 20px;
+  background: var(--plan-card);
+  color: var(--plan-accent);
+  font-size: 12px;
+  font-weight: 550;
+}
+.identify-button:hover:not(:disabled) {
+  border-color: var(--plan-glow);
+}
+.identify-button.active {
+  border-color: var(--plan-glow);
+  background: var(--plan-glow-soft);
+}
+.identify-button:disabled {
+  opacity: 0.45;
+}
+
+/* Remotes */
+.remote-spotlight {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--plan-border);
+  border-radius: 12px;
+  background: var(--plan-card);
+  color: var(--plan-text);
+  font-size: 13px;
+  transition:
+    border-color 0.2s,
+    background 0.3s;
+}
+.remote-spotlight.live {
+  border-color: var(--plan-glow);
+  background: var(--plan-glow-soft);
+}
+.remote-spotlight-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.remote-spotlight .secondary-button {
+  min-height: 38px;
+  padding: 8px 14px;
+}
+.listening-dot {
+  width: 9px;
+  height: 9px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #4f9b6e;
+  animation: planner-listen 2s ease-in-out infinite;
+}
+.remote-visual {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 56px;
+}
+.remote-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 30px;
+  height: 52px;
+  border: 1.5px solid var(--plan-field-border);
+  border-radius: 12px;
+  background: var(--plan-field);
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+.remote-body i {
+  width: 12px;
+  height: 7px;
+  border-radius: 4px;
+  background: var(--plan-field-border);
+  transition: background 0.2s;
+}
+.remote-body i:first-child {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+}
+.remote-plan {
+  scroll-margin: 16px 0 110px;
+}
+.remote-plan.is-pressed {
+  border-color: var(--plan-glow);
+  background: var(--plan-glow-soft);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--plan-glow) 30%, transparent);
+}
+.remote-plan.is-pressed .remote-body {
+  border-color: var(--plan-glow);
+}
+.remote-plan.is-pressed .remote-body i {
+  background: var(--plan-glow);
+}
+.remote-ripple {
+  position: absolute;
+  inset: 0;
+  border-radius: 14px;
+  border: 2px solid var(--plan-glow);
+  animation: planner-ripple 1s ease-out 2;
+  pointer-events: none;
+}
+.remote-battery {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--plan-muted);
+  font-size: 12px;
+}
+.remote-battery.low {
+  color: var(--plan-warn);
+  font-weight: 550;
+}
+.remote-last {
+  color: var(--plan-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.remote-last strong {
+  color: var(--plan-text);
+}
+
+@keyframes planner-ripple {
+  from {
+    transform: scale(0.85);
+    opacity: 1;
+  }
+  to {
+    transform: scale(1.35);
+    opacity: 0;
+  }
+}
+@keyframes planner-listen {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .remote-ripple,
+  .listening-dot {
+    animation: none;
+  }
+  .remote-ripple {
+    opacity: 0;
+  }
+}
+@media (max-width: 700px) {
+  .planner-toolbar {
+    align-items: stretch;
+  }
+  .planner-tabs,
+  .planner-add-room {
+    width: 100%;
+  }
+  .planner-tabs button {
+    flex: 1;
+    justify-content: center;
+  }
+  .planner-add-room input {
+    flex: 1;
+    width: auto;
+  }
+  .planner-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

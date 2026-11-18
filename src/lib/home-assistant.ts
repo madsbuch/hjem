@@ -11,7 +11,9 @@ import {
   parseEntities,
   parseRegistry,
   parseServerMessages,
+  REMOTE_EVENT_TYPES,
   type ClientCommand,
+  type DeviceEvent,
   type ServerMessage,
   type StateChange,
 } from './home-assistant-protocol';
@@ -63,6 +65,12 @@ export interface HassSnapshot {
   structureStatus?: 'ready' | 'unavailable';
   structureError?: string;
 }
+/** Live activity that the Home planner uses to spot a pressed remote. */
+export type HomeActivity =
+  | { kind: 'device_event'; event: DeviceEvent }
+  | { kind: 'state_changed'; change: StateChange };
+export type ActivityListener = (activity: HomeActivity) => void;
+
 export type ConnectionStatus =
   'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'error';
 
@@ -136,6 +144,8 @@ export class HomeAssistantClient implements HomeSetupTransport {
   private nextId = 1;
   private subscriptionId?: number;
   private registrySubscriptions = new Set<number>();
+  private deviceEventSubscriptions = new Set<number>();
+  private activityListeners = new Set<ActivityListener>();
   private registryRefreshTimer?: ReturnType<typeof setTimeout>;
   private structureRevision = 0;
   private stateRefreshes = new Set<StateChange[]>();
@@ -196,6 +206,22 @@ export class HomeAssistantClient implements HomeSetupTransport {
 
   getSnapshot(): HassSnapshot {
     return this.snapshot;
+  }
+
+  /** Listen for button presses and state changes; returns an unsubscribe function. */
+  onActivity(listener: ActivityListener): () => void {
+    this.activityListeners.add(listener);
+    return () => this.activityListeners.delete(listener);
+  }
+
+  private emitActivity(activity: HomeActivity): void {
+    for (const listener of this.activityListeners) {
+      try {
+        listener(activity);
+      } catch {
+        // A view's listener must never break the connection.
+      }
+    }
   }
 
   private currentSession(): () => void {
@@ -300,6 +326,18 @@ export class HomeAssistantClient implements HomeSetupTransport {
     await this.setupCommand({ type: 'config/entity_registry/update', entity_id: entityId, area_id: areaId });
   }
 
+  async renameDevice(deviceId: string, name: string | null): Promise<void> {
+    this.validateRegistryId(deviceId);
+    if (name !== null) this.validateDisplayName(name);
+    await this.setupCommand({ type: 'config/device_registry/update', device_id: deviceId, name_by_user: name });
+  }
+
+  async renameEntity(entityId: string, name: string | null): Promise<void> {
+    if (!isEntityId(entityId)) throw new Error('A registered entity is required.');
+    if (name !== null) this.validateDisplayName(name);
+    await this.setupCommand({ type: 'config/entity_registry/update', entity_id: entityId, name });
+  }
+
   async relatedToArea(areaId: string): Promise<Record<string, string[]>> {
     this.validateRegistryId(areaId);
     const value = await this.setupCommand({ type: 'search/related', item_type: 'area', item_id: areaId });
@@ -349,6 +387,10 @@ export class HomeAssistantClient implements HomeSetupTransport {
 
   private validateRegistryId(id: string): void {
     if (!id.trim() || id.length > 250 || /[\u0000-\u001f]/.test(id)) throw new Error('A valid room or device identifier is required.');
+  }
+
+  private validateDisplayName(name: string): void {
+    if (!name.trim() || name.length > 100 || /[\u0000-\u001f]/.test(name)) throw new Error('Choose a name between 1 and 100 characters.');
   }
 
   private validateRoomName(name: string): void {
@@ -418,6 +460,7 @@ export class HomeAssistantClient implements HomeSetupTransport {
     this.nextId = 1;
     this.subscriptionId = undefined;
     this.registrySubscriptions.clear();
+    this.deviceEventSubscriptions.clear();
     this.bufferedChanges = [];
     const generation = this.generation;
     const url = new URL(`${this.serverUrl}/api/websocket`);
@@ -516,7 +559,10 @@ export class HomeAssistantClient implements HomeSetupTransport {
       else {
         this.applyChange(change);
         this.callbacks.onSnapshot(this.snapshot);
+        this.emitActivity({ kind: 'state_changed', change });
       }
+    } else if (message.type === 'device_event' && this.deviceEventSubscriptions.has(message.id)) {
+      this.emitActivity({ kind: 'device_event', event: message.event });
     } else if (message.type === 'registry_updated' && this.registrySubscriptions.has(message.id)) {
       clearTimeout(this.registryRefreshTimer);
       this.registryRefreshTimer = setTimeout(() => {
@@ -586,6 +632,14 @@ export class HomeAssistantClient implements HomeSetupTransport {
         this.registrySubscriptions.add(id);
         void this.command({ type: 'subscribe_events', event_type }).catch(() => {
           if (current()) this.registrySubscriptions.delete(id);
+        });
+      }
+      // Integrations that are not installed simply never send these events.
+      for (const event_type of REMOTE_EVENT_TYPES) {
+        const id = this.nextId;
+        this.deviceEventSubscriptions.add(id);
+        void this.command({ type: 'subscribe_events', event_type }).catch(() => {
+          if (current()) this.deviceEventSubscriptions.delete(id);
         });
       }
       this.heartbeatTimer = setInterval(() => {
@@ -699,6 +753,7 @@ export class HomeAssistantClient implements HomeSetupTransport {
     clearInterval(this.heartbeatTimer);
     clearTimeout(this.registryRefreshTimer);
     this.registrySubscriptions.clear();
+    this.deviceEventSubscriptions.clear();
     this.stateRefreshes.clear();
     for (const controller of this.httpRequests) controller.abort();
     this.httpRequests.clear();

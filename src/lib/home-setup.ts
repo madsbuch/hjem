@@ -402,6 +402,56 @@ export class HomeSetupManager implements HomeSetup {
     });
   }
 
+  async renameDevice(deviceId: string, name: string | null, signal?: AbortSignal) {
+    return this.rename('device', deviceId, name, signal);
+  }
+  async renameEntity(entityId: string, name: string | null, signal?: AbortSignal) {
+    return this.rename('entity', entityId, name, signal);
+  }
+  /** `null` restores the integration's own name. */
+  private async rename(kind: 'device' | 'entity', id: string, name: string | null, signal?: AbortSignal) {
+    return this.exclusive(signal, async () => {
+      const nextName = name === null ? null : label(name);
+      const before = await this.structure(signal);
+      const customName = (snapshot: HassSnapshot): string | null | undefined => {
+        if (kind === 'device') {
+          const device = snapshot.devices.find((item) => item.id === id);
+          return device ? device.name_by_user ?? null : undefined;
+        }
+        const entry = snapshot.registry.find((item) => item.entity_id === id);
+        return entry ? entry.name ?? null : undefined;
+      };
+      const shownName = (snapshot: HassSnapshot, custom: string | null): string => {
+        if (custom) return custom;
+        if (kind === 'device') return snapshot.devices.find((item) => item.id === id)?.name || id;
+        const entity = snapshot.entities.find((item) => item.entity_id === id);
+        return snapshot.registry.find((item) => item.entity_id === id)?.original_name || (entity ? nameOf(entity) : id);
+      };
+      const previous = customName(before);
+      if (previous === undefined) throw new Error('That device or entity is not registered. Read the home structure again.');
+      if (previous === nextName) return { changed: false, message: 'It already has that name.' };
+      const previousShown = shownName(before, previous);
+      const nextShown = shownName(before, nextName);
+      const write = async (value: string | null) => {
+        if (kind === 'device') await this.transport.renameDevice(id, value);
+        else await this.transport.renameEntity(id, value);
+      };
+      const change = this.remember(`Renamed ${previousShown} to ${nextShown}`, async (undoSignal) => {
+        const current = customName(await this.structure(undoSignal));
+        if (current === undefined) throw new Error('This device or entity no longer exists.');
+        if (current === previous) return;
+        if (current !== nextName) throw new Error('This name was changed elsewhere. Undo will not overwrite it.');
+        this.guard(undoSignal);
+        await write(previous);
+        if (customName(await this.structure(undoSignal)) !== previous) throw new Error('Home Assistant has not confirmed restoring the name.');
+      });
+      this.guard(signal);
+      await this.dispatch(change, () => write(nextName));
+      if (customName(await this.structure(signal)) !== nextName) throw new Error('Home Assistant has not confirmed the name. Check change history before retrying.');
+      return { changed: true, demo: this.options.demo, kind, id, name: nextShown, change_id: change.id, message: `${previousShown} is now ${nextShown}.` };
+    });
+  }
+
   private async readMood(entityId: string, signal?: AbortSignal): Promise<MoodReading> {
     this.guard(signal);
     const snapshot = this.transport.getSnapshot();

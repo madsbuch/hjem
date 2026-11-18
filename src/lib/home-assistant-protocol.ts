@@ -152,6 +152,50 @@ export interface StateChange {
   time_fired?: string;
 }
 
+/** Integrations that report physical button presses as bus events carrying a device id. */
+export type RemoteEventType =
+  | 'zha_event'
+  | 'deconz_event'
+  | 'hue_event'
+  | 'zwave_js_value_notification'
+  | 'lutron_caseta_button_event';
+export const REMOTE_EVENT_TYPES: readonly RemoteEventType[] = [
+  'zha_event',
+  'deconz_event',
+  'hue_event',
+  'zwave_js_value_notification',
+  'lutron_caseta_button_event',
+];
+const isRemoteEventType = (value: string): value is RemoteEventType =>
+  REMOTE_EVENT_TYPES.some((type) => type === value);
+
+export interface DeviceEvent {
+  event_type: RemoteEventType;
+  device_id: string;
+  /** A short, human-readable description of what was pressed. */
+  action: string;
+  time_fired?: string;
+}
+
+function eventPart(value: unknown): string | undefined {
+  if (typeof value === 'string' && value.trim()) return value.trim().slice(0, 60);
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return undefined;
+}
+
+/** Each integration names its button payload differently; keep only display text. */
+export function deviceEventAction(data: Record<string, unknown>): string {
+  const command = eventPart(data.command) ?? eventPart(data.action);
+  if (command) return command.replaceAll('_', ' ');
+  const type = eventPart(data.type);
+  const subtype = eventPart(data.subtype);
+  if (type) return [type.replaceAll('_', ' '), subtype && `button ${subtype}`].filter(Boolean).join(' · ');
+  const button = eventPart(data.button_number) ?? eventPart(data.button) ?? eventPart(data.label) ?? eventPart(data.property_key_name);
+  const event = eventPart(data.event) ?? eventPart(data.value);
+  if (button || event) return [button && `button ${button}`, event].filter(Boolean).join(' · ');
+  return 'pressed';
+}
+
 export type ServerMessage =
   | { type: 'auth_required' | 'auth_ok' | 'auth_invalid' }
   | { type: 'pong'; id: number }
@@ -159,6 +203,7 @@ export type ServerMessage =
   | { type: 'result'; id: number; success: false; error: string }
   | { type: 'state_changed'; id: number; change: StateChange }
   | { type: 'registry_updated'; id: number }
+  | { type: 'device_event'; id: number; event: DeviceEvent }
   | { type: 'other_event'; id: number };
 
 function parseMessage(value: unknown): ServerMessage {
@@ -189,6 +234,23 @@ function parseMessage(value: unknown): ServerMessage {
         invalid('event');
       if (['area_registry_updated', 'device_registry_updated', 'entity_registry_updated'].includes(value.event.event_type))
         return { type: 'registry_updated', id };
+      const eventType = value.event.event_type;
+      if (isRemoteEventType(eventType)) {
+        const data = value.event.data;
+        // Unrecognised payloads are ignored rather than closing the connection.
+        if (!isRecord(data) || typeof data.device_id !== 'string' || !data.device_id)
+          return { type: 'other_event', id };
+        return {
+          type: 'device_event',
+          id,
+          event: {
+            event_type: eventType,
+            device_id: data.device_id,
+            action: deviceEventAction(data),
+            time_fired: timestamp(value.event.time_fired, 'event timestamp'),
+          },
+        };
+      }
       if (value.event.event_type !== 'state_changed')
         return { type: 'other_event', id };
       const data = value.event.data;
@@ -226,12 +288,14 @@ export function parseServerMessages(raw: unknown): ServerMessage[] {
 }
 
 export type ClientCommand =
-  | { type: 'subscribe_events'; event_type: 'state_changed' | 'area_registry_updated' | 'device_registry_updated' | 'entity_registry_updated' }
+  | { type: 'subscribe_events'; event_type: 'state_changed' | 'area_registry_updated' | 'device_registry_updated' | 'entity_registry_updated' | RemoteEventType }
   | { type: 'config/area_registry/create'; name: string }
   | { type: 'config/area_registry/update'; area_id: string; name: string }
   | { type: 'config/area_registry/delete'; area_id: string }
   | { type: 'config/device_registry/update'; device_id: string; area_id: string | null }
+  | { type: 'config/device_registry/update'; device_id: string; name_by_user: string | null }
   | { type: 'config/entity_registry/update'; entity_id: string; area_id: string | null }
+  | { type: 'config/entity_registry/update'; entity_id: string; name: string | null }
   | { type: 'search/related'; item_type: 'area'; item_id: string }
   | {
       type:

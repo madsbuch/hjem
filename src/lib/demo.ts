@@ -37,6 +37,24 @@ const demoResources = [
   ['binary_sensor.front_door', 'Front door', 'hallway'],
 ];
 
+/** Battery-powered remotes; their helper entities stay out of Controls like diagnostics. */
+export const demoRemotes: { deviceId: string; name: string; model: string; area: string | null; actions: string[] }[] = [
+  { deviceId: 'demo_remote_wireless', name: 'Wireless remote', model: 'Five-button remote', area: null, actions: ['toggle', 'brightness up', 'brightness down', 'arrow left', 'arrow right'] },
+  { deviceId: 'demo_remote_dimmer', name: 'Dimmer switch', model: 'Four-button dimmer', area: 'bedroom', actions: ['on', 'off', 'up', 'down'] },
+  { deviceId: 'demo_remote_scene', name: 'Scene button', model: 'Single button', area: null, actions: ['single', 'double', 'hold'] },
+];
+const remoteSlug = (deviceId: string) => deviceId.replace('demo_remote_', 'remote_');
+const demoRemoteEntities: { deviceId: string; entity: HassEntity }[] = demoRemotes.flatMap((remote, index) => [
+  entity(`event.${remoteSlug(remote.deviceId)}_action`, `${remote.name} action`, 'unknown', {
+    device_class: 'button',
+    event_types: remote.actions.map((action) => action.replaceAll(' ', '_')),
+  }),
+  entity(`sensor.${remoteSlug(remote.deviceId)}_battery`, `${remote.name} battery`, String([87, 42, 12][index] ?? 100), {
+    device_class: 'battery',
+    unit_of_measurement: '%',
+  }),
+].map((item) => ({ deviceId: remote.deviceId, entity: item })));
+
 export const demoSceneConfigs: Record<string, SceneConfig> = Object.fromEntries(
   [
     ['good_morning', 'Good morning'],
@@ -67,13 +85,24 @@ export const demoSnapshot: HassSnapshot = {
     { area_id: 'bedroom', name: 'Bedroom' },
     { area_id: 'hallway', name: 'Hallway' },
   ],
-  devices: demoResources.map(([id, name, area_id]) => ({ id: `demo_${id.replace('.', '_')}`, name, area_id })),
-  registry: demoResources.map(([entity_id]) => ({
-    entity_id,
-    area_id: null,
-    device_id: `demo_${entity_id.replace('.', '_')}`,
-    ...(entity_id.startsWith('media_player.') ? { platform: 'sonos' } : {}),
-  })),
+  devices: [
+    ...demoResources.map(([id, name, area_id]) => ({ id: `demo_${id.replace('.', '_')}`, name, area_id })),
+    ...demoRemotes.map((remote) => ({ id: remote.deviceId, name: remote.name, area_id: remote.area, manufacturer: 'Demo', model: remote.model })),
+  ],
+  registry: [
+    ...demoResources.map(([entity_id]) => ({
+      entity_id,
+      area_id: null,
+      device_id: `demo_${entity_id.replace('.', '_')}`,
+      ...(entity_id.startsWith('media_player.') ? { platform: 'sonos' } : {}),
+    })),
+    ...demoRemoteEntities.map(({ deviceId, entity: item }) => ({
+      entity_id: item.entity_id,
+      area_id: null,
+      device_id: deviceId,
+      ...(item.entity_id.startsWith('sensor.') ? { hidden_by: 'integration' } : {}),
+    })),
+  ],
   entities: [
     entity('light.living_pendant', 'Pendant lights', 'on', {
       brightness: 178,
@@ -144,6 +173,7 @@ export const demoSnapshot: HassSnapshot = {
       temperature: 14,
       temperature_unit: '°C',
     }),
+    ...demoRemoteEntities.map((item) => item.entity),
     entity('scene.good_morning', 'Good morning', 'unknown', { id: 'good_morning' }),
     entity('scene.cosy_evening', 'Cosy evening', 'unknown', { id: 'cosy_evening' }),
     entity('scene.away', 'Heading out', 'unknown', { id: 'away' }),
