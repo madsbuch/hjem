@@ -7,6 +7,8 @@ const COMMANDS: &[&str] = &[
     "uninstall_app",
     "open_app_info",
     "open_home_settings",
+    "save_document",
+    "open_document",
     "register_listener",
     "remove_listener",
 ];

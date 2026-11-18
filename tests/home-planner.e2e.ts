@@ -2,6 +2,8 @@ import { expect, test, type Page } from '@playwright/test';
 import { nativeStorage } from './helpers/native-storage';
 
 async function openPlanner(page: Page) {
+  // Decide between phone and tablet navigation only once the app has rendered.
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
   const mobile = page.getByRole('navigation', { name: 'Mobile navigation' });
   const navigation = await mobile.isVisible() ? mobile : page.getByRole('navigation', { name: 'Main navigation' });
   await navigation.getByRole('button', { name: 'Planner', exact: true }).click();

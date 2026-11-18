@@ -44,6 +44,10 @@ export interface HassDevice {
   name_by_user?: string | null;
   manufacturer?: string | null;
   model?: string | null;
+  /** Integration identifiers, e.g. ['zha', '00:17:88:01:…']; stable across reinstalls. */
+  identifiers?: [string, string][];
+  /** Physical connections, e.g. ['zigbee', '00:17:88:01:…']. */
+  connections?: [string, string][];
 }
 export interface HassEntityRegistryEntry {
   entity_id: string;

@@ -13,6 +13,8 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.util.Base64
+import androidx.activity.result.ActivityResult
+import app.tauri.annotation.ActivityCallback
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
@@ -20,6 +22,7 @@ import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
 import java.io.ByteArrayOutputStream
+import java.io.IOException
 import java.text.Collator
 
 @InvokeArg
@@ -27,8 +30,19 @@ class LaunchAppArgs {
     var packageName: String = ""
 }
 
+@InvokeArg
+class SaveDocumentArgs {
+    var fileName: String = ""
+    var text: String = ""
+}
+
+/** Larger than any configuration Hjem writes; protects against picking the wrong file. */
+private const val MAX_DOCUMENT_BYTES = 2 * 1024 * 1024
+
 @TauriPlugin
 class LauncherPlugin(private val activity: Activity) : Plugin(activity) {
+    private var pendingDocument: String? = null
+
     private fun launcherIntent() = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
 
     override fun onNewIntent(intent: Intent) {
@@ -155,6 +169,87 @@ class LauncherPlugin(private val activity: Activity) : Plugin(activity) {
             Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
             "Android could not open App info for this app."
         )
+    }
+
+    /** Let the person choose where to save, e.g. Downloads or a cloud drive. */
+    @Command
+    fun saveDocument(invoke: Invoke) {
+        val args = invoke.parseArgs(SaveDocumentArgs::class.java)
+        pendingDocument = args.text
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT)
+            .addCategory(Intent.CATEGORY_OPENABLE)
+            .setType("application/json")
+            .putExtra(Intent.EXTRA_TITLE, args.fileName)
+        try {
+            startActivityForResult(invoke, intent, "documentSaved")
+        } catch (_: ActivityNotFoundException) {
+            pendingDocument = null
+            invoke.reject("Android has no app for saving files on this device.")
+        }
+    }
+
+    @ActivityCallback
+    fun documentSaved(invoke: Invoke, result: ActivityResult) {
+        val text = pendingDocument
+        pendingDocument = null
+        val uri = result.data?.data
+        if (result.resultCode != Activity.RESULT_OK || uri == null || text == null) {
+            invoke.resolve(JSObject().put("saved", false))
+            return
+        }
+        Thread({
+            try {
+                val output = activity.contentResolver.openOutputStream(uri, "wt") ?: throw IOException()
+                output.use { it.write(text.toByteArray(Charsets.UTF_8)) }
+                activity.runOnUiThread { invoke.resolve(JSObject().put("saved", true)) }
+            } catch (_: Exception) {
+                activity.runOnUiThread { invoke.reject("The file could not be saved there. Choose another location.") }
+            }
+        }).start()
+    }
+
+    @Command
+    fun openDocument(invoke: Invoke) {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT)
+            .addCategory(Intent.CATEGORY_OPENABLE)
+            .setType("*/*")
+            .putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/json", "text/plain", "application/octet-stream"))
+        try {
+            startActivityForResult(invoke, intent, "documentOpened")
+        } catch (_: ActivityNotFoundException) {
+            invoke.reject("Android has no app for opening files on this device.")
+        }
+    }
+
+    @ActivityCallback
+    fun documentOpened(invoke: Invoke, result: ActivityResult) {
+        val uri = result.data?.data
+        if (result.resultCode != Activity.RESULT_OK || uri == null) {
+            invoke.resolve(JSObject().put("cancelled", true))
+            return
+        }
+        Thread({
+            try {
+                val input = activity.contentResolver.openInputStream(uri) ?: throw IOException()
+                val bytes = input.use { stream ->
+                    val output = ByteArrayOutputStream()
+                    val buffer = ByteArray(8192)
+                    while (true) {
+                        val count = stream.read(buffer)
+                        if (count < 0) break
+                        if (output.size() + count > MAX_DOCUMENT_BYTES) throw IllegalStateException()
+                        output.write(buffer, 0, count)
+                    }
+                    output.toByteArray()
+                }
+                val text = String(bytes, Charsets.UTF_8)
+                activity.runOnUiThread { invoke.resolve(JSObject().put("text", text)) }
+            } catch (_: IllegalStateException) {
+                activity.runOnUiThread { invoke.reject("This file is too large to be a Hjem configuration.") }
+            } catch (_: Exception) {
+                activity.runOnUiThread { invoke.reject("The file could not be opened. Choose another file.") }
+            }
+        }).start()
     }
 
     @Command

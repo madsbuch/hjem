@@ -148,6 +148,78 @@ async fn open_home_settings<R: Runtime>(_app: AppHandle<R>) -> Result<(), String
     }
 }
 
+/// Matches the limit the Android side enforces when reading a chosen file.
+const MAX_DOCUMENT_BYTES: usize = 2 * 1024 * 1024;
+
+#[derive(Serialize, Deserialize)]
+struct SavedDocument {
+    saved: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+struct OpenedDocument {
+    #[serde(default)]
+    text: Option<String>,
+}
+
+fn validate_document(file_name: &str, text: &str) -> Result<(), String> {
+    if file_name.is_empty()
+        || file_name.len() > 100
+        || !file_name.ends_with(".json")
+        || file_name
+            .chars()
+            .any(|character| character.is_control() || matches!(character, '/' | '\\' | ':'))
+    {
+        return Err("Choose a file name ending in .json.".into());
+    }
+    if text.len() > MAX_DOCUMENT_BYTES {
+        return Err("This configuration is too large to save.".into());
+    }
+    Ok(())
+}
+
+/// Opens Android's save dialog. Resolves to false when the person cancels.
+#[tauri::command]
+async fn save_document<R: Runtime>(
+    _app: AppHandle<R>,
+    file_name: String,
+    text: String,
+) -> Result<bool, String> {
+    validate_document(&file_name, &text)?;
+    #[cfg(target_os = "android")]
+    {
+        _app.state::<Native<R>>()
+            .0
+            .run_mobile_plugin::<SavedDocument>(
+                "saveDocument",
+                serde_json::json!({ "fileName": file_name, "text": text }),
+            )
+            .map(|result| result.saved)
+            .map_err(|error| error.to_string())
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        Err("Saving through the system file picker is available on Android.".into())
+    }
+}
+
+/// Opens Android's file picker. Resolves to None when the person cancels.
+#[tauri::command]
+async fn open_document<R: Runtime>(_app: AppHandle<R>) -> Result<Option<String>, String> {
+    #[cfg(target_os = "android")]
+    {
+        _app.state::<Native<R>>()
+            .0
+            .run_mobile_plugin::<OpenedDocument>("openDocument", serde_json::json!({}))
+            .map(|result| result.text)
+            .map_err(|error| error.to_string())
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        Err("Opening through the system file picker is available on Android.".into())
+    }
+}
+
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::new("launcher")
         .invoke_handler(tauri::generate_handler![
@@ -156,7 +228,9 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             launch_app,
             uninstall_app,
             open_app_info,
-            open_home_settings
+            open_home_settings,
+            save_document,
+            open_document
         ])
         .setup(|_app, _api| {
             #[cfg(target_os = "android")]
@@ -172,7 +246,24 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
 
 #[cfg(test)]
 mod tests {
-    use super::validate_package_name;
+    use super::{validate_document, validate_package_name, MAX_DOCUMENT_BYTES};
+
+    #[test]
+    fn documents_are_named_json_files_within_the_size_limit() {
+        assert!(validate_document("hjem-configuration-2026-11-18.json", "{}").is_ok());
+        for name in [
+            "",
+            "notes.txt",
+            "../escape.json",
+            "dir/file.json",
+            "a:b.json",
+            "line\nbreak.json",
+        ] {
+            assert!(validate_document(name, "{}").is_err(), "{name:?}");
+        }
+        assert!(validate_document(&format!("{}.json", "a".repeat(100)), "{}").is_err());
+        assert!(validate_document("big.json", &"x".repeat(MAX_DOCUMENT_BYTES + 1)).is_err());
+    }
 
     #[test]
     fn accepts_android_package_identifiers() {

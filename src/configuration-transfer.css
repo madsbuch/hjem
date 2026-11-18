@@ -1,0 +1,111 @@
+/* Settings: exporting and importing the home configuration. */
+.configuration-card {
+  grid-column: 1 / -1;
+  gap: 4px;
+}
+.configuration-card > p {
+  max-width: 720px;
+  margin-bottom: 0;
+}
+.settings-card .configuration-note {
+  margin-top: 6px;
+  color: #626d79;
+  font-size: 12px;
+}
+.configuration-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+.settings-card .configuration-actions .primary-button,
+.settings-card .configuration-actions .secondary-button {
+  width: auto;
+  margin-top: 0;
+}
+.configuration-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  font-size: 13px;
+}
+.configuration-preview,
+.configuration-progress {
+  width: 100%;
+  margin-top: 16px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #f4f7fa;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.configuration-preview h3 {
+  margin-bottom: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.configuration-preview h3 span {
+  color: #626d79;
+  font-weight: 400;
+}
+.configuration-preview ul {
+  margin: 0;
+  padding-left: 20px;
+  overflow-wrap: anywhere;
+}
+.configuration-unmatched {
+  margin-top: 12px;
+}
+.configuration-unmatched summary {
+  min-height: 32px;
+  font-weight: 550;
+  cursor: pointer;
+}
+.configuration-unmatched p {
+  margin: 4px 0 6px;
+  color: #626d79;
+}
+.configuration-unmatched li span {
+  color: #626d79;
+}
+.configuration-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 14px;
+}
+.configuration-check input {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+.configuration-progress progress {
+  width: 100%;
+  height: 8px;
+}
+.configuration-progress p {
+  margin: 8px 0 12px;
+  overflow-wrap: anywhere;
+}
+.configuration-failures {
+  margin-top: 8px;
+  color: #a1561c;
+}
+html[data-theme='dark'] .configuration-preview,
+html[data-theme='dark'] .configuration-progress {
+  background: #191e24;
+  border-color: #3d4650;
+}
+html[data-theme='dark'] .settings-card .configuration-note,
+html[data-theme='dark'] .configuration-preview h3 span,
+html[data-theme='dark'] .configuration-unmatched p,
+html[data-theme='dark'] .configuration-unmatched li span {
+  color: #a7aeb6;
+}
+html[data-theme='dark'] .configuration-failures {
+  color: #e6a46c;
+}

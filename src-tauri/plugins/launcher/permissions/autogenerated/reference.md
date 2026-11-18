@@ -1,6 +1,6 @@
 ## Default Permission
 
-List launchable Android apps, open a chosen app or its system App info/uninstall confirmation, and open the home-app chooser.
+List launchable Android apps, open a chosen app or its system App info/uninstall confirmation, open the home-app chooser, and save or open a file the person picks.
 
 #### This default permission set includes the following:
 
@@ -10,6 +10,8 @@ List launchable Android apps, open a chosen app or its system App info/uninstall
 - `allow-uninstall-app`
 - `allow-open-app-info`
 - `allow-open-home-settings`
+- `allow-save-document`
+- `allow-open-document`
 - `allow-register-listener`
 - `allow-remove-listener`
 
@@ -226,6 +228,57 @@ Enables the uninstall_app command without any pre-configured scope.
 <td>
 
 Denies the uninstall_app command without any pre-configured scope.
+
+</td>
+</tr>
+<tr>
+<td>
+
+`launcher:allow-open-document`
+
+</td>
+<td>
+
+Enables the open_document command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`launcher:deny-open-document`
+
+</td>
+<td>
+
+Denies the open_document command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`launcher:allow-save-document`
+
+</td>
+<td>
+
+Enables the save_document command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`launcher:deny-save-document`
+
+</td>
+<td>
+
+Denies the save_document command without any pre-configured scope.
 
 </td>
 </tr>

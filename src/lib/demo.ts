@@ -1,4 +1,4 @@
-import type { HassEntity, HassSnapshot } from './home-assistant';
+import type { HassDevice, HassEntity, HassSnapshot } from './home-assistant';
 import type { SceneConfig } from './home-setup-types';
 import { numberAttribute } from './entities';
 
@@ -55,6 +55,15 @@ const demoRemoteEntities: { deviceId: string; entity: HassEntity }[] = demoRemot
   }),
 ].map((item) => ({ deviceId: remote.deviceId, entity: item })));
 
+/** Zigbee devices report their IEEE address; others an integration identifier. */
+const demoIeee = (index: number) => `00:17:88:01:0b:${(0x10 + index).toString(16).padStart(2, '0')}:4e:9a`;
+const zigbeeIdentity = (index: number): Pick<HassDevice, 'identifiers' | 'connections'> =>
+  ({ identifiers: [['zha', demoIeee(index)]], connections: [['zigbee', demoIeee(index)]] });
+const demoIdentity = (id: string, index: number): Pick<HassDevice, 'identifiers' | 'connections'> =>
+  /^(light|switch|cover)\./.test(id)
+    ? zigbeeIdentity(index)
+    : { identifiers: [[id.startsWith('media_player.') ? 'sonos' : 'demo', id]] };
+
 export const demoSceneConfigs: Record<string, SceneConfig> = Object.fromEntries(
   [
     ['good_morning', 'Good morning'],
@@ -86,8 +95,8 @@ export const demoSnapshot: HassSnapshot = {
     { area_id: 'hallway', name: 'Hallway' },
   ],
   devices: [
-    ...demoResources.map(([id, name, area_id]) => ({ id: `demo_${id.replace('.', '_')}`, name, area_id })),
-    ...demoRemotes.map((remote) => ({ id: remote.deviceId, name: remote.name, area_id: remote.area, manufacturer: 'Demo', model: remote.model })),
+    ...demoResources.map(([id, name, area_id], index) => ({ id: `demo_${id.replace('.', '_')}`, name, area_id, ...demoIdentity(id, index) })),
+    ...demoRemotes.map((remote, index) => ({ id: remote.deviceId, name: remote.name, area_id: remote.area, manufacturer: 'Demo', model: remote.model, ...zigbeeIdentity(40 + index) })),
   ],
   registry: [
     ...demoResources.map(([entity_id]) => ({
@@ -310,7 +319,7 @@ export function joinDemoAppliance(snapshot: HassSnapshot): HassSnapshot {
     : entity(entityId, `${next.name} action`, 'unknown', { device_class: 'button', event_types: ['on', 'off', 'brightness_move_up', 'brightness_move_down'] });
   return {
     ...snapshot,
-    devices: [...snapshot.devices, { id: deviceId, name: next.name, area_id: null, manufacturer: 'IKEA of Sweden', model: next.model }],
+    devices: [...snapshot.devices, { id: deviceId, name: next.name, area_id: null, manufacturer: 'IKEA of Sweden', model: next.model, ...zigbeeIdentity(80 + demoAppliances.indexOf(next)) }],
     registry: [...snapshot.registry, { entity_id: entityId, area_id: null, device_id: deviceId, platform: 'zha' }],
     entities: [...snapshot.entities, joined],
   };

@@ -99,6 +99,17 @@ export function parseAreas(value: unknown): HassArea[] {
   });
 }
 
+/** Keep only well-formed [type, id] pairs; other integrations' extras are ignored. */
+function pairs(value: unknown): [string, string][] | undefined {
+  if (!isList(value)) return undefined;
+  const result: [string, string][] = [];
+  for (const item of value) {
+    if (isList(item) && item.length === 2 && typeof item[0] === 'string' && typeof item[1] === 'string')
+      result.push([item[0], item[1]]);
+  }
+  return result.length ? result : undefined;
+}
+
 export function parseDevices(value: unknown): HassDevice[] {
   return list(value, 'device registry', (entry) => {
     if (!isRecord(entry)) invalid('registered device');
@@ -109,6 +120,8 @@ export function parseDevices(value: unknown): HassDevice[] {
       ...(entry.name_by_user === undefined ? {} : { name_by_user: nullableString(entry.name_by_user, 'device name') }),
       ...(entry.manufacturer === undefined ? {} : { manufacturer: nullableString(entry.manufacturer, 'device manufacturer') }),
       ...(entry.model === undefined ? {} : { model: nullableString(entry.model, 'device model') }),
+      ...(pairs(entry.identifiers) ? { identifiers: pairs(entry.identifiers) } : {}),
+      ...(pairs(entry.connections) ? { connections: pairs(entry.connections) } : {}),
     };
   });
 }

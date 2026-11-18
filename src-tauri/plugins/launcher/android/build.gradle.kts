@@ -26,4 +26,6 @@ kotlin {
 
 dependencies {
     implementation(project(":tauri-android"))
+    // ActivityResult for the system file picker used by configuration export/import.
+    implementation("androidx.activity:activity-ktx:1.10.1")
 }

@@ -65,6 +65,9 @@ import { ConciergeSettings } from './components/ConciergeSettings';
 import { HomePlanner } from './components/HomePlanner';
 import type { PairingStack } from './components/AddAppliance';
 import type { LightStep } from './lib/home-planner';
+import { ConfigurationTransfer } from './components/ConfigurationTransfer';
+import { entityReference, resolveReferences, type ExportedSettings } from './lib/home-configuration';
+import { saveConciergeSettings } from './lib/concierge-api';
 import {
   launchApp,
   openHomeSettings,
@@ -78,6 +81,9 @@ import {
   forgetConnection,
   saveFavourites,
   saveSelectedSpeaker,
+  addCalendarFeed,
+  savePinnedApps,
+  setAppHidden,
 } from './lib/storage';
 
 type Page = 'home' | 'apps' | 'controls' | 'planner' | 'concierge' | 'settings';
@@ -493,6 +499,54 @@ export default function App() {
     launch: launchApp,
     setup,
   }, mode === 'demo' ? 'demo' : connectedServer);
+
+  /** Hjem's own settings for a configuration file; entities are keyed by device. */
+  function collectSettings(): ExportedSettings {
+    const stored = getStorageSnapshot();
+    const home = snapshotRef.current;
+    return {
+      theme: stored.theme,
+      calendars: stored.calendarFeeds.map((feed) => ({ name: feed.name, url: feed.url })),
+      favourites: favourites.map((id) => entityReference(home, id)),
+      selected_speaker: selectedSpeakerId ? entityReference(home, selectedSpeakerId) : null,
+      hidden_apps: stored.hiddenApps.find((item) => item.scope === 'android')?.packageNames ?? [],
+      pinned_apps: stored.pinnedApps.find((item) => item.scope === 'android')?.packageNames ?? [],
+      concierge_model: concierge.settings.model,
+    };
+  }
+
+  /** Merge imported settings into this tablet's; nothing existing is removed. */
+  async function restoreSettings(settings: ExportedSettings): Promise<string[]> {
+    const failures: string[] = [];
+    const attempt = async (label: string, run: () => Promise<unknown>) => {
+      try {
+        await run();
+      } catch (cause) {
+        failures.push(`${label}: ${errorMessage(cause)}`);
+      }
+    };
+    const stored = getStorageSnapshot();
+    const home = snapshotRef.current;
+    await attempt('Appearance', () => setTheme(settings.theme));
+    for (const calendar of settings.calendars) {
+      if (stored.calendarFeeds.some((feed) => feed.url === calendar.url)) continue;
+      await attempt(`Calendar ${calendar.name}`, () => addCalendarFeed(calendar.name, calendar.url));
+    }
+    const hidden = stored.hiddenApps.find((item) => item.scope === 'android')?.packageNames ?? [];
+    for (const packageName of settings.hidden_apps.filter((item) => !hidden.includes(item)))
+      await attempt('Hidden apps', () => setAppHidden('android', packageName, true));
+    const pinned = stored.pinnedApps.find((item) => item.scope === 'android')?.packageNames ?? [];
+    if (settings.pinned_apps.some((item) => !pinned.includes(item)))
+      await attempt('Pinned apps', () => savePinnedApps('android', [...new Set([...pinned, ...settings.pinned_apps])]));
+    const restoredFavourites = resolveReferences(settings.favourites, home);
+    if (restoredFavourites.some((item) => !favourites.includes(item)))
+      await attempt('Pinned devices', () => saveFavourites(preferenceScope, [...new Set([...favourites, ...restoredFavourites])]));
+    const [speaker] = settings.selected_speaker ? resolveReferences([settings.selected_speaker], home) : [];
+    if (speaker) await attempt('Music speaker', () => saveSelectedSpeaker(preferenceScope, speaker));
+    if (settings.concierge_model && settings.concierge_model !== concierge.settings.model)
+      await attempt('Concierge model', async () => concierge.setSettings(await saveConciergeSettings(undefined, settings.concierge_model)));
+    return failures;
+  }
 
   async function undoSetup(changeId: string) {
     if (!setup || setupUiBusy || concierge.busy || !canControl) return;
@@ -1074,6 +1128,18 @@ export default function App() {
                     <ArrowRight size={17} />
                   </button>
                 </section>
+                <ConfigurationTransfer
+                  snapshot={snapshot}
+                  getSnapshot={() => snapshotRef.current}
+                  setup={setup}
+                  demo={mode === 'demo'}
+                  disabled={!canControl || concierge.busy}
+                  nativeFiles={launcher.supported}
+                  collectSettings={collectSettings}
+                  restoreSettings={restoreSettings}
+                  onBusyChange={setSetupUiBusy}
+                  notify={notify}
+                />
                 <AppVisibilitySettings
                   apps={launcher.allApps}
                   hidden={launcher.hidden}

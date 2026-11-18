@@ -83,6 +83,22 @@ Hjem pairs through Home Assistant, using whichever Zigbee setup it finds there: 
 
 Renames and room changes are written to Home Assistant's device and entity registries, need administrator access, and appear in **Recent setup changes** under Concierge, where they can be undone. Blinking sends ordinary light commands; nothing else in Home Assistant is changed.
 
+## Moving or backing up your home
+
+**Settings → Move or back up your home → Export configuration** saves a JSON file with your rooms, the names and rooms of your lights, remotes, and other devices, your moods, and Hjem's settings: appearance, calendar links, pinned devices, music speaker, hidden and pinned apps, and the Concierge model. On Android you choose where to save it, such as Downloads or a cloud drive; the browser preview downloads it. Access tokens and the OpenRouter key are never included. Calendar links are, so keep the file private.
+
+**Import configuration** reads a file, shows what it will change, and applies it only after you confirm. Each change goes through the same validated setup steps as the Planner, so it appears in **Recent setup changes** under Concierge and can be undone. Import only adds and updates: it creates missing rooms, restores names and rooms, creates moods that don't exist yet, and merges settings. It never deletes anything, and running it twice is safe.
+
+Devices are matched by hardware identity, not by Home Assistant's internal IDs, which change on a new server. Zigbee devices are matched by their IEEE address, whether they use ZHA or Zigbee2MQTT. Other devices use their integration's identifier, or their default name as a last resort. Devices that aren't on the new server yet are listed in the preview; pair them with **Add appliance** in the Planner, then import the same file again.
+
+### Moving to a new Raspberry Pi
+
+1. In Hjem, export the configuration.
+2. Move Home Assistant itself. Its own backup (**Settings → System → Backups** in Home Assistant) carries integrations, automations, and the Zigbee network. Restoring that backup on the new Raspberry Pi, with the same Sonoff dongle plugged in, keeps your devices paired. If you start Home Assistant from scratch instead, pair each appliance again with **Add appliance**.
+3. In Hjem, connect to the new server, then import the configuration. Names, rooms, and moods come back for every device it finds.
+
+Hjem's own settings stay on the tablet when only the Raspberry Pi changes, except pinned devices and the music speaker, which Hjem keeps per server; importing with **Also restore Hjem's settings** brings them to the new one. All settings in the file matter when you set up Hjem on a new tablet.
+
 ## Sonos
 
 Add your speakers to the [Sonos integration in Home Assistant](https://www.home-assistant.io/integrations/sonos/). Hjem then discovers their media-player entities alongside your other devices; no separate Sonos account or connection is needed in Hjem.
