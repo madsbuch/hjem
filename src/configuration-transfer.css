@@ -3,7 +3,7 @@
   grid-column: 1 / -1;
   gap: 4px;
 }
-.configuration-card > p {
+.settings-card.configuration-card > p {
   max-width: 720px;
   margin-bottom: 0;
 }
