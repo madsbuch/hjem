@@ -26,12 +26,12 @@ const clock = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds
 
 const steps: Record<Kind, string[]> = {
   bulb: [
-    'Put the bulb in a lamp within a few metres of your Raspberry Pi, or of another mains-powered Zigbee light.',
+    'Put the bulb in a lamp within a few metres of your Sonoff Zigbee dongle, or of another mains-powered Zigbee light.',
     'Select Start pairing.',
     'Switch the lamp off and on six times, about a second each time, and leave it on. The bulb dims or blinks briefly when it is ready to join. If nothing happens, some newer bulbs need twelve times.',
   ],
   remote: [
-    'Select Start pairing, then hold the remote close to your Raspberry Pi.',
+    'Select Start pairing, then hold the remote close to your Sonoff Zigbee dongle.',
     'Press the pairing button four times within five seconds. It is under the battery cover or on the back; a small light on the remote starts to glow.',
     'Keep it close and press any button every few seconds until it appears below. Remotes go back to sleep quickly.',
   ],
@@ -144,6 +144,9 @@ export function AddAppliance({ demo, detected, disabled, onPermit, onStart, join
       <ol className="add-appliance-steps">
         {steps[kind].map((step) => <li key={step}>{step}</li>)}
       </ol>
+      <p className="add-appliance-tip">
+        If appliances struggle to join, put the dongle on a short USB extension cable, away from the Raspberry Pi and its USB 3 ports, which can interfere with Zigbee.
+      </p>
 
       <div className={`add-appliance-status ${pairing ? 'live' : ''}`} role="status">
         {pairing ? (

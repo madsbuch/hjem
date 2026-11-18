@@ -498,6 +498,11 @@ html[data-theme='dark'] .home-planner {
   font-size: 13px;
   line-height: 1.6;
 }
+.add-appliance-tip {
+  color: var(--plan-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
 .add-appliance-status {
   display: flex;
   align-items: center;

@@ -17,6 +17,6 @@ In practice:
 
 ## 2. Built for a Zigbee home with IKEA bulbs and remotes first
 
-The home Hjem is made for runs Zigbee, through Home Assistant on a Raspberry Pi, mostly with IKEA bulbs and remotes. Features are designed and tested against that setup first: pairing steps, button events, and device names should feel right for IKEA hardware. Other brands and protocols are welcome as long as they don't make the main setup harder to use.
+The home Hjem is made for runs Zigbee through a Sonoff Zigbee dongle on a Raspberry Pi running Home Assistant, mostly with IKEA bulbs and remotes. Features are designed and tested against that setup first: pairing steps, button events, and device names should feel right for IKEA hardware. Other brands and protocols are welcome as long as they don't make the main setup harder to use.
 
 Everything about the home, including adding new appliances, can be done from Hjem without opening Home Assistant.
