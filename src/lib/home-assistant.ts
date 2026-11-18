@@ -71,6 +71,12 @@ export type HomeActivity =
   | { kind: 'state_changed'; change: StateChange };
 export type ActivityListener = (activity: HomeActivity) => void;
 
+/** How new Zigbee appliances join the network through Home Assistant. */
+export type ZigbeeStack = 'zha' | 'zigbee2mqtt';
+/** The longest pairing window both Zigbee stacks accept. */
+export const MAX_PAIRING_SECONDS = 254;
+export const ZIGBEE2MQTT_PERMIT_TOPIC = 'zigbee2mqtt/bridge/request/permit_join';
+
 export type ConnectionStatus =
   'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'error';
 
@@ -146,6 +152,7 @@ export class HomeAssistantClient implements HomeSetupTransport {
   private registrySubscriptions = new Set<number>();
   private deviceEventSubscriptions = new Set<number>();
   private activityListeners = new Set<ActivityListener>();
+  private pairingSubscriptions = new Set<number>();
   private registryRefreshTimer?: ReturnType<typeof setTimeout>;
   private structureRevision = 0;
   private stateRefreshes = new Set<StateChange[]>();
@@ -349,6 +356,36 @@ export class HomeAssistantClient implements HomeSetupTransport {
       related[key] = ids;
     }
     return related;
+  }
+
+  /**
+   * Open (or with 0 seconds, close) the Zigbee network so new appliances can join.
+   * The network closes by itself when the time runs out.
+   */
+  async permitJoin(stack: ZigbeeStack, seconds: number): Promise<void> {
+    if (!Number.isInteger(seconds) || seconds < 0 || seconds > MAX_PAIRING_SECONDS)
+      throw new Error(`Pairing can stay open for up to ${MAX_PAIRING_SECONDS} seconds.`);
+    if (stack === 'zigbee2mqtt') {
+      await this.setupCommand({
+        type: 'call_service',
+        domain: 'mqtt',
+        service: 'publish',
+        service_data: { topic: ZIGBEE2MQTT_PERMIT_TOPIC, payload: JSON.stringify({ value: seconds > 0, time: seconds }) },
+      });
+      return;
+    }
+    // ZHA answers with a subscription that streams pairing logs; keep only the latest.
+    this.endPairingSubscriptions();
+    const id = this.nextId;
+    await this.setupCommand({ type: 'zha/devices/permit', duration: seconds });
+    this.pairingSubscriptions.add(id);
+    if (seconds === 0) this.endPairingSubscriptions();
+  }
+
+  private endPairingSubscriptions(): void {
+    for (const subscription of this.pairingSubscriptions)
+      void this.command({ type: 'unsubscribe_events', subscription }).catch(() => undefined);
+    this.pairingSubscriptions.clear();
   }
 
   async readScene(configId: string): Promise<SceneConfig> {
@@ -754,6 +791,7 @@ export class HomeAssistantClient implements HomeSetupTransport {
     clearTimeout(this.registryRefreshTimer);
     this.registrySubscriptions.clear();
     this.deviceEventSubscriptions.clear();
+    this.pairingSubscriptions.clear();
     this.stateRefreshes.clear();
     for (const controller of this.httpRequests) controller.abort();
     this.httpRequests.clear();

@@ -11,7 +11,7 @@ Start with the interactive demo home, then connect your own Home Assistant in Se
 - Open installed Android apps from a searchable app drawer.
 - Browse rooms using your Home Assistant areas and device assignments.
 - Search devices and filter by room or pinned favourites.
-- Use the Planner to name lights and remotes, put them in rooms, blink a lamp to find it, and see which remote you just pressed.
+- Use the Planner to pair new Zigbee appliances, name lights and remotes, put them in rooms, blink a lamp to find it, and see which remote you just pressed.
 - Choose Light, Dark, or System appearance in Settings. Changes fade over 800 ms; System follows the device’s appearance schedule immediately, checks again when the app returns to the foreground, and polls every ten minutes as a fallback. Reduced-motion preferences disable the fade.
 - Ask Home Concierge to organize rooms and devices, create and maintain moods, adjust devices, control Sonos, or open tablet apps.
 - Toggle lights, switches, fans, and input booleans; adjust supported light brightness.
@@ -76,6 +76,10 @@ Open **Planner** to tidy up names and rooms, one light or remote at a time. Each
 **Lights.** Select **Blink** on a card and the lamp switches off and on three times, then returns to its original on/off state and brightness. Look around the room to see which lamp it is; select **Stop blinking** to end early and restore it. Light groups and hidden lights are left out. A light that is the only light on its device is renamed and placed as that device, as Home Assistant shows it; otherwise the light entity itself is changed. Lights without a unique ID can blink but cannot be renamed by Home Assistant.
 
 **Remotes.** All remotes are shown together, with battery level when the remote reports one. Press a button on any remote and its card glows, shows the button that was pressed, and scrolls into view; the banner above the cards names it too. Remotes are recognised from Home Assistant event entities, Zigbee2MQTT-style `…_action` sensors, device models such as remote, dimmer, or button, and button events from ZHA, deCONZ, Philips Hue, Z-Wave JS, and Lutron Caséta. A device that sends one of those button events appears as soon as it is pressed, even if it was not recognised before. The demo home includes three remotes and a **Simulate a press** button.
+
+**Adding appliances.** Select **Add appliance** to pair a new Zigbee bulb, remote, or other device. The panel gives reset steps for IKEA bulbs and remotes, then **Start pairing** opens the Zigbee network for 4 minutes 14 seconds (the longest both Zigbee stacks allow), or until **Stop pairing**. Each appliance that joins appears in the panel straight away, where you can name it, put it in a room, and blink a new bulb to check which one it is. It moves into the Lights or Remotes list when you close the panel. Leaving the Planner stops pairing.
+
+Hjem pairs through Home Assistant, using whichever Zigbee setup it finds there: ZHA (through Home Assistant's `zha/devices/permit` command) or Zigbee2MQTT (by publishing to `zigbee2mqtt/bridge/request/permit_join` through the MQTT integration, so a custom base topic is not supported yet). When it can't tell, or finds both, it asks which one to use. Pairing needs administrator access. The demo home adds a sample appliance a few seconds after pairing starts.
 
 Renames and room changes are written to Home Assistant's device and entity registries, need administrator access, and appear in **Recent setup changes** under Concierge, where they can be undone. Blinking sends ordinary light commands; nothing else in Home Assistant is changed.
 

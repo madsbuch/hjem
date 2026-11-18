@@ -426,3 +426,127 @@ html[data-theme='dark'] .home-planner {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* Adding appliances */
+.add-appliance-open {
+  flex-shrink: 0;
+}
+.add-appliance {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 24px;
+  padding: 20px;
+  border: 1px solid var(--plan-border);
+  border-radius: 14px;
+  background: var(--plan-card);
+  color: var(--plan-text);
+}
+.add-appliance-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.add-appliance-heading h2 {
+  font-size: 18px;
+  font-weight: 550;
+}
+.add-appliance-heading .icon-button {
+  color: var(--plan-muted);
+}
+.add-appliance-stack,
+.add-appliance-stack-choice legend {
+  color: var(--plan-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.add-appliance-stack-choice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.add-appliance-stack-choice legend {
+  margin-bottom: 8px;
+}
+.add-appliance-stack-choice label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  font-size: 13px;
+}
+.add-appliance-kinds {
+  align-self: flex-start;
+}
+.add-appliance-kinds button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.add-appliance-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding-left: 22px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.add-appliance-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border: 1px solid var(--plan-border);
+  border-radius: 12px;
+  background: var(--plan-field);
+  color: var(--plan-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.add-appliance-status > span:not(.listening-dot) {
+  flex: 1;
+  min-width: 200px;
+}
+.add-appliance-status.live {
+  border-color: var(--plan-glow);
+  background: var(--plan-glow-soft);
+  color: var(--plan-text);
+}
+.add-appliance-status .primary-button:disabled {
+  opacity: 0.5;
+}
+.add-appliance-joined h3 {
+  font-size: 14px;
+  font-weight: 550;
+}
+.add-appliance-joined {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 14px;
+}
+.add-appliance-joined h3 {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+@media (max-width: 700px) {
+  .add-appliance {
+    padding: 16px;
+  }
+  .add-appliance-status > span:not(.listening-dot) {
+    min-width: 0;
+  }
+  .add-appliance-status button {
+    width: 100%;
+  }
+  .add-appliance-joined {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

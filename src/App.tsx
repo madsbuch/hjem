@@ -35,7 +35,7 @@ import {
   type HassEntity,
   type HassSnapshot,
 } from './lib/home-assistant';
-import { demoSnapshot, applyDemoService } from './lib/demo';
+import { demoSnapshot, applyDemoService, joinDemoAppliance } from './lib/demo';
 import { HomeSetupManager } from './lib/home-setup';
 import { DemoHomeSetupTransport } from './lib/demo-home-setup';
 import { isRecord } from './lib/home-assistant-protocol';
@@ -63,6 +63,7 @@ import { selectWeather, WeatherSummary } from './components/WeatherSummary';
 import { ConciergeChat } from './components/ConciergeChat';
 import { ConciergeSettings } from './components/ConciergeSettings';
 import { HomePlanner } from './components/HomePlanner';
+import type { PairingStack } from './components/AddAppliance';
 import type { LightStep } from './lib/home-planner';
 import {
   launchApp,
@@ -456,6 +457,25 @@ export default function App() {
     const connection = client.current;
     if (!connection) throw new Error('Home Assistant is not connected.');
     await connection.callService('light', step.service, entity.entity_id, step.data);
+  }
+  const demoPairing = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(demoPairing.current), []);
+  /** Open or close the Zigbee network for new appliances; the demo adds one itself. */
+  async function permitJoin(stack: PairingStack, seconds: number) {
+    if (stack === 'demo') {
+      clearTimeout(demoPairing.current);
+      if (seconds > 0 && mode === 'demo') {
+        const version = sessionVersion.current;
+        demoPairing.current = setTimeout(() => {
+          if (sessionVersion.current === version && modeRef.current === 'demo') setSnapshot(joinDemoAppliance);
+        }, 2_500);
+      }
+      return;
+    }
+    if (seconds > 0 && !canControl) throw new Error('Home Assistant is not connected.');
+    const connection = client.current;
+    if (!connection) throw new Error('Home Assistant is not connected.');
+    await connection.permitJoin(stack, seconds);
   }
   const subscribeActivity = useCallback((listener: ActivityListener) => {
     if (mode !== 'live') return () => undefined;
@@ -895,6 +915,7 @@ export default function App() {
               setup={setup}
               onLightStep={sendLightStep}
               subscribe={subscribeActivity}
+              onPermit={permitJoin}
               notify={notify}
             />
           )}

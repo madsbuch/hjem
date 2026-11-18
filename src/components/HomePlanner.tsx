@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
   BatteryLow,
   BatteryMedium,
+  CirclePlus,
+  Cpu,
   Lightbulb,
   LoaderCircle,
   MousePointerClick,
@@ -11,7 +13,7 @@ import {
   Sparkles,
   Square,
 } from 'lucide-react';
-import type { ActivityListener, HassArea, HassEntity, HassSnapshot } from '../lib/home-assistant';
+import type { ActivityListener, HassEntity, HassSnapshot } from '../lib/home-assistant';
 import type { HomeSetup } from '../lib/home-setup-types';
 import { isRecord } from '../lib/home-assistant-protocol';
 import { isUnavailable } from '../lib/entities';
@@ -20,6 +22,7 @@ import {
   plannerLights,
   plannerRemotes,
   pressFromActivity,
+  zigbeeStacks,
   type LightStep,
   type PlannerLight,
   type PlannerRemote,
@@ -27,6 +30,8 @@ import {
   type RemotePress,
 } from '../lib/home-planner';
 import { demoRemotes } from '../lib/demo';
+import { NameField, RoomSelect } from './PlannerFields';
+import { AddAppliance, type PairingStack } from './AddAppliance';
 import '../home-planner.css';
 
 type Tab = 'lights' | 'remotes';
@@ -42,6 +47,7 @@ interface Props {
   setup: HomeSetup | undefined;
   onLightStep: (entity: HassEntity, step: LightStep) => Promise<void>;
   subscribe: (listener: ActivityListener) => () => void;
+  onPermit: (stack: PairingStack, seconds: number) => Promise<void>;
   notify: (text: string, error?: boolean) => void;
 }
 
@@ -60,75 +66,6 @@ function ago(at: number, now: number): string {
   return minutes < 60 ? `${minutes} min ago` : new Date(at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 }
 
-function NameField({ value, label, disabled, onSave }: {
-  value: string;
-  label: string;
-  disabled: boolean;
-  onSave: (name: string) => Promise<boolean>;
-}) {
-  const [draft, setDraft] = useState(value);
-  const [editing, setEditing] = useState(false);
-  const cancelled = useRef(false);
-  useEffect(() => {
-    if (!editing) setDraft(value);
-  }, [value, editing]);
-  const commit = async () => {
-    setEditing(false);
-    const next = draft.trim();
-    if (cancelled.current || !next || next === value) {
-      cancelled.current = false;
-      setDraft(value);
-      return;
-    }
-    if (!(await onSave(next))) setDraft(value);
-  };
-  const keyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Enter') event.currentTarget.blur();
-    if (event.key === 'Escape') {
-      cancelled.current = true;
-      event.currentTarget.blur();
-    }
-  };
-  return (
-    <input
-      className="planner-name"
-      value={draft}
-      aria-label={label}
-      maxLength={80}
-      autoComplete="off"
-      spellCheck={false}
-      disabled={disabled}
-      onFocus={() => setEditing(true)}
-      onChange={(event) => setDraft(event.target.value)}
-      onBlur={() => void commit()}
-      onKeyDown={keyDown}
-    />
-  );
-}
-
-function RoomSelect({ value, label, areas, disabled, onChange }: {
-  value: string | null;
-  label: string;
-  areas: HassArea[];
-  disabled: boolean;
-  onChange: (areaId: string | null) => void;
-}) {
-  return (
-    <select
-      className={`planner-room ${value ? '' : 'needs-room'}`}
-      aria-label={label}
-      value={value ?? ''}
-      disabled={disabled}
-      onChange={(event) => onChange(event.target.value || null)}
-    >
-      <option value="">No room yet</option>
-      {areas.map((area) => (
-        <option key={area.area_id} value={area.area_id}>{area.name}</option>
-      ))}
-    </select>
-  );
-}
-
 function RemoteVisual({ press, glowing }: { press: RemotePress | undefined; glowing: boolean }) {
   return (
     <div className="remote-visual" aria-hidden="true">
@@ -142,7 +79,7 @@ function RemoteVisual({ press, glowing }: { press: RemotePress | undefined; glow
   );
 }
 
-export function HomePlanner({ snapshot, demo, disabled, setupBusy, setup, onLightStep, subscribe, notify }: Props) {
+export function HomePlanner({ snapshot, demo, disabled, setupBusy, setup, onLightStep, subscribe, onPermit, notify }: Props) {
   const [tab, setTab] = useState<Tab>('lights');
   const [filter, setFilter] = useState<Filter>('all');
   const [saving, setSaving] = useState<string | null>(null);
@@ -151,6 +88,9 @@ export function HomePlanner({ snapshot, demo, disabled, setupBusy, setup, onLigh
   const [lastPress, setLastPress] = useState<RemotePress | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [newRoom, setNewRoom] = useState('');
+  const [adding, setAdding] = useState(false);
+  /** Devices known when pairing started; anything else joined since. */
+  const [baseline, setBaseline] = useState<ReadonlySet<string> | null>(null);
   const snapshotRef = useRef(snapshot);
   snapshotRef.current = snapshot;
   const blinkers = useRef(new Map<string, AbortController>());
@@ -265,8 +205,12 @@ export function HomePlanner({ snapshot, demo, disabled, setupBusy, setup, onLigh
     recordPress({ deviceId: remote.deviceId, action, at: Date.now() });
   }
 
-  const shownLights = lights.filter((light) => filter === 'all' || !light.areaId);
-  const shownRemotes = remotes.filter((remote) => filter === 'all' || !remote.areaId);
+  const joinedIds = new Set(baseline ? snapshot.devices.filter((device) => !baseline.has(device.id)).map((device) => device.id) : []);
+  const deviceOf = (light: PlannerLight) =>
+    snapshot.registry.find((entry) => entry.entity_id === light.entity.entity_id)?.device_id ?? null;
+  // While the add panel is open, new appliances are shown there instead of in the lists.
+  const shownLights = lights.filter((light) => (filter === 'all' || !light.areaId) && !joinedIds.has(deviceOf(light) ?? ''));
+  const shownRemotes = remotes.filter((remote) => (filter === 'all' || !remote.areaId) && !joinedIds.has(remote.device.id));
   const unassigned = tab === 'lights'
     ? lights.filter((light) => !light.areaId).length
     : remotes.filter((remote) => !remote.areaId).length;
@@ -368,6 +312,28 @@ export function HomePlanner({ snapshot, demo, disabled, setupBusy, setup, onLigh
     );
   };
 
+  const renderOther = (deviceId: string) => {
+    const device = snapshot.devices.find((item) => item.id === deviceId);
+    if (!device) return null;
+    const name = device.name_by_user || device.name || device.id;
+    const target: PlannerTarget = { kind: 'device', id: device.id };
+    return (
+      <article className="planner-card" aria-label={name}>
+        <div className="planner-card-top">
+          <span className="light-visual" aria-hidden="true"><Cpu size={22} strokeWidth={1.7} /></span>
+        </div>
+        <NameField value={name} label={`Name for ${name}`} disabled={editLocked} onSave={(next) => rename(target, next)} />
+        <span className="planner-meta">{[device.manufacturer, device.model].filter(Boolean).join(' ') || 'Appliance'}</span>
+        <RoomSelect value={device.area_id} label={`Room for ${name}`} areas={areas} disabled={editLocked} onChange={(areaId) => assign(target, areaId)} />
+      </article>
+    );
+  };
+  const joined = [...joinedIds].map((id) => {
+    const light = lights.find((item) => deviceOf(item) === id);
+    const remote = remotes.find((item) => item.device.id === id);
+    return { id, content: light ? renderLight(light) : remote ? renderRemote(remote) : renderOther(id) };
+  });
+
   return (
     <div className="home-planner">
       <section className="page-intro">
@@ -376,8 +342,30 @@ export function HomePlanner({ snapshot, demo, disabled, setupBusy, setup, onLigh
           <h1>Find, name, and place.</h1>
           <p>Give each light and remote a name you recognise, and put it in the right room.</p>
         </div>
-        <PencilRuler className="intro-icon" size={32} strokeWidth={1.3} />
+        {adding ? (
+          <PencilRuler className="intro-icon" size={32} strokeWidth={1.3} />
+        ) : (
+          <button className="primary-button add-appliance-open" onClick={() => setAdding(true)} disabled={disabled || !setup}>
+            <CirclePlus size={17} /> Add appliance
+          </button>
+        )}
       </section>
+
+      {adding && (
+        <AddAppliance
+          demo={demo}
+          detected={zigbeeStacks(snapshot)}
+          disabled={disabled || !setup}
+          onPermit={onPermit}
+          onStart={() => setBaseline((current) => current ?? new Set(snapshotRef.current.devices.map((device) => device.id)))}
+          joined={joined}
+          onClose={() => {
+            setAdding(false);
+            setBaseline(null);
+          }}
+          notify={notify}
+        />
+      )}
 
       <div className="planner-toolbar">
         <div className="planner-tabs" role="tablist" aria-label="Planner">

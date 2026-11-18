@@ -1,4 +1,4 @@
-import type { HassDevice, HassEntity, HassSnapshot, HomeActivity } from './home-assistant';
+import type { HassDevice, HassEntity, HassSnapshot, HomeActivity, ZigbeeStack } from './home-assistant';
 import { domainOf, isUnavailable, nameOf, numberAttribute, supportsBrightness } from './entities';
 
 /** What a rename or room change is written to in Home Assistant. */
@@ -199,4 +199,14 @@ export async function identifyLight(
     if (restore) await send(restore).catch(() => undefined);
     throw error;
   }
+}
+
+/** Which Zigbee stacks this Home Assistant appears to run, from what it registered. */
+export function zigbeeStacks(snapshot: HassSnapshot): ZigbeeStack[] {
+  const stacks: ZigbeeStack[] = [];
+  if (snapshot.registry.some((entry) => entry.platform === 'zha')) stacks.push('zha');
+  if (snapshot.devices.some((device) => device.manufacturer === 'Zigbee2MQTT' || /zigbee2mqtt/i.test(device.name ?? '')) ||
+      snapshot.registry.some((entry) => entry.entity_id.includes('zigbee2mqtt_bridge')))
+    stacks.push('zigbee2mqtt');
+  return stacks;
 }

@@ -103,3 +103,88 @@ test('lights up a live remote from a Home Assistant button event and renames it'
   await expect(page.getByText('TS0044 is now Hallway remote.')).toBeVisible();
   expect(commands).toContainEqual(expect.objectContaining({ type: 'config/device_registry/update', device_id: 'zha-remote', name_by_user: 'Hallway remote' }));
 });
+
+test('pairs a new appliance in the demo home and names it before it joins the lists', async ({ page }) => {
+  await page.goto('/');
+  await openPlanner(page);
+  await page.getByRole('button', { name: 'Add appliance' }).click();
+  const panel = page.getByRole('region', { name: 'Add an appliance' });
+  await panel.getByRole('button', { name: 'Remote' }).click();
+  await expect(panel.getByText('Press the pairing button four times')).toBeVisible();
+  await panel.getByRole('button', { name: 'Bulb' }).click();
+  await panel.getByRole('button', { name: 'Start pairing' }).click();
+  await expect(panel.getByText(/Pairing is open · 4:1\d left/)).toBeVisible();
+
+  const bulb = panel.getByRole('article', { name: 'LED bulb E27 806lm' });
+  await expect(bulb).toBeVisible({ timeout: 6_000 });
+  await bulb.getByLabel('Name for LED bulb E27 806lm').fill('Hallway ceiling');
+  await bulb.getByLabel('Name for LED bulb E27 806lm').press('Enter');
+  await expect(page.getByText('LED bulb E27 806lm is now Hallway ceiling.')).toBeVisible();
+  await panel.getByRole('article', { name: 'Hallway ceiling' }).getByLabel('Room for Hallway ceiling').selectOption({ label: 'Hallway' });
+  await expect(page.getByText('Hallway ceiling assigned to Hallway.')).toBeVisible();
+  await expect(page.getByRole('tabpanel').getByRole('article', { name: 'Hallway ceiling' })).toHaveCount(0);
+
+  await panel.getByRole('button', { name: 'Stop pairing' }).click();
+  await expect(page.getByText('Pairing stopped.')).toBeVisible();
+  await page.getByRole('button', { name: 'Close add appliance' }).click();
+  await expect(page.getByRole('tabpanel').getByRole('article', { name: 'Hallway ceiling' })).toBeVisible();
+});
+
+test('opens ZHA pairing on a live home and shows the device that joins', async ({ page }) => {
+  await nativeStorage(page, {
+    serverUrl: 'http://pairing.test',
+    connection: { serverUrl: 'http://pairing.test', token: 'fixture-only-token' },
+  });
+  const commands: Record<string, unknown>[] = [];
+  const devices: Record<string, unknown>[] = [{ id: 'coordinator', area_id: null, name: 'Coordinator', manufacturer: 'Fixture', model: 'Zigbee stick' }];
+  const registry: Record<string, unknown>[] = [{ entity_id: 'light.hall', area_id: null, device_id: 'hall-light', platform: 'zha' }];
+  const states: Record<string, unknown>[] = [{ entity_id: 'light.hall', state: 'off', attributes: { friendly_name: 'Hall light' } }];
+  let send: ((value: unknown) => void) | undefined;
+  let registrySubscription = 0;
+  let stateSubscription = 0;
+  await page.routeWebSocket('ws://pairing.test/api/websocket', (socket) => {
+    send = (value) => socket.send(JSON.stringify(value));
+    const reply = (value: unknown) => socket.send(JSON.stringify(value));
+    socket.onMessage((raw) => {
+      const command: Record<string, unknown> = JSON.parse(String(raw));
+      commands.push(command);
+      if (command.type === 'auth') { reply({ type: 'auth_ok' }); return; }
+      if (command.type === 'ping') { reply({ id: command.id, type: 'pong' }); return; }
+      if (command.type === 'subscribe_events' && typeof command.id === 'number') {
+        if (command.event_type === 'device_registry_updated') registrySubscription = command.id;
+        if (command.event_type === 'state_changed') stateSubscription = command.id;
+      }
+      let result: unknown = null;
+      if (command.type === 'get_states') result = states;
+      else if (command.type === 'get_config') result = { location_name: 'Pairing home' };
+      else if (command.type === 'config/area_registry/list') result = [{ area_id: 'hall', name: 'Hall' }];
+      else if (command.type === 'config/device_registry/list') result = devices;
+      else if (command.type === 'config/entity_registry/list') result = registry;
+      reply({ id: command.id, type: 'result', success: true, result });
+      if (command.type === 'zha/devices/permit' && command.duration === 254)
+        reply({ id: command.id, type: 'event', event: { type: 'log_output', log_entry: { message: 'Permitting joins' } } });
+    });
+    reply({ type: 'auth_required' });
+  });
+  await page.goto('/');
+  await openPlanner(page);
+  await page.getByRole('button', { name: 'Add appliance' }).click();
+  const panel = page.getByRole('region', { name: 'Add an appliance' });
+  await expect(panel.getByText('New appliances join through ZHA in Home Assistant.')).toBeVisible();
+  await panel.getByRole('button', { name: 'Start pairing' }).click();
+  await expect(panel.getByText(/Pairing is open/)).toBeVisible();
+  expect(commands).toContainEqual(expect.objectContaining({ type: 'zha/devices/permit', duration: 254 }));
+
+  // The device interviews, then Home Assistant registers it and reports its state.
+  devices.push({ id: 'new-bulb', area_id: null, name: 'LED bulb GU10 345lm', manufacturer: 'IKEA of Sweden', model: 'LED bulb GU10 345lm' });
+  registry.push({ entity_id: 'light.new_bulb', area_id: null, device_id: 'new-bulb', platform: 'zha' });
+  const bulbState = { entity_id: 'light.new_bulb', state: 'on', attributes: { friendly_name: 'LED bulb GU10 345lm' } };
+  states.push(bulbState);
+  send?.({ id: stateSubscription, type: 'event', event: { event_type: 'state_changed', data: { entity_id: 'light.new_bulb', new_state: bulbState } } });
+  send?.({ id: registrySubscription, type: 'event', event: { event_type: 'device_registry_updated', data: { action: 'create', device_id: 'new-bulb' } } });
+  await expect(panel.getByRole('article', { name: 'LED bulb GU10 345lm' })).toBeVisible();
+
+  await panel.getByRole('button', { name: 'Stop pairing' }).click();
+  await expect(page.getByText('Pairing stopped.')).toBeVisible();
+  expect(commands).toContainEqual(expect.objectContaining({ type: 'zha/devices/permit', duration: 0 }));
+});

@@ -291,3 +291,27 @@ export function applyDemoService(
     }),
   };
 }
+
+/** Appliances that "join" the demo home while pairing is open, in order. */
+const demoAppliances = [
+  { slug: 'new_bulb', name: 'LED bulb E27 806lm', model: 'LED bulb E27 806lm', kind: 'light' },
+  { slug: 'new_remote', name: 'Remote control N2', model: 'Remote control N2', kind: 'remote' },
+  { slug: 'new_spot', name: 'LED bulb GU10 345lm', model: 'LED bulb GU10 345lm', kind: 'light' },
+];
+
+/** Add the next demo appliance, as Home Assistant would after a Zigbee device joins. */
+export function joinDemoAppliance(snapshot: HassSnapshot): HassSnapshot {
+  const next = demoAppliances.find((item) => !snapshot.devices.some((device) => device.id === `demo_${item.slug}`));
+  if (!next) return snapshot;
+  const deviceId = `demo_${next.slug}`;
+  const entityId = next.kind === 'light' ? `light.${next.slug}` : `event.${next.slug}_action`;
+  const joined = next.kind === 'light'
+    ? entity(entityId, next.name, 'on', { brightness: 254, supported_color_modes: ['color_temp'], color_temp_kelvin: 2700, min_color_temp_kelvin: 2200, max_color_temp_kelvin: 4000 })
+    : entity(entityId, `${next.name} action`, 'unknown', { device_class: 'button', event_types: ['on', 'off', 'brightness_move_up', 'brightness_move_down'] });
+  return {
+    ...snapshot,
+    devices: [...snapshot.devices, { id: deviceId, name: next.name, area_id: null, manufacturer: 'IKEA of Sweden', model: next.model }],
+    registry: [...snapshot.registry, { entity_id: entityId, area_id: null, device_id: deviceId, platform: 'zha' }],
+    entities: [...snapshot.entities, joined],
+  };
+}

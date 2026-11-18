@@ -199,6 +199,62 @@ describe('Home Assistant setup transport', () => {
   });
 });
 
+describe('Home planner transport', () => {
+  async function connected() {
+    const context = setup();
+    await authenticate(context.socket);
+    await initialSnapshot(context.socket);
+    await context.connection;
+    return context;
+  }
+
+  it('opens and closes ZHA pairing, tolerating its streamed log entries', async () => {
+    const { client, socket, onStatus } = await connected();
+    const opening = client.permitJoin('zha', 254);
+    const request = required(socket.sent.at(-1));
+    expect(request).toMatchObject({ type: 'zha/devices/permit', duration: 254 });
+    socket.answer('zha/devices/permit', null);
+    await opening;
+    socket.receive({ id: request.id, type: 'event', event: { type: 'log_output', log_entry: { message: 'Device joined' } } });
+    expect(onStatus).not.toHaveBeenCalledWith('error', expect.anything());
+    const closing = client.permitJoin('zha', 0);
+    expect(socket.sent.at(-2)).toEqual({ id: expect.any(Number), type: 'unsubscribe_events', subscription: request.id });
+    expect(socket.sent.at(-1)).toMatchObject({ type: 'zha/devices/permit', duration: 0 });
+    socket.answer('zha/devices/permit', null);
+    await closing;
+    expect(socket.sent.at(-1)).toMatchObject({ type: 'unsubscribe_events' });
+    await expect(client.permitJoin('zha', 255)).rejects.toThrow('254 seconds');
+  });
+
+  it('opens Zigbee2MQTT pairing through its MQTT bridge topic', async () => {
+    const { client, socket } = await connected();
+    const opening = client.permitJoin('zigbee2mqtt', 254);
+    expect(socket.sent.at(-1)).toMatchObject({
+      type: 'call_service', domain: 'mqtt', service: 'publish',
+      service_data: { topic: 'zigbee2mqtt/bridge/request/permit_join', payload: '{"value":true,"time":254}' },
+    });
+    expect(socket.sent.at(-1)).not.toHaveProperty('target');
+    socket.answer('call_service', null);
+    await opening;
+  });
+
+  it('subscribes to button events, forwards them to listeners, and renames devices', async () => {
+    const { client, socket } = await connected();
+    const zha = required(socket.sent.find((request) => request.event_type === 'zha_event'));
+    const activity = vi.fn();
+    const stop = client.onActivity(activity);
+    socket.receive({ id: zha.id, type: 'event', event: { event_type: 'zha_event', data: { device_id: 'remote', command: 'toggle' } } });
+    expect(activity).toHaveBeenCalledWith({ kind: 'device_event', event: { event_type: 'zha_event', device_id: 'remote', action: 'toggle' } });
+    stop();
+    socket.receive({ id: zha.id, type: 'event', event: { event_type: 'zha_event', data: { device_id: 'remote', command: 'off' } } });
+    expect(activity).toHaveBeenCalledTimes(1);
+    const renaming = client.renameDevice('device1', 'Desk lamp');
+    expect(socket.sent.at(-1)).toMatchObject({ type: 'config/device_registry/update', device_id: 'device1', name_by_user: 'Desk lamp' });
+    socket.answer('config/device_registry/update', { id: 'device1', area_id: 'kitchen' });
+    await renaming;
+  });
+});
+
 describe('Home Assistant connection', () => {
   it('retries an offline saved session until its first successful connection', async () => {
     const { connection, socket, onStatus } = setup({ retryInitial: true });

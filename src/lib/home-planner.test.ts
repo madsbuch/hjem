@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { demoSnapshot } from './demo';
+import { demoSnapshot, joinDemoAppliance } from './demo';
 import type { HassSnapshot } from './home-assistant';
 import { parseServerMessages } from './home-assistant-protocol';
 import {
@@ -8,6 +8,7 @@ import {
   plannerLights,
   plannerRemotes,
   pressFromActivity,
+  zigbeeStacks,
   type LightStep,
 } from './home-planner';
 import { HomeSetupManager } from './home-setup';
@@ -176,5 +177,27 @@ describe('renaming devices and entities', () => {
     expect(snapshot().registry.find((entry) => entry.entity_id === 'light.kitchen')?.name).toBe('Island pendants');
     expect(plannerLights(snapshot()).map((light) => light.name)).toContain('Island pendants');
     await expect(setup.renameEntity('light.kitchen', '')).rejects.toThrow('between 1 and 80');
+  });
+});
+
+describe('adding appliances', () => {
+  it('detects ZHA and Zigbee2MQTT from what Home Assistant registered', () => {
+    const snapshot = home();
+    expect(zigbeeStacks(snapshot)).toEqual([]);
+    snapshot.registry.push({ entity_id: 'light.zha_bulb', platform: 'zha', area_id: null, device_id: null });
+    expect(zigbeeStacks(snapshot)).toEqual(['zha']);
+    snapshot.devices.push({ id: 'bridge', name: 'Zigbee2MQTT Bridge', manufacturer: 'Zigbee2MQTT', area_id: null });
+    expect(zigbeeStacks(snapshot)).toEqual(['zha', 'zigbee2mqtt']);
+  });
+
+  it('joins demo appliances one at a time and recognises what they are', () => {
+    let snapshot = home();
+    snapshot = joinDemoAppliance(snapshot);
+    expect(plannerLights(snapshot).map((light) => light.entity.entity_id)).toContain('light.new_bulb');
+    snapshot = joinDemoAppliance(snapshot);
+    expect(plannerRemotes(snapshot).map((remote) => remote.device.id)).toContain('demo_new_remote');
+    expect(plannerLights(snapshot).find((light) => light.entity.entity_id === 'light.new_bulb')?.areaId).toBeNull();
+    snapshot = joinDemoAppliance(joinDemoAppliance(snapshot));
+    expect(snapshot.devices.filter((device) => device.id.startsWith('demo_new_'))).toHaveLength(3);
   });
 });

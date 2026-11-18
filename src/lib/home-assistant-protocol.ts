@@ -230,8 +230,9 @@ function parseMessage(value: unknown): ServerMessage {
     }
     case 'event': {
       const id = commandId(value.id);
-      if (!isRecord(value.event) || typeof value.event.event_type !== 'string')
-        invalid('event');
+      if (!isRecord(value.event)) invalid('event');
+      // Subscriptions such as ZHA pairing stream log entries rather than bus events.
+      if (typeof value.event.event_type !== 'string') return { type: 'other_event', id };
       if (['area_registry_updated', 'device_registry_updated', 'entity_registry_updated'].includes(value.event.event_type))
         return { type: 'registry_updated', id };
       const eventType = value.event.event_type;
@@ -310,7 +311,9 @@ export type ClientCommand =
       type: 'call_service';
       domain: string;
       service: string;
-      target: { entity_id: string | string[] };
+      target?: { entity_id: string | string[] };
       service_data: Record<string, unknown>;
       return_response?: true;
-    };
+    }
+  | { type: 'zha/devices/permit'; duration: number }
+  | { type: 'unsubscribe_events'; subscription: number };
