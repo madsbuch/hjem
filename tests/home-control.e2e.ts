@@ -269,6 +269,7 @@ test('demo lights, keyboard brightness, and temperature controls update their st
 }) => {
   await page.goto('/');
   await navigate(page, 'Controls');
+  await page.getByRole('tab', { name: 'All devices', exact: true }).click();
   const pendant = page.getByRole('article', {
     name: 'Pendant lights',
     exact: true,
@@ -306,6 +307,7 @@ test('controls, room search, pins, and persistent preferences work together', as
   await nativeStorage(page);
   await page.goto('/');
   await navigate(page, 'Controls');
+  await page.getByRole('tab', { name: 'All devices', exact: true }).click();
   await page
     .getByRole('button', { name: 'Kitchen 3 devices · 0 active' })
     .click();
@@ -327,6 +329,7 @@ test('controls, room search, pins, and persistent preferences work together', as
   ).toBeVisible();
   await page.reload();
   await navigate(page, 'Controls');
+  await page.getByRole('tab', { name: 'All devices', exact: true }).click();
   await page.getByRole('button', { name: 'Pinned', exact: true }).click();
   await expect(page.getByRole('article')).toHaveCount(5);
 });
@@ -385,6 +388,7 @@ test('overview keeps moods and music together and device controls on their own p
     page.getByRole('button', { name: 'Play Living room speaker' }),
   ).toBeVisible();
   await navigate(page, 'Controls');
+  await page.getByRole('tab', { name: 'All devices', exact: true }).click();
   await expect(
     page.getByRole('switch', { name: 'Toggle Pendant lights' }),
   ).not.toBeChecked();
@@ -480,6 +484,7 @@ test('live Home Assistant service calls, events, and offline controls work end t
   await page.goto('/');
   await connectMock(page);
   await navigate(page, 'Controls');
+  await page.getByRole('tab', { name: 'All devices', exact: true }).click();
   await expect(page.getByRole('article')).toHaveCount(2);
   const office = page.getByRole('switch', { name: 'Toggle Office light' });
   await expect(office).toBeChecked();
@@ -597,6 +602,7 @@ test('live service failures stay visible and editing connection settings keeps t
   await page.goto('/');
   await connectMock(page);
   await navigate(page, 'Controls');
+  await page.getByRole('tab', { name: 'All devices', exact: true }).click();
   await page.evaluate(() => {
     (window as any).__ha.rejectActions = true;
   });
@@ -618,6 +624,7 @@ test('live service failures stay visible and editing connection settings keeps t
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.getByRole('button', { name: 'Close connection settings' }).click();
   await navigate(page, 'Controls');
+  await page.getByRole('tab', { name: 'All devices', exact: true }).click();
   await expect(
     page.getByRole('switch', { name: 'Toggle Office light' }),
   ).toBeEnabled();
@@ -998,6 +1005,7 @@ test('missing live readings stay unknown until Home Assistant reports valid valu
     addDevice('cover.office', 'open', { friendly_name: 'Office blinds', current_position: 'unknown', supported_features: 15 });
   });
   await navigate(page, 'Controls');
+  await page.getByRole('tab', { name: 'All devices', exact: true }).click();
   const light = page.getByRole('article', { name: 'Office light', exact: true });
   const brightness = light.getByRole('slider', { name: 'Office light brightness' });
   await expect(brightness).toBeDisabled();
@@ -1253,6 +1261,7 @@ test('three demo Sonos systems keep playback, volume, and tracks independent', a
     music.getByRole('article', { name: 'Kitchen Sonos', exact: true }),
   ).toContainText('Light through the window');
   await navigate(page, 'Controls');
+  await page.getByRole('tab', { name: 'All devices', exact: true }).click();
   await navigate(page, 'Overview');
   await expect(
     music.getByRole('tab', { name: 'Kitchen', exact: true }),
@@ -1296,6 +1305,7 @@ test('a failed credential write stays visible and does not create a saved connec
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.getByRole('button', { name: 'Close connection settings', exact: true }).click();
   await navigate(page, 'Controls');
+  await page.getByRole('tab', { name: 'All devices', exact: true }).click();
   await expect(page.getByRole('article', { name: 'Office light', exact: true })).toHaveCount(0);
   await expect(page.getByRole('article', { name: 'Pendant lights', exact: true })).toBeVisible();
 });

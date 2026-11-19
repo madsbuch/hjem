@@ -349,6 +349,7 @@ test('a model tool call receives real demo state before the answer is shown', as
     log.getByText('Checking your home · done', { exact: true }),
   ).toBeVisible();
   await navigate(page, 'Controls');
+  await page.getByRole('tab', { name: 'All devices', exact: true }).click();
   await expect(
     page.getByRole('switch', { name: 'Toggle Pendant lights', exact: true }),
   ).toBeChecked();
@@ -396,6 +397,7 @@ test('requested device changes execute against the demo and show tool progress',
     service: 'turn_off',
   });
   await navigate(page, 'Controls');
+  await page.getByRole('tab', { name: 'All devices', exact: true }).click();
   await expect(
     page.getByRole('switch', { name: 'Toggle Pendant lights', exact: true }),
   ).not.toBeChecked();
@@ -448,6 +450,7 @@ test('Stop prevents an action from a late model response', async ({ page }) => {
     release();
     await expect.poll(() => releasedResponse).toBe(true);
     await navigate(page, 'Controls');
+    await page.getByRole('tab', { name: 'All devices', exact: true }).click();
     await expect(
       page.getByRole('switch', { name: 'Toggle Pendant lights', exact: true }),
     ).toBeChecked();
@@ -558,6 +561,7 @@ for (const [status, message] of [
     ).toHaveCount(0);
     expect(mock.requests).toHaveLength(1);
     await navigate(page, 'Controls');
+    await page.getByRole('tab', { name: 'All devices', exact: true }).click();
     await expect(
       page.getByRole('switch', { name: 'Toggle Pendant lights', exact: true }),
     ).toBeChecked();

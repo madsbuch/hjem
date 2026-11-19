@@ -49,7 +49,7 @@ const helperKind = (entity: HassEntity): string =>
   helperLabels[helperDomains.find((domain): domain is HelperDomain => domain === domainOf(entity)) ?? 'input_boolean'];
 
 /** "3 min ago", "yesterday", or a date; routines that never ran say so. */
-function ago(value: unknown, now: Date): string {
+export function ago(value: unknown, now: Date): string {
   const time = typeof value === 'string' ? Date.parse(value) : Number.NaN;
   if (!Number.isFinite(time)) return 'Has not run yet';
   const minutes = Math.max(0, Math.round((now.getTime() - time) / 60_000));
@@ -103,7 +103,7 @@ export function stateText(entity: HassEntity): string {
 }
 
 /** Load each listed routine's or mood's summary, a few at a time, again after every setup change. */
-function useSummaries<T>(ids: string[], revision: string, active: boolean, load: ((id: string, signal: AbortSignal) => Promise<T>) | undefined) {
+export function useSummaries<T>(ids: string[], revision: string, active: boolean, load: ((id: string, signal: AbortSignal) => Promise<T>) | undefined) {
   const [summaries, setSummaries] = useState<Record<string, T>>({});
   const loader = useRef(load);
   loader.current = load;

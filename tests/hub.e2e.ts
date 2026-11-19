@@ -55,6 +55,7 @@ test('a device pairs with the hub, controls the home through it, and keeps a ful
 
   // Live control goes through the hub to Home Assistant.
   await navigate(page, 'Controls');
+  await page.getByRole('tab', { name: 'All devices', exact: true }).click();
   await page.getByRole('switch', { name: /Desk lamp/ }).first().click();
   await expect.poll(() => ha.commands).toContain('call_service');
 });

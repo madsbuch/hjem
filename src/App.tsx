@@ -75,6 +75,7 @@ import { ConciergeChat } from './components/ConciergeChat';
 import { ConciergeSettings } from './components/ConciergeSettings';
 import { HomePlanner } from './components/HomePlanner';
 import { HomeStudio } from './components/HomeStudio';
+import { AutomationsPanel, ControlsTabs, LightsPanel, type ControlsTab } from './components/EverydayControls';
 import type { PairingStack } from './components/AddAppliance';
 import type { LightStep } from './lib/home-planner';
 import { ConfigurationTransfer } from './components/ConfigurationTransfer';
@@ -179,6 +180,7 @@ export default function App() {
   const [scanningToken, setScanningToken] = useState(false);
   const [formError, setFormError] = useState('');
   const [savingConnection, setSavingConnection] = useState(false);
+  const [controlsTab, setControlsTab] = useState<ControlsTab>('lights');
   const [room, setRoom] = useState('all');
   const [query, setQuery] = useState('');
   const [onlyFavourites, setOnlyFavourites] = useState(false);
@@ -645,6 +647,8 @@ export default function App() {
       !snapshot.registry.find((reg) => reg.entity_id === entity.entity_id)
         ?.disabled_by,
   );
+  const lights = entities.filter((entity) => domainOf(entity) === 'light');
+  const automations = snapshot.entities.filter((entity) => domainOf(entity) === 'automation');
   const hasUnassigned = entities.some((entity) => roomFor(entity, snapshot) === null);
   const rooms = [
     ...snapshot.areas.map((area) => ({ ...area, selection: `area:${area.area_id}` })),
@@ -945,17 +949,66 @@ export default function App() {
                   <span className="eyebrow date-label">YOUR DEVICES</span>
                   <h1>Home controls</h1>
                   <p>
-                    Lights, temperature, blinds, and more. Filter by room or
-                    find a device.
+                    Lights, moods, and automations, the things you reach for
+                    every day.
                   </p>
                 </div>
-                <div className="setup-room-actions">
+                {controlsTab === 'devices' && <div className="setup-room-actions">
                   <span className="count-pill">{snapshot.areas.length} rooms</span>
                   <button className="secondary-button" onClick={() => askConcierge('Help me organize my rooms and the devices assigned to them.')}>
                     <MessageCircle size={16} /> Organize rooms
                   </button>
-                </div>
+                </div>}
               </section>
+              <ControlsTabs
+                tab={controlsTab}
+                onTab={setControlsTab}
+                lightsOn={lights.filter((entity) => entity.state === 'on').length}
+                moods={scenes.length}
+                automationsOn={automations.filter((entity) => entity.state === 'on').length}
+              />
+              <div id="controls-panel" role="tabpanel" aria-labelledby={`controls-tab-${controlsTab}`}>
+                {controlsTab === 'lights' && (
+                  <LightsPanel
+                    rooms={rooms.map((area) => ({
+                      key: area.selection,
+                      name: area.name,
+                      lights: lights.filter((entity) => roomFor(entity, snapshot) === area.area_id),
+                    }))}
+                    renderLight={renderDevice}
+                    disabled={!canControl}
+                    onSwitch={(targets, on) => void Promise.all(targets.map((entity) => act(entity, on ? 'turn_on' : 'turn_off')))}
+                  />
+                )}
+                {controlsTab === 'moods' && (
+                  <section className="controls-moods" aria-label="Moods">
+                    {scenes.length === 0 && (
+                      <p className="controls-empty">A mood sets several lights and devices at once. Concierge can create one from your lights and devices.</p>
+                    )}
+                    <div className="scenes-grid">
+                      {scenes.map((entity, index) => (
+                        <SceneButton key={entity.entity_id} entity={entity} index={index} />
+                      ))}
+                    </div>
+                    <button className="setup-link controls-more" onClick={() => askConcierge('Help me set up a mood using the rooms and devices in my home.')}>
+                      <MessageCircle size={16} /> Set up a mood
+                    </button>
+                  </section>
+                )}
+                {controlsTab === 'automations' && (
+                  <AutomationsPanel
+                    automations={automations}
+                    setup={setup}
+                    revision={`${setup?.changes().length ?? 0}:${setup?.changes()[0]?.id ?? ''}`}
+                    now={now}
+                    disabled={!canControl}
+                    pending={pending}
+                    onToggle={(entity, on) => void act(entity, on ? 'turn_on' : 'turn_off')}
+                    onSetUp={() => navigate('setup')}
+                  />
+                )}
+              </div>
+              {controlsTab === 'devices' && (
               <div className="rooms-grid">
                 {rooms.map((area) => {
                   const Icon = roomIcon(area.name);
@@ -982,10 +1035,11 @@ export default function App() {
                   );
                 })}
               </div>
+              )}
             </>
           )}
 
-          {page === 'controls' && (
+          {page === 'controls' && controlsTab === 'devices' && (
             <section className="devices-section">
               <div className="section-heading device-section-heading">
                 <div>
@@ -1293,6 +1347,7 @@ export default function App() {
                     className="secondary-button"
                     onClick={() => {
                       navigate('controls');
+                      setControlsTab('devices');
                       setOnlyFavourites(true);
                     }}
                   >

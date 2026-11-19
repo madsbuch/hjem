@@ -152,10 +152,12 @@ test('saved native chats restore on restart and resume text context without repl
   expect(JSON.stringify(storage.chats)).not.toContain('saved-read');
   expect(JSON.stringify(storage.chats)).not.toContain('saved-action');
   await navigate(page, 'Controls');
+  await page.getByRole('tab', { name: 'All devices', exact: true }).click();
   await expect(page.getByRole('switch', { name: 'Toggle Pendant lights', exact: true })).not.toBeChecked();
   await page.reload();
   // Demo devices reset on reload; restoring a transcript must not replay its action.
   await navigate(page, 'Controls');
+  await page.getByRole('tab', { name: 'All devices', exact: true }).click();
   await expect(page.getByRole('switch', { name: 'Toggle Pendant lights', exact: true })).toBeChecked();
   await navigate(page, 'Concierge');
   await expect(log(page)).toContainText('The pendant lights are off.');

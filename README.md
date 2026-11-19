@@ -7,7 +7,7 @@ Hjem means “home” in Danish. It is a Tauri 2 home screen for an Android tabl
 Start with the interactive demo home, then connect your own Home Assistant in Settings.
 
 - See today’s events from iCal/ICS subscription links and Home Assistant, including all-day and recurring events.
-- Open Controls to browse rooms, adjust devices, and pin favourites.
+- Open Controls for the three everyday things: **Lights**, grouped by room, with a switch and brightness for each light, a switch for each room, and **All lights off**; **Moods**, set with one tap; and **Automations**, each with what it does in a sentence and a switch to turn it on or pause it. **All devices** keeps everything else: thermostats, blinds, switches, speakers, and sensors, with rooms, search, and pinned favourites.
 - Open installed Android apps from a searchable app drawer.
 - Browse rooms using your Home Assistant areas and device assignments.
 - Search devices and filter by room or pinned favourites.

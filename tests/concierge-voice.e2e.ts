@@ -280,6 +280,7 @@ test('streamed tool arguments execute only after a complete response and affect 
   await emit(page, 2, [delta({ audio: { transcript: 'The pendant lights are now off.' } }), finish()], true);
   await expect(page.getByRole('article', { name: 'Home Concierge response' })).toContainText('The pendant lights are now off.');
   await navigate(page, 'Controls');
+  await page.getByRole('tab', { name: 'All devices', exact: true }).click();
   await expect(page.getByRole('switch', { name: 'Toggle Pendant lights', exact: true })).not.toBeChecked();
   await expect(page.getByRole('switch', { name: 'Toggle Reading lamp', exact: true })).toBeChecked();
 });
@@ -338,6 +339,7 @@ test('Stop cancels playback and ignores late audio and actions from the interrup
     finish('tool_calls'),
   ], true);
   await navigate(page, 'Controls');
+  await page.getByRole('tab', { name: 'All devices', exact: true }).click();
   await expect(page.getByRole('switch', { name: 'Toggle Pendant lights', exact: true })).toBeChecked();
   await navigate(page, 'Concierge');
   await expect(page.getByRole('log')).not.toContainText('Late audio must be ignored.');

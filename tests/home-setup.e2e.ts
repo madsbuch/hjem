@@ -81,6 +81,7 @@ test('Concierge creates a room, moves a device, saves a working mood, and undoes
   await page.goto('/');
   await configure(page);
   await navigate(page, 'Controls');
+  await page.getByRole('tab', { name: 'All devices', exact: true }).click();
   await page.getByRole('button', { name: 'Organize rooms', exact: true }).click();
   const input = page.getByRole('textbox', { name: 'Message Home Concierge' });
   await expect(input).toHaveValue('Help me organize my rooms and the devices assigned to them.');
@@ -88,6 +89,7 @@ test('Concierge creates a room, moves a device, saves a working mood, and undoes
   await input.press('Enter');
   await expect(page.getByRole('log')).toContainText('Your demo office and Reading time mood are ready.');
   await navigate(page, 'Controls');
+  await page.getByRole('tab', { name: 'All devices', exact: true }).click();
   await page.locator('.room-card').filter({ has: page.getByRole('heading', { name: 'Office', exact: true }) }).click();
   await expect(page.getByRole('switch', { name: 'Toggle Reading lamp', exact: true })).toBeVisible();
   await expect(page.getByRole('switch', { name: 'Toggle Pendant lights', exact: true })).toHaveCount(0);
@@ -95,6 +97,7 @@ test('Concierge creates a room, moves a device, saves a working mood, and undoes
   await page.getByRole('button', { name: 'Reading time', exact: true }).click();
   await expect(page.getByRole('status')).toContainText(/Reading time/);
   await navigate(page, 'Controls');
+  await page.getByRole('tab', { name: 'All devices', exact: true }).click();
   const lamp = page.locator('.device-card').filter({ has: page.getByRole('heading', { name: 'Reading lamp', exact: true }) });
   await expect(lamp.getByRole('slider')).toHaveValue('30');
   await navigate(page, 'Concierge');
@@ -104,6 +107,7 @@ test('Concierge creates a room, moves a device, saves a working mood, and undoes
     await expect(page.locator('.setup-history li')).toHaveCount(2 - index);
   }
   await navigate(page, 'Controls');
+  await page.getByRole('tab', { name: 'All devices', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Office', exact: true })).toHaveCount(0);
   await page.locator('.room-card').filter({ has: page.getByRole('heading', { name: 'Living room', exact: true }) }).click();
   await expect(page.getByRole('switch', { name: 'Toggle Reading lamp', exact: true })).toBeVisible();
@@ -133,12 +137,14 @@ test('new empty rooms stay visible and rename undo preserves their identity', as
   await page.getByRole('button', { name: 'Send message', exact: true }).click();
   await expect(page.getByRole('log')).toContainText('The empty Nursery is ready');
   await navigate(page, 'Controls');
+  await page.getByRole('tab', { name: 'All devices', exact: true }).click();
   await expect(page.locator('.room-card').filter({ hasText: 'Nursery' })).toContainText('0 devices');
   await navigate(page, 'Concierge');
   await page.locator('.setup-history summary').click();
   await page.locator('.setup-history li').first().getByRole('button').click();
   await expect(page.locator('.setup-history li')).toHaveCount(1);
   await navigate(page, 'Controls');
+  await page.getByRole('tab', { name: 'All devices', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Spare room', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Nursery', exact: true })).toHaveCount(0);
   expect(roomId).not.toBe('');
@@ -159,6 +165,7 @@ test('mood setup entry point opens a draft without sending or changing devices',
 async function inputReturnCheck(page: Page) {
   await page.getByRole('textbox', { name: 'Message Home Concierge' }).fill('My revised mood request');
   await navigate(page, 'Controls');
+  await page.getByRole('tab', { name: 'All devices', exact: true }).click();
   await navigate(page, 'Concierge');
   await expect(page.getByRole('textbox', { name: 'Message Home Concierge' })).not.toHaveValue('Help me set up a mood using the rooms and devices in my home.');
 }
@@ -275,6 +282,7 @@ test('live room and mood changes persist at the HA endpoint and survive reconnec
   await page.getByRole('button', { name: 'Desk reading', exact: true }).click();
   await expect(page.getByRole('status')).toContainText('device states confirmed');
   await navigate(page, 'Controls');
+  await page.getByRole('tab', { name: 'All devices', exact: true }).click();
   await expect(page.locator('.room-card').filter({ hasText: 'Office' })).toContainText('1 devices');
   await expect(page.getByRole('slider', { name: 'Desk lamp brightness' })).toHaveValue('30');
   // Real HA area IDs must not collide with Hjem's All rooms / Other devices filters.

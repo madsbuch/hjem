@@ -129,6 +129,7 @@ async function auditPages(page: Page, testInfo: TestInfo) {
     // Return from the longest page to Controls to catch persistent mobile
     // auto-zoom caused by a previously wider layout viewport.
     await navigate(page, 'Controls');
+    await page.getByRole('tab', { name: 'All devices', exact: true }).click();
     const afterNavigation = await measure(page, size.width);
     expect.soft(afterNavigation.documentWidth, `Controls return at ${size.width}`).toBeLessThanOrEqual(size.width + 1);
   }
