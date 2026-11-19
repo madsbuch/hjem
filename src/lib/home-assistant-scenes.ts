@@ -12,8 +12,8 @@ export class SceneRequestError extends Error {
 }
 
 export class SceneConfigNotFoundError extends SceneRequestError {
-  constructor() {
-    super('This scene no longer has a saved Home Assistant configuration.', true);
+  constructor(noun = 'scene') {
+    super(`This ${noun} no longer has a saved Home Assistant configuration.`, true);
   }
 }
 
@@ -70,8 +70,16 @@ export function parseSceneConfig(value: unknown): SceneConfig {
   };
 }
 
+type EditorKind = 'scene' | 'automation' | 'script';
+/** Wording for each fixed editor endpoint; the scene texts predate the others. */
+const editors: Record<EditorKind, { noun: string; item: string; manage: string; editing: string }> = {
+  scene: { noun: 'scene', item: 'mood', manage: 'manage moods', editing: 'scene editing' },
+  automation: { noun: 'automation', item: 'automation', manage: 'manage automations', editing: 'automation editing' },
+  script: { noun: 'script', item: 'script', manage: 'manage scripts', editing: 'script editing' },
+};
+
 /** Fixed scene-editor endpoint, never an arbitrary URL supplied by the model. */
-export async function requestSceneConfig(
+export function requestSceneConfig(
   serverUrl: string,
   token: string,
   method: 'GET' | 'POST' | 'DELETE',
@@ -79,23 +87,37 @@ export async function requestSceneConfig(
   config?: SceneConfig,
   signal?: AbortSignal,
 ): Promise<unknown> {
-  if (!validSceneConfigId(configId)) throw new SceneRequestError('This scene has an unsupported configuration identifier.', true);
+  return requestEditorConfig('scene', serverUrl, token, method, configId, config, signal);
+}
+
+/** One of Home Assistant's three editor endpoints, chosen by kind and never by URL. */
+export async function requestEditorConfig(
+  kind: EditorKind,
+  serverUrl: string,
+  token: string,
+  method: 'GET' | 'POST' | 'DELETE',
+  configId: string,
+  config?: Record<string, unknown> | SceneConfig,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  const { noun, item, manage, editing } = editors[kind];
+  if (!validSceneConfigId(configId)) throw new SceneRequestError(`This ${noun} has an unsupported configuration identifier.`, true);
   const body = config === undefined ? undefined : JSON.stringify(config);
   if (body !== undefined && new TextEncoder().encode(body).byteLength > MAX_SCENE_BYTES)
-    throw new SceneRequestError('This mood is too large to save.', true);
+    throw new SceneRequestError(`This ${item} is too large to save.`, true);
   if (signal?.aborted) throw new DOMException('Stopped.', 'AbortError');
   if (isTauri()) {
     try {
-      return await invoke<unknown>('home_scene_config', {
-        expectedServerUrl: serverUrl, method, configId, config: config ?? null,
-      });
+      return kind === 'scene'
+        ? await invoke<unknown>('home_scene_config', { expectedServerUrl: serverUrl, method, configId, config: config ?? null })
+        : await invoke<unknown>('home_routine_config', { expectedServerUrl: serverUrl, kind, method, configId, config: config ?? null });
     } catch (cause: unknown) {
       if (isRecord(cause) && typeof cause.message === 'string') {
-        if (cause.code === 'not_found') throw new SceneConfigNotFoundError();
+        if (cause.code === 'not_found') throw new SceneConfigNotFoundError(noun);
         if (cause.code === 'rejected' || cause.code === 'unconfirmed')
           throw new SceneRequestError(cause.message, cause.code === 'rejected');
       }
-      throw new SceneRequestError('Home Assistant could not confirm this scene request. Read its current configuration before trying again.');
+      throw new SceneRequestError(`Home Assistant could not confirm this ${noun} request. Read its current configuration before trying again.`);
     }
   }
   const controller = new AbortController();
@@ -103,7 +125,7 @@ export async function requestSceneConfig(
   signal?.addEventListener('abort', cancel, { once: true });
   const timeout = setTimeout(cancel, 12_000);
   try {
-    const response = await fetch(`${serverUrl}/api/config/scene/config/${configId}`, {
+    const response = await fetch(`${serverUrl}/api/config/${kind}/config/${configId}`, {
       method,
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body,
@@ -111,17 +133,17 @@ export async function requestSceneConfig(
       signal: controller.signal,
     });
     if (response.status === 401 || response.status === 403)
-      throw new SceneRequestError('Home Assistant administrator access is required to manage moods. Update the connection in Settings.', true);
+      throw new SceneRequestError(`Home Assistant administrator access is required to ${manage}. Update the connection in Settings.`, true);
     if (response.status === 404) {
       const detail = await readResponse(response).catch(() => null);
-      if (isRecord(detail) && detail.message === 'Resource not found') throw new SceneConfigNotFoundError();
-      throw new SceneRequestError('This Home Assistant connection does not support scene editing.', true);
+      if (isRecord(detail) && detail.message === 'Resource not found') throw new SceneConfigNotFoundError(noun);
+      throw new SceneRequestError(`This Home Assistant connection does not support ${editing}.`, true);
     }
-    if (!response.ok) throw new SceneRequestError('Home Assistant did not accept this scene configuration. No automatic retry was made.', response.status >= 400 && response.status < 500);
+    if (!response.ok) throw new SceneRequestError(`Home Assistant did not accept this ${noun} configuration. No automatic retry was made.`, response.status >= 400 && response.status < 500);
     return await readResponse(response);
   } catch (error: unknown) {
     if (error instanceof Error && error.name !== 'AbortError' && error.name !== 'TypeError') throw error;
-    throw new SceneRequestError('Home Assistant did not confirm this scene request. Check the saved mood before trying again. Browser previews also require Home Assistant to allow browser access.');
+    throw new SceneRequestError(`Home Assistant did not confirm this ${noun} request. Check the saved ${item} before trying again. Browser previews also require Home Assistant to allow browser access.`);
   } finally {
     clearTimeout(timeout);
     signal?.removeEventListener('abort', cancel);

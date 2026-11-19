@@ -554,6 +554,97 @@ describe('Home Assistant connection', () => {
   });
 });
 
+describe('automations, scripts, and helpers', () => {
+  async function connected() {
+    const { client, connection, socket } = setup();
+    await authenticate(socket);
+    await initialSnapshot(socket);
+    await connection;
+    return { client, socket };
+  }
+  const sent = (socket: FakeSocket, type: string) => required([...socket.sent].reverse().find((message) => message.type === type));
+
+  it('asks Home Assistant to check a routine and reports what it rejects', async () => {
+    const { client, socket } = await connected();
+    const triggers = [{ trigger: 'state', entity_id: 'light.kitchen' }];
+    const actions = [{ action: 'light.turn_on' }];
+    const checking = client.validateRoutine({ triggers, actions });
+    expect(sent(socket, 'validate_config')).toMatchObject({ triggers, actions });
+    socket.answer('validate_config', { triggers: { valid: true, error: null }, actions: { valid: false, error: 'Unknown action light.turn_onn' } });
+    await expect(checking).resolves.toEqual({ checked: true, errors: ['actions: Unknown action light.turn_onn'] });
+    // An older server that cannot check is not an obstacle; saving still validates.
+    const unsupported = client.validateRoutine({ actions });
+    socket.answer('validate_config', 'Unknown command.', false);
+    await expect(unsupported).resolves.toEqual({ checked: false, errors: [] });
+  });
+
+  it('reads routine and automation editor configurations through their fixed paths', async () => {
+    const { client } = await connected();
+    const fetch = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ result: 'ok', alias: 'Door light' }), { status: 200 }));
+    vi.stubGlobal('fetch', fetch);
+    await client.saveRoutine('automation', 'hjem_1', { alias: 'Door light', triggers: [], actions: [] });
+    await client.readRoutine('script', 'movie_time');
+    await client.deleteRoutine('automation', 'hjem_1');
+    expect(fetch.mock.calls.map(([url, init]) => [init.method, url])).toEqual([
+      ['POST', 'http://homeassistant.local:8123/api/config/automation/config/hjem_1'],
+      ['GET', 'http://homeassistant.local:8123/api/config/script/config/movie_time'],
+      ['DELETE', 'http://homeassistant.local:8123/api/config/automation/config/hjem_1'],
+    ]);
+    await expect(client.readRoutine('automation', '../../auth')).rejects.toThrow('identifier');
+    expect(fetch).toHaveBeenCalledTimes(3);
+  });
+
+  it('lists a remote’s triggers and a routine’s recent runs', async () => {
+    const { client, socket } = await connected();
+    const triggers = client.deviceTriggers('device1');
+    expect(sent(socket, 'device_automation/trigger/list')).toMatchObject({ device_id: 'device1' });
+    socket.answer('device_automation/trigger/list', [{ platform: 'device', domain: 'zha', type: 'remote_button_short_press', subtype: 'turn_on' }, 'junk']);
+    await expect(triggers).resolves.toEqual([{ platform: 'device', domain: 'zha', type: 'remote_button_short_press', subtype: 'turn_on' }]);
+    const runs = client.routineTraces('automation', 'hjem_1');
+    expect(sent(socket, 'trace/list')).toMatchObject({ domain: 'automation', item_id: 'hjem_1' });
+    socket.answer('trace/list', [
+      { run_id: 'a', state: 'stopped', script_execution: 'failed_conditions', trigger: 'state of binary_sensor.door', timestamp: { start: '2026-11-19T07:00:00Z', finish: '2026-11-19T07:00:01Z' }, last_step: 'condition/0' },
+      { state: 'stopped' },
+    ]);
+    await expect(runs).resolves.toEqual([{ run_id: 'a', started: '2026-11-19T07:00:00Z', finished: '2026-11-19T07:00:01Z', result: 'failed_conditions', trigger: 'state of binary_sensor.door', error: undefined, last_step: 'condition/0' }]);
+  });
+
+  it('manages helpers and routine switches with fixed commands', async () => {
+    const { client, socket } = await connected();
+    const listing = client.listHelpers('input_boolean');
+    socket.answer('input_boolean/list', [{ id: 'guest_mode', name: 'Guest mode' }]);
+    await expect(listing).resolves.toEqual([{ id: 'guest_mode', name: 'Guest mode' }]);
+    const missing = client.listHelpers('timer');
+    socket.answer('timer/list', 'Unknown command.', false);
+    await expect(missing).resolves.toEqual([]);
+
+    const creating = client.createHelper('input_number', { name: 'Level', min: 1, max: 10, type: 'call_service' });
+    expect(sent(socket, 'input_number/create')).toMatchObject({ name: 'Level', min: 1, max: 10 });
+    socket.answer('input_number/create', { id: 'level', name: 'Level', min: 1, max: 10 });
+    await expect(creating).resolves.toMatchObject({ id: 'level' });
+    const updating = client.updateHelper('input_number', 'level', { max: 20 });
+    expect(sent(socket, 'input_number/update')).toMatchObject({ input_number_id: 'level', max: 20 });
+    socket.answer('input_number/update', { id: 'level', name: 'Level', min: 1, max: 20 });
+    await updating;
+    const deleting = client.deleteHelper('input_number', 'level');
+    expect(sent(socket, 'input_number/delete')).toMatchObject({ input_number_id: 'level' });
+    socket.answer('input_number/delete', null);
+    await deleting;
+
+    const hiding = client.setEntityHidden('light.kitchen', true);
+    expect(sent(socket, 'config/entity_registry/update')).toMatchObject({ entity_id: 'light.kitchen', hidden_by: 'user' });
+    socket.answer('config/entity_registry/update', {});
+    await hiding;
+
+    const pausing = client.routineService('automation', 'turn_off', 'automation.door_light');
+    expect(sent(socket, 'call_service')).toMatchObject({ domain: 'automation', service: 'turn_off', target: { entity_id: 'automation.door_light' } });
+    socket.answer('call_service', {});
+    await pausing;
+    await expect(client.routineService('script', 'trigger', 'script.movie_time')).rejects.toThrow('cannot be used this way');
+    await expect(client.routineService('automation', 'turn_on', 'lock.front_door')).rejects.toThrow('cannot be used this way');
+  });
+});
+
 describe('server addresses', () => {
   it('normalizes local addresses, TLS, and reverse proxy paths', () => {
     expect(normalizeServerUrl(' homeassistant.local:8123/ ')).toBe(

@@ -27,6 +27,9 @@ import {
   ScanLine,
   PencilRuler,
   Zap,
+  Workflow,
+  Lightbulb,
+  CircleHelp,
 } from 'lucide-react';
 import {
   HomeAssistantClient,
@@ -64,6 +67,7 @@ import { selectWeather, WeatherSummary } from './components/WeatherSummary';
 import { ConciergeChat } from './components/ConciergeChat';
 import { ConciergeSettings } from './components/ConciergeSettings';
 import { HomePlanner } from './components/HomePlanner';
+import { HomeStudio } from './components/HomeStudio';
 import type { PairingStack } from './components/AddAppliance';
 import type { LightStep } from './lib/home-planner';
 import { ConfigurationTransfer } from './components/ConfigurationTransfer';
@@ -90,7 +94,7 @@ import {
   setAppHidden,
 } from './lib/storage';
 
-type Page = 'home' | 'apps' | 'controls' | 'electricity' | 'planner' | 'concierge' | 'settings';
+type Page = 'home' | 'apps' | 'controls' | 'electricity' | 'planner' | 'setup' | 'concierge' | 'settings';
 const navigation: { id: Page; label: string; Icon: typeof House }[] = [
   { id: 'home', label: 'Overview', Icon: House },
   { id: 'apps', label: 'Apps', Icon: LayoutGrid },
@@ -109,6 +113,11 @@ const demoFavourites = [
   'climate.living_room',
   'light.reading_lamp',
   'media_player.speaker',
+];
+const setupSuggestions = [
+  { text: 'Turn on the reading lamp when the front door opens after dark', Icon: Lightbulb },
+  { text: 'Explain what my automations do', Icon: CircleHelp },
+  { text: 'Make a remote button control a lamp', Icon: Workflow },
 ];
 const sceneIcons = [Sun, Moon, ArrowUpRight, Coffee];
 const roomIcon = (name: string) =>
@@ -312,8 +321,8 @@ export default function App() {
     error: launcher.error,
     onRefresh: () => void launcher.refresh(),
   };
-  /** The Planner opens from Settings, so Settings stays highlighted there. */
-  const section: Page = page === 'planner' ? 'settings' : page;
+  /** The Planner and Home setup open from Settings, so Settings stays highlighted there. */
+  const section: Page = page === 'planner' || page === 'setup' ? 'settings' : page;
   const navigate = (next: Page) => {
     setPage(next);
     setRoom('all');
@@ -708,8 +717,38 @@ export default function App() {
     );
   };
 
+  const conciergeChat = {
+    messages: concierge.messages,
+    busy: concierge.busy,
+    status: concierge.status,
+    settingsPending: concierge.settingsBusy,
+    configured: concierge.settings.hasApiKey && concierge.settings.model.length > 0,
+    onSend: (text: string) => void concierge.send(text),
+    onSendVoice: concierge.sendVoice,
+    voiceSessionKey: concierge.voiceSessionKey,
+    chats: concierge.chats,
+    chatId: concierge.chatId,
+    historyLoading: concierge.historyLoading,
+    historyError: concierge.historyError,
+    saveError: concierge.saveError,
+    readOnly: concierge.readOnly,
+    onOpenChat: concierge.openChat,
+    onRefreshChats: concierge.refreshChats,
+    onRetrySaving: concierge.retrySaving,
+    onStop: concierge.stop,
+    onClear: concierge.clear,
+    onOpenSettings: () => navigate('settings'),
+    draftRequest: conciergeDraft,
+    onDraftApplied: (id: number) => setConciergeDraft((current) => current?.id === id ? undefined : current),
+  };
+  const conciergeUsage = concierge.usage?.cost != null && (
+    <p className="concierge-usage">
+      Last turn: ${concierge.usage.cost.toFixed(4)} reported by OpenRouter
+    </p>
+  );
+
   return (
-    <div className={`app-shell${page === 'concierge' ? ' app-shell-concierge' : ''}`}>
+    <div className={`app-shell${page === 'concierge' || page === 'setup' ? ' app-shell-concierge' : ''}`}>
       <aside className="sidebar">
         <button
           className="brand"
@@ -1017,48 +1056,39 @@ export default function App() {
           )}
 
           {page === 'concierge' && (
-            <>
+            <ConciergeChat {...conciergeChat}>
+              <SetupHistory
+                changes={setup?.changes() ?? []}
+                demo={mode === 'demo'}
+                disabled={!canControl || concierge.busy || setupUiBusy}
+                onUndo={(id) => void undoSetup(id)}
+              />
+              {conciergeUsage}
+            </ConciergeChat>
+          )}
+
+          {page === 'setup' && (
+            <HomeStudio
+              snapshot={snapshot}
+              demo={mode === 'demo'}
+              ready={canControl && !setupUiBusy}
+              busy={concierge.busy}
+              setup={setup}
+              changes={setup?.changes() ?? []}
+              now={now}
+              onUndo={(id) => void undoSetup(id)}
+              onAsk={(text) => setConciergeDraft({ id: ++draftSequence.current, text })}
+              onBack={() => navigate('settings')}
+            >
               <ConciergeChat
-                messages={concierge.messages}
-                busy={concierge.busy}
-                status={concierge.status}
-                settingsPending={concierge.settingsBusy}
-                configured={
-                  concierge.settings.hasApiKey &&
-                  concierge.settings.model.length > 0
-                }
-                onSend={(text) => void concierge.send(text)}
-                onSendVoice={concierge.sendVoice}
-                voiceSessionKey={concierge.voiceSessionKey}
-                chats={concierge.chats}
-                chatId={concierge.chatId}
-                historyLoading={concierge.historyLoading}
-                historyError={concierge.historyError}
-                saveError={concierge.saveError}
-                readOnly={concierge.readOnly}
-                onOpenChat={concierge.openChat}
-                onRefreshChats={concierge.refreshChats}
-                onRetrySaving={concierge.retrySaving}
-                onStop={concierge.stop}
-                onClear={concierge.clear}
-                onOpenSettings={() => navigate('settings')}
-                draftRequest={conciergeDraft}
-                onDraftApplied={(id) => setConciergeDraft((current) => current?.id === id ? undefined : current)}
+                {...conciergeChat}
+                compact
+                suggestions={setupSuggestions}
+                placeholder="Describe a change…"
               >
-                <SetupHistory
-                  changes={setup?.changes() ?? []}
-                  demo={mode === 'demo'}
-                  disabled={!canControl || concierge.busy || setupUiBusy}
-                  onUndo={(id) => void undoSetup(id)}
-                />
-                {concierge.usage?.cost != null && (
-                  <p className="concierge-usage">
-                    Last turn: ${concierge.usage.cost.toFixed(4)} reported by
-                    OpenRouter
-                  </p>
-                )}
+                {conciergeUsage}
               </ConciergeChat>
-            </>
+            </HomeStudio>
           )}
 
           {page === 'settings' && (
@@ -1125,6 +1155,21 @@ export default function App() {
                       Disconnect and explore demo
                     </button>
                   )}
+                </section>
+                <section className="settings-card">
+                  <span className="settings-icon">
+                    <Workflow size={25} />
+                  </span>
+                  <h2>Home setup</h2>
+                  <p>
+                    Tell Concierge what your home should do and watch it take
+                    shape: automations, scripts, moods, rooms, and names, with
+                    your home’s current state beside the conversation.
+                  </p>
+                  <button className="primary-button" onClick={() => navigate('setup')}>
+                    Open home setup
+                    <ArrowRight size={17} />
+                  </button>
                 </section>
                 <section className="settings-card">
                   <span className="settings-icon">

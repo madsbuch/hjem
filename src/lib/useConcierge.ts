@@ -37,6 +37,22 @@ const labels: Record<string, string> = {
   assign_entity_to_room: 'Updating the room assignment',
   inspect_mood: 'Checking your mood',
   save_mood: 'Saving your mood',
+  rename_device: 'Renaming your device',
+  rename_entity: 'Renaming your device',
+  set_entity_hidden: 'Updating what Hjem shows',
+  delete_room: 'Deleting your room',
+  list_routines: 'Checking automations and scripts',
+  inspect_routine: 'Reading your routine',
+  list_device_triggers: 'Checking what the device can trigger',
+  save_automation: 'Saving your automation',
+  save_script: 'Saving your script',
+  delete_routine: 'Deleting your routine',
+  set_automation_enabled: 'Updating your automation',
+  run_routine: 'Running your routine',
+  get_routine_runs: 'Checking recent runs',
+  list_helpers: 'Checking helpers',
+  save_helper: 'Saving your helper',
+  delete_helper: 'Deleting your helper',
   list_setup_changes: 'Checking recent setup changes',
   undo_setup_change: 'Undoing your setup change',
   list_apps: 'Finding your apps',
@@ -294,6 +310,8 @@ export function useConcierge(context: ConciergeContext, homeKey: string) {
           ? '\nThis is a spoken conversation. Reply naturally and concisely in the language the user speaks. Avoid Markdown formatting in spoken answers. Use the same home tools and wait for their results before reporting completed actions.'
           : ''),
         tools: conciergeTools,
+        // Setting up a routine takes several reads before the write, and a retry if it is refused.
+        limits: { requests: 16, tools: 36 },
         request: voice
           ? (body, signal) => requestConciergeVoice(body, signal, (chunk) => {
               if (isCurrentRun() && !signal.aborted) voice.onAudio(chunk);

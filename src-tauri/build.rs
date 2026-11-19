@@ -6,6 +6,7 @@ fn main() {
         tauri_build::AppManifest::new().commands(&[
             "qr_scanner_native",
             "home_scene_config",
+            "home_routine_config",
             "calendar_add_feed",
             "calendar_update_feed",
             "calendar_remove_feed",

@@ -1,5 +1,5 @@
 import type { HassDevice, HassEntity, HassSnapshot } from './home-assistant';
-import type { SceneConfig } from './home-setup-types';
+import type { HelperDomain, HelperRecord, RoutineConfig, RoutineKind, SceneConfig } from './home-setup-types';
 import { numberAttribute } from './entities';
 
 const actionNumber = (value: unknown): number => {
@@ -84,6 +84,56 @@ export const demoSceneConfigs: Record<string, SceneConfig> = Object.fromEntries(
   }),
 );
 
+/** Sample routines, stored the way Home Assistant's editors store them. */
+export const demoRoutineConfigs: Record<RoutineKind, Record<string, RoutineConfig>> = {
+  automation: {
+    demo_welcome_light: {
+      id: 'demo_welcome_light',
+      alias: 'Welcome home light',
+      description: 'Lights the reading lamp when the front door opens after dark.',
+      mode: 'single',
+      triggers: [{ trigger: 'state', entity_id: 'binary_sensor.front_door', to: 'on' }],
+      conditions: [{ condition: 'sun', after: 'sunset' }],
+      actions: [{ action: 'light.turn_on', target: { entity_id: 'light.reading_lamp' }, data: { brightness_pct: 60 } }],
+    },
+    demo_bedside_dimmer: {
+      id: 'demo_bedside_dimmer',
+      alias: 'Dimmer switch turns on the bedside lamp',
+      description: '',
+      mode: 'restart',
+      triggers: [{ trigger: 'state', entity_id: 'event.remote_dimmer_action', attribute: 'event_type', to: 'on' }],
+      conditions: [],
+      actions: [{ action: 'light.turn_on', target: { entity_id: 'light.bedside' }, data: { brightness_pct: 40 } }],
+    },
+    demo_wake_up: {
+      id: 'demo_wake_up',
+      alias: 'Wake up gently',
+      description: 'Opens the blinds and brings up the bedside lamp at the wake-up time.',
+      mode: 'single',
+      triggers: [{ trigger: 'time', at: 'input_datetime.wake_up_time' }],
+      conditions: [{ condition: 'time', weekday: ['mon', 'tue', 'wed', 'thu', 'fri'] }],
+      actions: [
+        { action: 'cover.set_cover_position', target: { entity_id: 'cover.bedroom' }, data: { position: 100 } },
+        { action: 'light.turn_on', target: { entity_id: 'light.bedside' }, data: { brightness_pct: 30 } },
+      ],
+    },
+  },
+  script: {
+    movie_time: {
+      alias: 'Movie time',
+      description: 'Sets the cosy evening mood and pauses the kitchen speaker.',
+      mode: 'single',
+      sequence: [
+        { action: 'scene.turn_on', target: { entity_id: 'scene.cosy_evening' } },
+        { action: 'media_player.media_pause', target: { entity_id: 'media_player.kitchen_sonos' } },
+      ],
+    },
+  },
+};
+export const demoHelpers: Partial<Record<HelperDomain, HelperRecord[]>> = {
+  input_datetime: [{ id: 'wake_up_time', name: 'Wake-up time', has_date: false, has_time: true }],
+};
+
 export const demoSnapshot: HassSnapshot = {
   locationName: 'Our home',
   structureStatus: 'ready',
@@ -111,6 +161,8 @@ export const demoSnapshot: HassSnapshot = {
       device_id: deviceId,
       ...(item.entity_id.startsWith('sensor.') ? { hidden_by: 'integration' } : {}),
     })),
+    { entity_id: 'input_datetime.wake_up_time', area_id: null, device_id: null, platform: 'input_datetime', unique_id: 'wake_up_time' },
+    { entity_id: 'script.movie_time', area_id: null, device_id: null, platform: 'script', unique_id: 'movie_time' },
   ],
   entities: [
     entity('light.living_pendant', 'Pendant lights', 'on', {
@@ -187,6 +239,11 @@ export const demoSnapshot: HassSnapshot = {
     entity('scene.cosy_evening', 'Cosy evening', 'unknown', { id: 'cosy_evening' }),
     entity('scene.away', 'Heading out', 'unknown', { id: 'away' }),
     entity('scene.good_night', 'Good night', 'unknown', { id: 'good_night' }),
+    entity('automation.welcome_home_light', 'Welcome home light', 'on', { id: 'demo_welcome_light', last_triggered: null, mode: 'single' }),
+    entity('automation.dimmer_switch_turns_on_the_bedside_lamp', 'Dimmer switch turns on the bedside lamp', 'on', { id: 'demo_bedside_dimmer', last_triggered: null, mode: 'restart' }),
+    entity('automation.wake_up_gently', 'Wake up gently', 'off', { id: 'demo_wake_up', last_triggered: null, mode: 'single' }),
+    entity('script.movie_time', 'Movie time', 'off', { last_triggered: null, mode: 'single' }),
+    entity('input_datetime.wake_up_time', 'Wake-up time', '06:45:00', { has_date: false, has_time: true }),
   ],
 };
 

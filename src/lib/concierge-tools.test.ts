@@ -530,13 +530,36 @@ function setupHome() {
   const undo = vi.fn<HomeSetup['undo']>().mockResolvedValue({ changed: true });
   const renameDevice = vi.fn<HomeSetup['renameDevice']>().mockResolvedValue({ changed: true });
   const renameEntity = vi.fn<HomeSetup['renameEntity']>().mockResolvedValue({ changed: true });
+  const routines = {
+    listRoutines: vi.fn<HomeSetup['listRoutines']>().mockResolvedValue({
+      automations: [{ entity_id: 'automation.door_light', name: 'Door light', enabled: true }],
+      scripts: [{ entity_id: 'script.movie_time', name: 'Movie time' }],
+    }),
+    inspectRoutine: vi.fn<HomeSetup['inspectRoutine']>().mockImplementation(async (entityId) => ({ entity_id: entityId, editable: true, config: {} })),
+    describeRoutine: vi.fn<HomeSetup['describeRoutine']>().mockResolvedValue({ kind: 'automation', editable: true, when: [], conditions: [], then: [], problems: [] }),
+    describeMood: vi.fn<HomeSetup['describeMood']>().mockResolvedValue([]),
+    deviceTriggers: vi.fn<HomeSetup['deviceTriggers']>().mockResolvedValue({ triggers: [] }),
+    saveAutomation: vi.fn<HomeSetup['saveAutomation']>().mockResolvedValue({ changed: true, entity_id: 'automation.new_one' }),
+    saveScript: vi.fn<HomeSetup['saveScript']>().mockResolvedValue({ changed: true, entity_id: 'script.new_one' }),
+    deleteRoutine: vi.fn<HomeSetup['deleteRoutine']>().mockResolvedValue({ changed: true }),
+    setAutomationEnabled: vi.fn<HomeSetup['setAutomationEnabled']>().mockResolvedValue({ changed: true }),
+    runRoutine: vi.fn<HomeSetup['runRoutine']>().mockResolvedValue({ accepted: true }),
+    routineRuns: vi.fn<HomeSetup['routineRuns']>().mockResolvedValue({ runs: [] }),
+    listHelpers: vi.fn<HomeSetup['listHelpers']>().mockResolvedValue({ helpers: [{ domain: 'input_boolean', helper_id: 'guest_mode', name: 'Guest mode' }] }),
+    saveHelper: vi.fn<HomeSetup['saveHelper']>().mockResolvedValue({ changed: true, helper_id: 'new_helper' }),
+    deleteHelper: vi.fn<HomeSetup['deleteHelper']>().mockResolvedValue({ changed: true }),
+    deleteRoom: vi.fn<HomeSetup['deleteRoom']>().mockResolvedValue({ changed: true }),
+    setEntityHidden: vi.fn<HomeSetup['setEntityHidden']>().mockResolvedValue({ changed: true }),
+  };
   fixture.context.setup = {
     inspect, createRoom, renameRoom, assignDevice, assignEntity,
     renameDevice, renameEntity, inspectMood, saveMood, activateMood, changes, undo,
+    ...routines,
   };
   return {
     ...fixture, structure, inspect, createRoom, renameRoom, assignDevice,
     assignEntity, inspectMood, saveMood, activateMood, changes, undo,
+    renameDevice, renameEntity, ...routines,
   };
 }
 
@@ -690,5 +713,87 @@ describe('Home Concierge room and mood setup', () => {
     context.sessionId = 'different-home';
     finish(structure);
     await expect(pending).rejects.toThrow('connection changed');
+  });
+});
+
+describe('Home Concierge automations, scripts, and helpers', () => {
+  const automation = {
+    name: 'Door light',
+    triggers: [{ trigger: 'state', entity_id: 'binary_sensor.door', to: 'on' }],
+    actions: [{ action: 'light.turn_on', target: { entity_id: 'light.desk' } }],
+  };
+
+  it('creates a routine directly but updates only one it has just inspected', async () => {
+    const { run, saveAutomation, saveScript, controller } = setupHome();
+    await run('save_automation', automation);
+    expect(saveAutomation).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ name: 'Door light', triggers: automation.triggers, actions: automation.actions }), controller.signal);
+    // A routine created this turn is known, but still needs a read before it is replaced.
+    await expect(run('save_automation', { ...automation, entity_id: 'automation.new_one', name: 'Door light 2' })).rejects.toThrow('inspect_routine');
+    await expect(run('inspect_routine', { entity_id: 'automation.door_light' })).rejects.toThrow('list_routines');
+    await run('list_routines');
+    await run('inspect_routine', { entity_id: 'automation.door_light' });
+    await run('save_automation', { ...automation, entity_id: 'automation.door_light', enabled: false });
+    expect(saveAutomation).toHaveBeenLastCalledWith(expect.objectContaining({ entity_id: 'automation.door_light', enabled: false }), controller.signal);
+    // Each update starts from a fresh read.
+    await expect(run('save_automation', { ...automation, entity_id: 'automation.door_light', description: 'Again' })).rejects.toThrow('inspect_routine');
+    await run('inspect_routine', { entity_id: 'script.movie_time' });
+    await expect(run('save_automation', { ...automation, entity_id: 'script.movie_time' })).rejects.toThrow('inspect_routine');
+    await run('save_script', { name: 'Movie time', entity_id: 'script.movie_time', sequence: automation.actions });
+    expect(saveScript).toHaveBeenCalledOnce();
+  });
+
+  it('rejects malformed routine arguments before anything is sent', async () => {
+    const { run, saveAutomation, saveHelper } = setupHome();
+    await expect(run('save_automation', { ...automation, triggers: 'when the door opens' })).rejects.toThrow('triggers must be a list');
+    await expect(run('save_automation', { ...automation, actions: ['turn on'] })).rejects.toThrow('actions must be a list');
+    await expect(run('save_automation', { ...automation, enabled: 'yes' })).rejects.toThrow('enabled');
+    await expect(run('save_automation', { ...automation, yaml: 'alias: x' })).rejects.toThrow('unsupported arguments');
+    await expect(run('save_helper', { domain: 'shell_command', name: 'Run' })).rejects.toThrow('domain must be one of');
+    await expect(run('save_helper', { domain: 'input_boolean', name: 'Guest mode', settings: 'on' })).rejects.toThrow('settings must be an object');
+    expect(saveAutomation).not.toHaveBeenCalled();
+    expect(saveHelper).not.toHaveBeenCalled();
+  });
+
+  it('deletes, pauses, and runs only listed routines, and deletes only after inspection', async () => {
+    const { run, deleteRoutine, setAutomationEnabled, runRoutine, routineRuns, controller } = setupHome();
+    for (const [name, args] of [
+      ['delete_routine', { entity_id: 'automation.door_light' }],
+      ['set_automation_enabled', { entity_id: 'automation.door_light', enabled: false }],
+      ['run_routine', { entity_id: 'script.movie_time' }],
+      ['get_routine_runs', { entity_id: 'automation.door_light' }],
+    ] as const) await expect(run(name, args)).rejects.toThrow('list_routines');
+    await run('list_routines');
+    await expect(run('delete_routine', { entity_id: 'automation.door_light' })).rejects.toThrow('inspect_routine');
+    await run('set_automation_enabled', { entity_id: 'automation.door_light', enabled: false });
+    await run('run_routine', { entity_id: 'script.movie_time' });
+    await run('get_routine_runs', { entity_id: 'automation.door_light' });
+    await run('inspect_routine', { entity_id: 'automation.door_light' });
+    await run('delete_routine', { entity_id: 'automation.door_light' });
+    expect(setAutomationEnabled).toHaveBeenCalledExactlyOnceWith('automation.door_light', false, controller.signal);
+    expect(runRoutine).toHaveBeenCalledExactlyOnceWith('script.movie_time', controller.signal);
+    expect(routineRuns).toHaveBeenCalledOnce();
+    expect(deleteRoutine).toHaveBeenCalledExactlyOnceWith('automation.door_light', controller.signal);
+    await expect(run('run_routine', { entity_id: 'automation.door_light' })).rejects.toThrow('list_routines');
+  });
+
+  it('keeps helper, device, and room changes to discovered identifiers', async () => {
+    const { run, saveHelper, deleteHelper, deviceTriggers, renameDevice, setEntityHidden, deleteRoom, controller } = setupHome();
+    await expect(run('list_device_triggers', { device_id: 'speaker-device' })).rejects.toThrow('list_home_structure');
+    await expect(run('rename_device', { device_id: 'speaker-device', name: 'Radio' })).rejects.toThrow('list_home_structure');
+    await expect(run('delete_helper', { domain: 'input_boolean', helper_id: 'guest_mode' })).rejects.toThrow('list_helpers');
+    await run('save_helper', { domain: 'input_number', name: 'Bedtime brightness', settings: { min: 1, max: 100 } });
+    expect(saveHelper).toHaveBeenCalledExactlyOnceWith({ domain: 'input_number', name: 'Bedtime brightness', settings: { min: 1, max: 100 } }, controller.signal);
+    await run('list_helpers');
+    await run('delete_helper', { domain: 'input_boolean', helper_id: 'guest_mode' });
+    expect(deleteHelper).toHaveBeenCalledExactlyOnceWith('input_boolean', 'guest_mode', controller.signal);
+    await run('list_home_structure');
+    await run('list_device_triggers', { device_id: 'speaker-device' });
+    await run('rename_device', { device_id: 'speaker-device', name: ' Radio ' });
+    await expect(run('set_entity_hidden', { entity_id: 'light.guessed', hidden: true })).rejects.toThrow('Choose an entity');
+    await expect(run('delete_room', { area_id: 'guessed' })).rejects.toThrow('Choose a room');
+    expect(deviceTriggers).toHaveBeenCalledOnce();
+    expect(renameDevice).toHaveBeenCalledExactlyOnceWith('speaker-device', 'Radio', controller.signal);
+    expect(setEntityHidden).not.toHaveBeenCalled();
+    expect(deleteRoom).not.toHaveBeenCalled();
   });
 });

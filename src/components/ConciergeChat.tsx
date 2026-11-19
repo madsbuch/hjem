@@ -55,10 +55,15 @@ export interface ConciergeChatProps {
   onOpenSettings: () => void;
   draftRequest?: { id: number; text: string };
   onDraftApplied?: (id: number) => void;
+  /** Shown beside something else: a smaller heading, under the page's own. */
+  compact?: boolean;
+  /** Starting points for an empty conversation; defaults to everyday questions. */
+  suggestions?: { text: string; Icon: typeof Lightbulb }[];
+  placeholder?: string;
   children?: ReactNode;
 }
 
-const suggestions = [
+const everydaySuggestions = [
   { text: 'Which lights are on?', Icon: Lightbulb },
   { text: 'Set up a cosy evening mood', Icon: Sofa },
 ];
@@ -86,6 +91,9 @@ export function ConciergeChat({
   onOpenSettings,
   draftRequest,
   onDraftApplied,
+  compact = false,
+  suggestions = everydaySuggestions,
+  placeholder = 'Ask anything…',
   children,
 }: ConciergeChatProps) {
   const [draft, setDraft] = useState('');
@@ -153,9 +161,9 @@ export function ConciergeChat({
   return (
     <section className="concierge-page" aria-label="Home Concierge">
       <header className="concierge-heading">
-        <h1>
-          Concierge<span>.</span>
-        </h1>
+        {compact
+          ? <h2>Concierge<span>.</span></h2>
+          : <h1>Concierge<span>.</span></h1>}
         <div className="concierge-header-actions">
           <button className="concierge-new" aria-label="Chat history" title="Chat history" disabled={voice.active}
             onClick={() => { setHistoryOpen(true); void onRefreshChats(); }}>
@@ -286,7 +294,7 @@ export function ConciergeChat({
               aria-label="Message Home Concierge"
               placeholder={
                 configured
-                  ? 'Ask anything…'
+                  ? placeholder
                   : 'Set up Concierge first'
               }
               disabled={!configured || settingsPending || voice.active || historyLoading || readOnly}

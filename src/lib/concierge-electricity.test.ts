@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { demoElectricity, type ElectricityData, type PriceDay } from './electricity';
 import { electricityToolNames, parseLocalTime, runElectricityTool, type ElectricityContext } from './concierge-electricity';
 import { conciergeTools, conciergeSystemPrompt, createConciergeExecutor, type ConciergeContext } from './concierge-tools';
@@ -35,6 +35,7 @@ function day(date: Date): PriceDay {
 }
 
 const now = new Date(2026, 10, 18, 15, 20);
+afterEach(() => vi.useRealTimers());
 function context(overrides: Partial<ElectricityData> = {}, source: ElectricityContext['source'] = 'live'): ElectricityContext {
   const base = demoElectricity(now);
   return {
@@ -131,6 +132,9 @@ describe('Concierge electricity tools', () => {
   });
 
   it('runs through the Concierge executor without touching the home', async () => {
+    // The executor reads the clock; pin it to the fixture's day.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(now);
     const actions: string[] = [];
     const conciergeContext: ConciergeContext = {
       sessionId: 'test', snapshot: structuredClone(demoSnapshot), demo: true, connected: true, apps: [], appsPreview: true,

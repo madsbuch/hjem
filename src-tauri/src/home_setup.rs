@@ -1,5 +1,6 @@
-//! A bounded bridge to Home Assistant's scene editor. The caller cannot choose
-//! an endpoint or supply a token; both come from the saved home connection.
+//! A bounded bridge to Home Assistant's scene, automation, and script editors.
+//! The caller picks one of those three by name; it cannot choose an endpoint
+//! or supply a token. Both come from the saved home connection.
 
 use crate::database::{with_database, DatabaseState};
 use futures_util::StreamExt;
@@ -88,6 +89,107 @@ fn validate_request(
     Ok(())
 }
 
+/// The editors besides scenes. Their configurations are checked in the
+/// interface and by Home Assistant; here only the shape and size are bounded.
+#[derive(Deserialize, Clone, Copy, Debug, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum RoutineKind {
+    Automation,
+    Script,
+}
+
+#[derive(Clone, Copy)]
+enum Editor {
+    Scene,
+    Routine(RoutineKind),
+}
+
+impl Editor {
+    fn path(self) -> &'static str {
+        match self {
+            Editor::Scene => "scene",
+            Editor::Routine(RoutineKind::Automation) => "automation",
+            Editor::Routine(RoutineKind::Script) => "script",
+        }
+    }
+}
+
+fn validate_routine(
+    kind: RoutineKind,
+    config_id: &str,
+    method: SceneMethod,
+    config: &Option<Value>,
+) -> Result<(), String> {
+    let name = Editor::Routine(kind).path();
+    if config_id.is_empty()
+        || config_id.len() > 128
+        || !config_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+    {
+        return Err(format!(
+            "This {name} has an unsupported configuration identifier."
+        ));
+    }
+    match (method, config) {
+        (SceneMethod::POST, Some(value)) => {
+            let object = value
+                .as_object()
+                .ok_or(format!("A valid {name} configuration is required."))?;
+            let steps = match kind {
+                RoutineKind::Automation => "actions",
+                RoutineKind::Script => "sequence",
+            };
+            if !object
+                .get("alias")
+                .and_then(Value::as_str)
+                .is_some_and(|alias| !alias.trim().is_empty())
+                || !object.get(steps).is_some_and(Value::is_array)
+                || (kind == RoutineKind::Automation
+                    && !object.get("triggers").is_some_and(Value::is_array))
+            {
+                return Err(format!("A valid {name} configuration is required."));
+            }
+            if serde_json::to_vec(value)
+                .map_err(|_| format!("The {name} could not be encoded."))?
+                .len()
+                > LIMIT
+            {
+                return Err(format!("This {name} is too large to save."));
+            }
+        }
+        (SceneMethod::GET | SceneMethod::DELETE, None) => {}
+        _ => return Err(format!("This {name} request has unsupported data.")),
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn home_routine_config(
+    app: AppHandle,
+    state: State<'_, DatabaseState>,
+    expected_server_url: String,
+    kind: RoutineKind,
+    method: SceneMethod,
+    config_id: String,
+    config: Option<Value>,
+) -> Result<Value, SceneFailure> {
+    validate_routine(kind, &config_id, method, &config).map_err(SceneFailure::rejected)?;
+    let (server, token) = with_database(&app, &state, |database| {
+        database.scene_connection(&expected_server_url)
+    })
+    .map_err(SceneFailure::rejected)?;
+    editor_request(
+        &server,
+        &token,
+        Editor::Routine(kind),
+        method,
+        &config_id,
+        config,
+    )
+    .await
+}
+
 #[tauri::command]
 pub async fn home_scene_config(
     app: AppHandle,
@@ -113,14 +215,30 @@ async fn scene_request(
     config: Option<Value>,
 ) -> Result<Value, SceneFailure> {
     validate_request(config_id, method, &config).map_err(SceneFailure::rejected)?;
+    editor_request(server, token, Editor::Scene, method, config_id, config).await
+}
+
+async fn editor_request(
+    server: &str,
+    token: &str,
+    editor: Editor,
+    method: SceneMethod,
+    config_id: &str,
+    config: Option<Value>,
+) -> Result<Value, SceneFailure> {
+    let name = editor.path();
     // Never follow redirects with a home token, including to a second host.
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .connect_timeout(Duration::from_secs(8))
         .timeout(Duration::from_secs(12))
         .build()
-        .map_err(|_| "Home Assistant’s scene connection could not be opened.")?;
-    let url = format!("{server}/api/config/scene/config/{config_id}");
+        .map_err(|_| {
+            SceneFailure::unconfirmed(format!(
+                "Home Assistant’s {name} connection could not be opened."
+            ))
+        })?;
+    let url = format!("{server}/api/config/{name}/config/{config_id}");
     let request = match method {
         SceneMethod::GET => client.get(url),
         SceneMethod::POST => client.post(url),
@@ -132,13 +250,22 @@ async fn scene_request(
     } else {
         request
     };
-    let response = request.send().await.map_err(|_| "Home Assistant did not confirm this scene request. Check the saved mood before trying again.")?;
+    let response = request.send().await.map_err(|_| {
+        SceneFailure::unconfirmed(match editor {
+            Editor::Scene => "Home Assistant did not confirm this scene request. Check the saved mood before trying again.".to_string(),
+            Editor::Routine(_) => format!("Home Assistant did not confirm this {name} request. Check the saved {name} before trying again."),
+        })
+    })?;
     let status = response.status().as_u16();
     if status == 401 || status == 403 {
-        return Err(SceneFailure::rejected("Home Assistant administrator access is required to manage moods. Update the connection in Settings."));
+        return Err(SceneFailure::rejected(match editor {
+            Editor::Scene => "Home Assistant administrator access is required to manage moods. Update the connection in Settings.".to_string(),
+            Editor::Routine(_) => format!("Home Assistant administrator access is required to manage {name}s. Update the connection in Settings."),
+        }));
     }
     if !response.status().is_success() && status != 404 {
-        let message = "Home Assistant rejected this scene request. No automatic retry was made.";
+        let message =
+            format!("Home Assistant rejected this {name} request. No automatic retry was made.");
         return Err(if (400..500).contains(&status) {
             SceneFailure::rejected(message)
         } else {
@@ -149,30 +276,38 @@ async fn scene_request(
         .content_length()
         .is_some_and(|length| length > LENGTH_LIMIT)
     {
-        return Err("Home Assistant returned an oversized scene configuration.".into());
+        return Err(SceneFailure::unconfirmed(format!(
+            "Home Assistant returned an oversized {name} configuration."
+        )));
     }
     let mut bytes = Vec::new();
     let mut stream = response.bytes_stream();
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|_| "Home Assistant’s scene response was interrupted. Check its current configuration before retrying.")?;
+        let chunk = chunk.map_err(|_| {
+            SceneFailure::unconfirmed(format!("Home Assistant’s {name} response was interrupted. Check its current configuration before retrying."))
+        })?;
         if bytes.len().saturating_add(chunk.len()) > LIMIT {
-            return Err("Home Assistant returned an oversized scene configuration.".into());
+            return Err(SceneFailure::unconfirmed(format!(
+                "Home Assistant returned an oversized {name} configuration."
+            )));
         }
         bytes.extend_from_slice(&chunk);
     }
     let result: Value = serde_json::from_slice(&bytes).map_err(|_| {
-        SceneFailure::unconfirmed("Home Assistant returned an unreadable scene response.")
+        SceneFailure::unconfirmed(format!(
+            "Home Assistant returned an unreadable {name} response."
+        ))
     })?;
     if status == 404 {
         if result.get("message").and_then(Value::as_str) == Some("Resource not found") {
             return Err(SceneFailure {
                 code: "not_found",
-                message: "This scene no longer has a saved Home Assistant configuration.".into(),
+                message: format!("This {name} no longer has a saved Home Assistant configuration."),
             });
         }
-        return Err(SceneFailure::rejected(
-            "This Home Assistant connection does not support scene editing.",
-        ));
+        return Err(SceneFailure::rejected(format!(
+            "This Home Assistant connection does not support {name} editing."
+        )));
     }
     Ok(result)
 }
@@ -211,6 +346,86 @@ mod tests {
             &Some(json!({"name":"Mood","entities":{"light.desk":"on"}}))
         )
         .is_ok());
+    }
+
+    #[test]
+    fn routine_requests_are_bounded_to_their_own_editor() {
+        let automation = json!({"alias":"Door light","triggers":[{"trigger":"state"}],"actions":[{"action":"light.turn_on"}]});
+        let script = json!({"alias":"Movie time","sequence":[{"action":"scene.turn_on"}]});
+        for id in ["", "../automation", "a/b", "a?x=1", "%2e%2e", "auto.id"] {
+            assert!(
+                validate_routine(RoutineKind::Automation, id, SceneMethod::GET, &None).is_err()
+            );
+        }
+        assert!(validate_routine(
+            RoutineKind::Automation,
+            "hjem_1",
+            SceneMethod::POST,
+            &Some(automation.clone())
+        )
+        .is_ok());
+        assert!(validate_routine(
+            RoutineKind::Script,
+            "movie_time",
+            SceneMethod::POST,
+            &Some(script.clone())
+        )
+        .is_ok());
+        // A script body is not an automation, and reads carry no body.
+        assert!(validate_routine(
+            RoutineKind::Automation,
+            "hjem_1",
+            SceneMethod::POST,
+            &Some(script)
+        )
+        .is_err());
+        assert!(validate_routine(
+            RoutineKind::Script,
+            "movie_time",
+            SceneMethod::GET,
+            &Some(automation)
+        )
+        .is_err());
+        assert!(validate_routine(
+            RoutineKind::Script,
+            "movie_time",
+            SceneMethod::POST,
+            &Some(json!([]))
+        )
+        .is_err());
+        assert_eq!(
+            Editor::Routine(RoutineKind::Automation).path(),
+            "automation"
+        );
+        assert_eq!(Editor::Routine(RoutineKind::Script).path(), "script");
+        assert_eq!(Editor::Scene.path(), "scene");
+    }
+
+    #[tokio::test]
+    async fn routine_requests_reach_only_their_editor_endpoint() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buffer = [0; 4096];
+            let count = stream.read(&mut buffer).unwrap();
+            let request = String::from_utf8_lossy(&buffer[..count]);
+            assert!(request.contains("GET /api/config/automation/config/hjem_1 "));
+            let body = r#"{"id":"hjem_1","alias":"Door light"}"#;
+            write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+        });
+        let value = editor_request(
+            &format!("http://{address}"),
+            "fixture-secret",
+            Editor::Routine(RoutineKind::Automation),
+            SceneMethod::GET,
+            "hjem_1",
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(value["alias"], "Door light");
+        server.join().unwrap();
     }
 
     #[tokio::test]

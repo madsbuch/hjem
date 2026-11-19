@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-home-routine-config"
+description = "Enables the home_routine_config command without any pre-configured scope."
+commands.allow = ["home_routine_config"]
+
+[[permission]]
+identifier = "deny-home-routine-config"
+description = "Denies the home_routine_config command without any pre-configured scope."
+commands.deny = ["home_routine_config"]

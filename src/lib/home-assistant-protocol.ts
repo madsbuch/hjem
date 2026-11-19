@@ -1,3 +1,4 @@
+import type { HelperDomain, RoutineKind } from './home-setup-types';
 import type {
   HassArea,
   HassDevice,
@@ -138,6 +139,8 @@ export function parseRegistry(value: unknown): HassEntityRegistryEntry[] {
       disabled_by: nullableString(entry.disabled_by, 'entity availability'),
       ...(entry.name === undefined ? {} : { name: nullableString(entry.name, 'entity name') }),
       ...(entry.original_name === undefined ? {} : { original_name: nullableString(entry.original_name, 'original entity name') }),
+      // Integrations may use numbers here; only text ids tie helpers and scripts to their entities.
+      ...(typeof entry.unique_id === 'string' ? { unique_id: entry.unique_id } : {}),
     };
   });
 }
@@ -310,7 +313,13 @@ export type ClientCommand =
   | { type: 'config/device_registry/update'; device_id: string; name_by_user: string | null }
   | { type: 'config/entity_registry/update'; entity_id: string; area_id: string | null }
   | { type: 'config/entity_registry/update'; entity_id: string; name: string | null }
+  | { type: 'config/entity_registry/update'; entity_id: string; hidden_by: 'user' | null }
   | { type: 'search/related'; item_type: 'area'; item_id: string }
+  | { type: 'validate_config'; triggers?: Record<string, unknown>[]; conditions?: Record<string, unknown>[]; actions?: Record<string, unknown>[] }
+  | { type: 'device_automation/trigger/list'; device_id: string }
+  | { type: 'trace/list'; domain: RoutineKind; item_id: string }
+  | { type: `${HelperDomain}/list` }
+  | ({ type: `${HelperDomain}/create` | `${HelperDomain}/update` | `${HelperDomain}/delete` } & Record<string, unknown>)
   | {
       type:
         | 'get_states'

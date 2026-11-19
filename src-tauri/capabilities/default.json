@@ -10,6 +10,7 @@
     "launcher:default",
     "allow-qr-scanner-native",
     "allow-home-scene-config",
+    "allow-home-routine-config",
     "allow-concierge-get-settings",
     "allow-concierge-save-settings",
     "allow-concierge-clear-key",

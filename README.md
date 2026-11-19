@@ -14,13 +14,14 @@ Start with the interactive demo home, then connect your own Home Assistant in Se
 - See electricity prices by the hour, the cheapest hours, and your use and cost from Osmund.
 - Use the Home planner in Settings to pair new Zigbee appliances, name lights and remotes, put them in rooms, blink a lamp to find it, and see which remote you just pressed.
 - Choose Light, Dark, or System appearance in Settings. Changes fade over 800 ms; System follows the device’s appearance schedule immediately, checks again when the app returns to the foreground, and polls every ten minutes as a fallback. Reduced-motion preferences disable the fade.
-- Ask Home Concierge to organize rooms and devices, create and maintain moods, adjust devices, control Sonos, or open tablet apps.
+- Open Home setup in Settings to configure the home by talking to Concierge, with the home's rooms, automations, scripts, moods, and helpers shown live beside the conversation.
+- Ask Home Concierge to organize rooms and devices, create and maintain moods, set up automations and scripts, adjust devices, control Sonos, or open tablet apps.
 - Toggle lights, switches, fans, and input booleans; adjust supported light brightness.
 - Set supported thermostat temperatures, operate covers, and control music playback, tracks, volume, and mute.
 - Run existing Home Assistant scenes from “A whole mood” on the home screen and view sensor readings.
 - Receive live state changes, connection feedback, and automatic reconnection after an interrupted session.
 
-Controls follow the capabilities each entity reports. Hidden and disabled registry entities are excluded. Devices without an area appear together as unassigned. Concierge and the Home planner can manage areas, device names and assignments, and Concierge can manage persistent scenes, through specific validated operations. Cameras, lock controls, integrations, and general system administration remain outside the current scope.
+Controls follow the capabilities each entity reports. Hidden and disabled registry entities are excluded. Devices without an area appear together as unassigned. Concierge and the Home planner can manage areas, device names and assignments, and Concierge can manage persistent scenes, automations, scripts, and helpers, through specific validated operations. Cameras, lock controls, integrations, users, dashboards, and general system administration remain outside the current scope.
 
 The principles behind Hjem's design are recorded in [PRINCIPLES.md](PRINCIPLES.md).
 
@@ -83,6 +84,34 @@ Open **Settings → Home planner** to add appliances and tidy up names and rooms
 Hjem pairs through Home Assistant, using whichever Zigbee setup it finds there: ZHA (through Home Assistant's `zha/devices/permit` command) or Zigbee2MQTT (by publishing to `zigbee2mqtt/bridge/request/permit_join` through the MQTT integration, so a custom base topic is not supported yet). When it can't tell, or finds both, it asks which one to use. Pairing needs administrator access. The demo home adds a sample appliance a few seconds after pairing starts.
 
 Renames and room changes are written to Home Assistant's device and entity registries, need administrator access, and appear in **Recent setup changes** under Concierge, where they can be undone. Blinking sends ordinary light commands; nothing else in Home Assistant is changed.
+
+## Home setup
+
+Open **Settings → Home setup** to configure the home without filling in forms. The screen is split in two: Concierge takes a third, and the rest shows the home as Home Assistant has it right now. Say what you want ("when the front door opens after dark, turn on the hallway lamp", "make the top button on the bedroom remote dim the bedside lamp", "why didn't the wake-up automation run this morning?") and watch the result appear on the right. On a phone or a narrow window, **Concierge** and **Your home** at the top switch between the two sides.
+
+The home side has six tabs:
+
+- **Rooms:** each room with its devices and what they are doing now, updating live.
+- **Automations:** each automation in plain language (*When* the front door opens, *Only if* it is after sunset, *Then* turn on the reading lamp at 60%), whether it is on or paused, when it last ran, and any device it uses that is missing or not responding. **Configuration** shows what is saved in Home Assistant.
+- **Scripts:** named lists of actions, described the same way.
+- **Moods:** what each mood sets.
+- **Helpers:** the small values automations read, such as a wake-up time or a guest-mode switch.
+- **Changes:** everything changed during this session, each with **Undo**.
+
+When Concierge changes something, the home side switches to it and outlines it for a few seconds. **Ask** on any card starts a message about that room, automation, script, or mood. The home side is for looking; changes go through the conversation, and **Undo** is the one direct control.
+
+Concierge can create, change, pause, run, and delete automations and scripts, create and change helpers, rename devices, hide entities from Hjem's controls, and delete empty rooms, in addition to the room and mood setup described under [Home Concierge](#home-concierge). Before it writes an automation that starts from a remote or sensor, it asks Home Assistant what that device can trigger, so button names are not guessed. To explain a routine that misbehaves, it reads the routine and the recent runs Home Assistant has stored.
+
+Every automation and script is checked before it is saved:
+
+- Each device, entity, and room it names must exist in the home. A guessed identifier is refused with the reason, and Concierge corrects it.
+- Home Assistant validates the triggers, conditions, and actions (Home Assistant 2024.10 or later; on older versions the save itself is the check).
+- Routines run unattended, so their actions cannot operate locks or alarm panels, or call system services such as shell commands, add-ons, backups, MQTT publishing, or a restart. Triggers and conditions may still read a lock or alarm, for example to light the hall when the door is unlocked. Service names must be written out; templated service names are refused.
+- Changing or deleting an existing routine requires reading it first, and is refused if it was edited elsewhere in the meantime.
+
+Automations, scripts, and helpers are saved in Home Assistant, because Home Assistant is what runs them; they keep working when the tablet is off, and appear in Home Assistant's own editors. Automations and scripts written in Home Assistant's YAML files without an id can be read about and run but not changed from Hjem. Saving needs administrator access. Each change can be undone from **Changes** while the home session stays open: a created routine is removed, a changed one gets its previous definition back, and a deleted one is restored, unless it was edited elsewhere after Hjem's change. Running a routine really changes devices, and Concierge only does so when asked.
+
+The demo home includes three automations, a script, and a helper, and everything on this screen can be tried there. Demo routines are simulated; running one applies its plain device steps to the demo devices.
 
 ## Electricity
 
@@ -152,19 +181,19 @@ OpenRouter [does not expose the Realtime WebSocket API](https://openrouter.ai/do
 
 On native platforms, the key and model are saved in Hjem's private SQLite database and used by Rust. The settings API returns only whether a key exists; it never returns the saved key to the web interface. The database is protected by the app sandbox and file permissions, without database encryption. Android automatic backup is disabled. In the browser preview, both the key and model live only in memory until reload. **Remove key** clears the saved key.
 
-Home Concierge can read current device states, apps, and electricity prices and use, adjust supported lights, switches, thermostats, blinds, and media players, activate requested scenes, and open Android apps. It must discover a device or app before acting, validates actions and ranges locally, and cannot call arbitrary Home Assistant services. Browser app shortcuts remain simulated, as do device controls in demo mode. Messages and the home, app, and electricity information needed for a request go to OpenRouter and the selected model provider. Home Assistant tokens never enter the conversation.
+Home Concierge can read current device states, apps, and electricity prices and use, adjust supported lights, switches, thermostats, blinds, and media players, activate requested scenes, set up automations, scripts, and helpers (see [Home setup](#home-setup)), and open Android apps. It must discover a device or app before acting, validates actions and ranges locally, and cannot call arbitrary Home Assistant services itself. Browser app shortcuts remain simulated, as do device controls in demo mode. Messages and the home, app, and electricity information needed for a request go to OpenRouter and the selected model provider. Home Assistant tokens never enter the conversation.
 
 ### Rooms and moods
 
 Ask “Create an office and move the reading lamp there,” “Rename the spare bedroom to the nursery,” or “Set up a cosy evening mood.” **Controls → Organize rooms** and **A whole mood → Set up a mood** open a starting message in Concierge. It discovers current rooms, physical devices, and individual entities before changing anything, and asks about ambiguous devices using their names. Room changes preserve explicit entity overrides. Unassigned resources and empty rooms are included, and registry changes refresh without reconnecting.
 
-Home Assistant administrator access is required for configuration changes. The existing Hjem connection is used; tokens are never passed to the model. Rooms and assignments use Home Assistant’s registry APIs. Moods are saved through the scene editor’s persistent configuration API, so they survive Home Assistant restarts and are available outside Hjem. Installed apps make scene HTTP requests through a bounded native transport restricted to the saved home; browser previews require Home Assistant to allow their origin. No configuration files or arbitrary service endpoints are exposed to Concierge.
+Home Assistant administrator access is required for configuration changes. The existing Hjem connection is used; tokens are never passed to the model. Rooms and assignments use Home Assistant’s registry APIs. Moods are saved through the scene editor’s persistent configuration API, so they survive Home Assistant restarts and are available outside Hjem. Installed apps make scene HTTP requests through a bounded native transport restricted to the saved home; browser previews require Home Assistant to allow their origin. Automations and scripts use the matching editor APIs through the same bounded transport. No configuration files or arbitrary service endpoints are exposed to Concierge.
 
 Mood authoring supports on/off settings, supported brightness and colour temperature, thermostat targets, blind positions, and supported playback/volume/mute settings. Existing editable scenes must be inspected before updates. Unsupported integration scenes can still be activated, but Hjem reports when their results cannot be verified. Activating an inspectable mood checks observable device states and reports unconfirmed settings instead of treating an accepted command as proof that every device changed. Saving a mood does not activate it.
 
-Ask Concierge to undo a setup change, or use **Recent setup changes** beneath the conversation. The last 30 setup changes retain their previous configuration while the home session stays open. Undo checks for changes made elsewhere before restoring anything; a newly created room can only be removed if it is still empty and unreferenced. Undo changes configuration, not past physical device states. History clears when switching home connections or restarting Hjem; the configuration saved in Home Assistant remains. Demo setup and moods are simulated and last for the demo session. Moving devices reports known related routines because room-targeted automations may include different devices after a move. Creating scripts, automations, and integrations is not part of this version.
+Ask Concierge to undo a setup change, or use **Recent setup changes** beneath the conversation. The last 30 setup changes retain their previous configuration while the home session stays open. Undo checks for changes made elsewhere before restoring anything; a newly created room can only be removed if it is still empty and unreferenced. Undo changes configuration, not past physical device states. History clears when switching home connections or restarting Hjem; the configuration saved in Home Assistant remains. Demo setup and moods are simulated and last for the demo session. Moving devices reports known related routines because room-targeted automations may include different devices after a move. Adding integrations is not part of this version.
 
-The loop follows the patterns in Tally's `assistant.ts`/`assistantRunner.ts` and Learn Polish's `agent.rs`/`ai.rs`: paired tool requests/results, visible progress, sequential execution, and preserved partial outcomes. Provider reasoning details are preserved privately in memory between tool rounds without appearing in the chat. A turn is limited to six model requests, up to 8,192 output tokens per request, and twelve tool calls. Stop cancels pending model requests and prevents new actions; a device command already sent may still finish. Unconfirmed actions are not automatically replayed. Typed requests and conversations survive switching Hjem pages; active voice capture and playback stop when leaving Concierge. Changing the home connection or text model starts a new conversation and preserves previous chats in Chat history.
+The loop follows the patterns in Tally's `assistant.ts`/`assistantRunner.ts` and Learn Polish's `agent.rs`/`ai.rs`: paired tool requests/results, visible progress, sequential execution, and preserved partial outcomes. Provider reasoning details are preserved privately in memory between tool rounds without appearing in the chat. A turn is limited to sixteen model requests, up to 8,192 output tokens per request, and thirty-six tool calls, enough to read the home, write a routine, and correct it if Home Assistant refuses it. Stop cancels pending model requests and prevents new actions; a device command already sent may still finish. Unconfirmed actions are not automatically replayed. Typed requests and conversations survive switching Hjem pages; active voice capture and playback stop when leaving Concierge. Changing the home connection or text model starts a new conversation and preserves previous chats in Chat history.
 
 ## Phone and tablet
 

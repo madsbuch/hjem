@@ -26,6 +26,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             qr_scanner_native,
             home_setup::home_scene_config,
+            home_setup::home_routine_config,
             database::calendar_add_feed,
             database::calendar_update_feed,
             database::calendar_remove_feed,

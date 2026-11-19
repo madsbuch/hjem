@@ -1,6 +1,19 @@
-import type { HassArea, HassDevice, HassSnapshot } from './home-assistant';
-import type { HomeSetupTransport, SceneConfig } from './home-setup-types';
-import { demoSceneConfigs } from './demo';
+import type { HassArea, HassDevice, HassEntity, HassSnapshot } from './home-assistant';
+import {
+  helperDomains,
+  type HelperDomain,
+  type HelperRecord,
+  type HomeSetupTransport,
+  type RoutineConfig,
+  type RoutineKind,
+  type RoutineService,
+  type RoutineTrace,
+  type RoutineValidation,
+  type SceneConfig,
+} from './home-setup-types';
+import { applyDemoService, demoHelpers, demoRoutineConfigs, demoSceneConfigs } from './demo';
+import { routineParts, slugify } from './home-routines';
+import { isEntityId, isRecord } from './home-assistant-protocol';
 import { SceneConfigNotFoundError } from './home-assistant-scenes';
 
 /** Keep an entity suffix such as "battery" when its device is renamed. */
@@ -20,6 +33,14 @@ interface DemoOptions {
 export class DemoHomeSetupTransport implements HomeSetupTransport {
   private readonly scenes = new Map<string, SceneConfig>(
     Object.entries(demoSceneConfigs).map(([id, config]) => [id, structuredClone(config)]),
+  );
+
+  private readonly routines: Record<RoutineKind, Map<string, RoutineConfig>> = {
+    automation: new Map(Object.entries(structuredClone(demoRoutineConfigs.automation))),
+    script: new Map(Object.entries(structuredClone(demoRoutineConfigs.script))),
+  };
+  private readonly helpers = new Map<HelperDomain, HelperRecord[]>(
+    helperDomains.map((domain) => [domain, structuredClone(demoHelpers[domain] ?? [])]),
   );
 
   constructor(private readonly options: DemoOptions) {}
@@ -148,6 +169,153 @@ export class DemoHomeSetupTransport implements HomeSetupTransport {
         const { state, ...attributes } = target;
         return { ...entity, state, attributes: { ...entity.attributes, ...attributes } };
       }),
+    });
+  }
+
+  async setEntityHidden(entityId: string, hidden: boolean): Promise<void> {
+    const snapshot = this.getSnapshot();
+    if (!snapshot.registry.some((item) => item.entity_id === entityId)) throw new Error('The demo entity no longer exists.');
+    this.publish({ ...snapshot, registry: snapshot.registry.map((item) => item.entity_id === entityId ? { ...item, hidden_by: hidden ? 'user' : null } : item) });
+  }
+
+  private routineEntity(kind: RoutineKind, configId: string, snapshot: HassSnapshot): HassEntity | undefined {
+    return snapshot.entities.find((entity) => entity.entity_id.startsWith(`${kind}.`) &&
+      (kind === 'automation' ? entity.attributes.id === configId : entity.entity_id === `script.${configId}`));
+  }
+  async readRoutine(kind: RoutineKind, configId: string): Promise<RoutineConfig> {
+    this.guard();
+    const config = this.routines[kind].get(configId);
+    if (!config) throw new SceneConfigNotFoundError(kind);
+    return structuredClone(config);
+  }
+  async saveRoutine(kind: RoutineKind, configId: string, config: RoutineConfig): Promise<void> {
+    const snapshot = this.getSnapshot();
+    this.routines[kind].set(configId, structuredClone(config));
+    const name = typeof config.alias === 'string' ? config.alias : configId;
+    const existing = this.routineEntity(kind, configId, snapshot);
+    if (existing) {
+      this.publish({ ...snapshot, entities: snapshot.entities.map((item) => item === existing
+        ? { ...item, attributes: { ...item.attributes, friendly_name: name, mode: config.mode } } : item) });
+      return;
+    }
+    const base = kind === 'script' ? configId : slugify(name) || configId;
+    let entityId = `${kind}.${base}`;
+    for (let suffix = 2; snapshot.entities.some((item) => item.entity_id === entityId); suffix++) entityId = `${kind}.${base}_${suffix}`;
+    this.publish({
+      ...snapshot,
+      entities: [...snapshot.entities, {
+        entity_id: entityId,
+        state: kind === 'automation' ? 'on' : 'off',
+        attributes: { friendly_name: name, ...(kind === 'automation' ? { id: configId } : {}), last_triggered: null, mode: config.mode },
+      }],
+      registry: [...snapshot.registry, { entity_id: entityId, area_id: null, device_id: null, platform: kind, unique_id: configId }],
+    });
+  }
+  async deleteRoutine(kind: RoutineKind, configId: string): Promise<void> {
+    const snapshot = this.getSnapshot();
+    if (!this.routines[kind].delete(configId)) throw new SceneConfigNotFoundError(kind);
+    const entity = this.routineEntity(kind, configId, snapshot);
+    if (!entity) return;
+    this.publish({
+      ...snapshot,
+      entities: snapshot.entities.filter((item) => item !== entity),
+      registry: snapshot.registry.filter((item) => item.entity_id !== entity.entity_id),
+    });
+  }
+  async validateRoutine(): Promise<RoutineValidation> {
+    this.guard();
+    return { checked: false, errors: [] };
+  }
+  async deviceTriggers(_deviceId: string): Promise<Record<string, unknown>[]> {
+    this.guard();
+    // Demo remotes report presses through their event entities.
+    return [];
+  }
+  async routineTraces(_kind: RoutineKind, _configId: string): Promise<RoutineTrace[]> {
+    this.guard();
+    return [];
+  }
+  async routineService(kind: RoutineKind, service: RoutineService, entityId: string): Promise<void> {
+    const snapshot = this.getSnapshot();
+    const entity = snapshot.entities.find((item) => item.entity_id === entityId && entityId.startsWith(`${kind}.`));
+    if (!entity) throw new Error('The demo routine cannot be found.');
+    if (kind === 'automation' && service !== 'trigger') {
+      this.publish({ ...snapshot, entities: snapshot.entities.map((item) => item === entity ? { ...item, state: service === 'turn_on' ? 'on' : 'off' } : item) });
+      return;
+    }
+    this.publish({ ...snapshot, entities: snapshot.entities.map((item) => item === entity
+      ? { ...item, attributes: { ...item.attributes, last_triggered: new Date().toISOString() } } : item) });
+    const configId = kind === 'automation' ? entity.attributes.id : entityId.slice('script.'.length);
+    const config = typeof configId === 'string' ? this.routines[kind].get(configId) : undefined;
+    if (config) await this.play(routineParts(kind, config).actions);
+  }
+  /** Carry out the plain device steps of a demo routine; anything else is skipped. */
+  private async play(actions: Record<string, unknown>[]): Promise<void> {
+    for (const step of actions) {
+      const service = typeof step.action === 'string' ? step.action : typeof step.service === 'string' ? step.service : '';
+      const [domain = '', name = ''] = service.split('.');
+      const target = isRecord(step.target) ? step.target.entity_id : step.entity_id;
+      const ids = (Array.isArray(target) ? target : [target]).filter(isEntityId);
+      const data = isRecord(step.data) ? step.data : {};
+      for (const id of ids) {
+        try {
+          if (domain === 'scene') await this.activateScene(id);
+          else if (['light', 'switch', 'fan', 'input_boolean', 'cover', 'media_player'].includes(domain))
+            this.publish(applyDemoService(this.getSnapshot(), domain, name, id, data));
+        } catch {
+          // A step the demo cannot play is left out, as an unavailable device would be.
+        }
+      }
+    }
+  }
+
+  private helperList(domain: HelperDomain): HelperRecord[] {
+    return this.helpers.get(domain) ?? [];
+  }
+  async listHelpers(domain: HelperDomain): Promise<HelperRecord[]> {
+    this.guard();
+    return structuredClone(this.helperList(domain));
+  }
+  async createHelper(domain: HelperDomain, fields: Record<string, unknown>): Promise<HelperRecord> {
+    const snapshot = this.getSnapshot();
+    const name = typeof fields.name === 'string' ? fields.name : 'Helper';
+    const base = slugify(name) || 'helper';
+    let id = base;
+    for (let suffix = 2; snapshot.entities.some((item) => item.entity_id === `${domain}.${id}`); suffix++) id = `${base}_${suffix}`;
+    const helper: HelperRecord = { ...structuredClone(fields), id, name };
+    this.helpers.set(domain, [...this.helperList(domain), helper]);
+    const options = Array.isArray(fields.options) ? fields.options : [];
+    const state = domain === 'input_boolean' ? 'off'
+      : domain === 'input_number' ? String(fields.min ?? 0)
+        : domain === 'input_select' ? String(options[0] ?? '')
+          : domain === 'input_datetime' ? (fields.has_time ? '00:00:00' : '2026-01-01')
+            : domain === 'counter' ? String(fields.initial ?? 0)
+              : domain === 'timer' ? 'idle' : domain === 'input_text' ? '' : 'unknown';
+    this.publish({
+      ...snapshot,
+      entities: [...snapshot.entities, { entity_id: `${domain}.${id}`, state, attributes: { friendly_name: name } }],
+      registry: [...snapshot.registry, { entity_id: `${domain}.${id}`, area_id: null, device_id: null, platform: domain, unique_id: id }],
+    });
+    return structuredClone(helper);
+  }
+  async updateHelper(domain: HelperDomain, helperId: string, fields: Record<string, unknown>): Promise<HelperRecord> {
+    const snapshot = this.getSnapshot();
+    const previous = this.helperList(domain).find((item) => item.id === helperId);
+    if (!previous) throw new Error('The demo helper no longer exists.');
+    const name = typeof fields.name === 'string' ? fields.name : previous.name;
+    const helper: HelperRecord = { ...previous, ...structuredClone(fields), id: helperId, name };
+    this.helpers.set(domain, this.helperList(domain).map((item) => item.id === helperId ? helper : item));
+    this.publish({ ...snapshot, entities: snapshot.entities.map((item) => item.entity_id === `${domain}.${helperId}`
+      ? { ...item, attributes: { ...item.attributes, friendly_name: name } } : item) });
+    return structuredClone(helper);
+  }
+  async deleteHelper(domain: HelperDomain, helperId: string): Promise<void> {
+    const snapshot = this.getSnapshot();
+    this.helpers.set(domain, this.helperList(domain).filter((item) => item.id !== helperId));
+    this.publish({
+      ...snapshot,
+      entities: snapshot.entities.filter((item) => item.entity_id !== `${domain}.${helperId}`),
+      registry: snapshot.registry.filter((item) => item.entity_id !== `${domain}.${helperId}`),
     });
   }
 }

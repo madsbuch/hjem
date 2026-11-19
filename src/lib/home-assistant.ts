@@ -1,6 +1,18 @@
 import { parseCalendarEvents, type HassCalendarEvent } from './calendar';
-import { parseSceneConfig, requestSceneConfig, SceneRequestError } from './home-assistant-scenes';
-import type { HomeSetupTransport, SceneConfig } from './home-setup-types';
+import { parseSceneConfig, requestEditorConfig, requestSceneConfig, SceneRequestError } from './home-assistant-scenes';
+import {
+  helperDomains,
+  type HelperDomain,
+  type HelperRecord,
+  type HomeSetupTransport,
+  type RoutineConfig,
+  type RoutineKind,
+  type RoutineParts,
+  type RoutineService,
+  type RoutineTrace,
+  type RoutineValidation,
+  type SceneConfig,
+} from './home-setup-types';
 import {
   HomeAssistantProtocolError,
   isEntityId,
@@ -58,6 +70,8 @@ export interface HassEntityRegistryEntry {
   disabled_by?: string | null;
   name?: string | null;
   original_name?: string | null;
+  /** The integration's own id for this entity; for helpers and scripts, their saved id. */
+  unique_id?: string;
 }
 export interface HassSnapshot {
   entities: HassEntity[];
@@ -424,6 +438,139 @@ export class HomeAssistantClient implements HomeSetupTransport {
     } finally {
       this.httpRequests.delete(controller);
     }
+  }
+
+  async setEntityHidden(entityId: string, hidden: boolean): Promise<void> {
+    if (!isEntityId(entityId)) throw new Error('A registered entity is required.');
+    await this.setupCommand({ type: 'config/entity_registry/update', entity_id: entityId, hidden_by: hidden ? 'user' : null });
+  }
+
+  async readRoutine(kind: RoutineKind, configId: string): Promise<RoutineConfig> {
+    const value = await this.routineRequest(kind, 'GET', configId);
+    if (!isRecord(value)) throw new Error(`Home Assistant returned an invalid ${kind} configuration.`);
+    return value;
+  }
+
+  async saveRoutine(kind: RoutineKind, configId: string, config: RoutineConfig): Promise<void> {
+    const value = await this.routineRequest(kind, 'POST', configId, config);
+    if (!isRecord(value) || value.result !== 'ok')
+      throw new Error(`Home Assistant did not confirm that the ${kind} was saved. Read its configuration before retrying.`);
+  }
+
+  async deleteRoutine(kind: RoutineKind, configId: string): Promise<void> {
+    const value = await this.routineRequest(kind, 'DELETE', configId);
+    if (!isRecord(value) || value.result !== 'ok')
+      throw new Error(`Home Assistant did not confirm that the ${kind} was removed.`);
+  }
+
+  private async routineRequest(kind: RoutineKind, method: 'GET' | 'POST' | 'DELETE', configId: string, config?: RoutineConfig): Promise<unknown> {
+    const check = this.currentSession();
+    const controller = new AbortController();
+    this.httpRequests.add(controller);
+    try {
+      const value = await requestEditorConfig(kind, this.serverUrl, this.token, method, configId, config, controller.signal);
+      check();
+      return value;
+    } finally {
+      this.httpRequests.delete(controller);
+    }
+  }
+
+  /** Home Assistant's own check of a routine; older servers that cannot check report `checked: false`. */
+  async validateRoutine(parts: RoutineParts): Promise<RoutineValidation> {
+    const check = this.currentSession();
+    let value: unknown;
+    try {
+      value = await this.command({ type: 'validate_config', ...parts });
+    } catch (error) {
+      check();
+      if (error instanceof ServerCommandError) return { checked: false, errors: [] };
+      throw error;
+    }
+    check();
+    if (!isRecord(value)) return { checked: false, errors: [] };
+    const errors: string[] = [];
+    for (const [part, result] of Object.entries(value)) {
+      if (isRecord(result) && result.valid === false)
+        errors.push(`${part}: ${typeof result.error === 'string' ? result.error.slice(0, 600) : 'not valid'}`);
+    }
+    return { checked: true, errors };
+  }
+
+  async deviceTriggers(deviceId: string): Promise<Record<string, unknown>[]> {
+    this.validateRegistryId(deviceId);
+    const value = await this.setupCommand({ type: 'device_automation/trigger/list', device_id: deviceId });
+    return Array.isArray(value) ? value.filter(isRecord) : [];
+  }
+
+  async routineTraces(kind: RoutineKind, configId: string): Promise<RoutineTrace[]> {
+    this.validateRegistryId(configId);
+    const value = await this.setupCommand({ type: 'trace/list', domain: kind, item_id: configId });
+    if (!Array.isArray(value)) return [];
+    const short = (item: unknown) => typeof item === 'string' ? item.slice(0, 300) : undefined;
+    return value.flatMap((entry: unknown): RoutineTrace[] => {
+      if (!isRecord(entry) || typeof entry.run_id !== 'string') return [];
+      const times = isRecord(entry.timestamp) ? entry.timestamp : {};
+      return [{
+        run_id: entry.run_id,
+        started: short(times.start),
+        finished: short(times.finish),
+        result: short(entry.script_execution) ?? short(entry.state),
+        trigger: short(entry.trigger),
+        error: short(entry.error),
+        last_step: short(entry.last_step),
+      }];
+    });
+  }
+
+  async routineService(kind: RoutineKind, service: RoutineService, entityId: string): Promise<void> {
+    if (!entityId.startsWith(`${kind}.`) || (service === 'trigger' && kind !== 'automation'))
+      throw new Error('That routine cannot be used this way.');
+    await this.callService(kind, service, entityId);
+  }
+
+  private helperRecord(value: unknown): HelperRecord {
+    if (!isRecord(value) || typeof value.id !== 'string' || typeof value.name !== 'string')
+      throw new Error('Home Assistant returned an invalid helper.');
+    return { ...value, id: value.id, name: value.name };
+  }
+
+  private validateHelper(domain: HelperDomain, helperId?: string): void {
+    if (!helperDomains.includes(domain)) throw new Error('That kind of helper is not supported.');
+    if (helperId !== undefined) this.validateRegistryId(helperId);
+  }
+
+  /** A helper type this Home Assistant has not loaded simply has no helpers. */
+  async listHelpers(domain: HelperDomain): Promise<HelperRecord[]> {
+    this.validateHelper(domain);
+    const check = this.currentSession();
+    try {
+      const value = await this.command({ type: `${domain}/list` });
+      check();
+      return Array.isArray(value) ? value.map((entry: unknown) => this.helperRecord(entry)) : [];
+    } catch (error) {
+      check();
+      if (error instanceof ServerCommandError) return [];
+      throw error;
+    }
+  }
+
+  async createHelper(domain: HelperDomain, fields: Record<string, unknown>): Promise<HelperRecord> {
+    this.validateHelper(domain);
+    const { id: _id, ...settings } = fields;
+    return this.helperRecord(await this.setupCommand({ ...settings, type: `${domain}/create` }));
+  }
+
+  async updateHelper(domain: HelperDomain, helperId: string, fields: Record<string, unknown>): Promise<HelperRecord> {
+    this.validateHelper(domain, helperId);
+    // A setting named id would replace the command's own id.
+    const { id: _id, ...settings } = fields;
+    return this.helperRecord(await this.setupCommand({ ...settings, type: `${domain}/update`, [`${domain}_id`]: helperId }));
+  }
+
+  async deleteHelper(domain: HelperDomain, helperId: string): Promise<void> {
+    this.validateHelper(domain, helperId);
+    await this.setupCommand({ type: `${domain}/delete`, [`${domain}_id`]: helperId });
   }
 
   private validateRegistryId(id: string): void {

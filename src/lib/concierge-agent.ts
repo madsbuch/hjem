@@ -72,6 +72,8 @@ export interface ConciergeOptions {
   ) => Promise<unknown>;
   signal: AbortSignal;
   onEvent: (event: AgentEvent) => void;
+  /** Model requests and tool calls allowed in one turn; defaults suit everyday requests. */
+  limits?: { requests: number; tools: number };
 }
 
 type ErrorCode = 'aborted' | 'request' | 'protocol' | 'limit';
@@ -496,6 +498,8 @@ export async function runConcierge(
     emit({ type: 'usage', ...usage });
   };
 
+  const maxRequests = Math.max(2, Math.min(options.limits?.requests ?? MAX_REQUESTS, 40));
+  const maxTools = Math.max(1, Math.min(options.limits?.tools ?? MAX_TOOLS, 80));
   try {
     messages = copyMessages(
       options.messages.filter((message) => message.role !== 'system'),
@@ -503,14 +507,14 @@ export async function runConcierge(
     for (const [id, result] of previousResults(messages))
       completed.set(id, result);
     checkAbort(options.signal);
-    for (let round = 0; round < MAX_REQUESTS; round++) {
+    for (let round = 0; round < maxRequests; round++) {
       checkAbort(options.signal);
       const offerTools =
-        round < MAX_REQUESTS - 1 &&
-        toolsExecuted < MAX_TOOLS &&
+        round < maxRequests - 1 &&
+        toolsExecuted < maxTools &&
         options.tools.length > 0;
       const summaryOnly =
-        round === MAX_REQUESTS - 1 || toolsExecuted >= MAX_TOOLS;
+        round === maxRequests - 1 || toolsExecuted >= maxTools;
       const prompt =
         options.systemPrompt +
         (summaryOnly
@@ -615,7 +619,7 @@ export async function runConcierge(
           });
           continue;
         }
-        if (!offerTools || toolsExecuted >= MAX_TOOLS) {
+        if (!offerTools || toolsExecuted >= maxTools) {
           const detail =
             'The action limit was reached. This action was not run; summarize the available results.';
           appendResult(call, errorResult(detail, 'not_executed'));
