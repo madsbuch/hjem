@@ -19,7 +19,7 @@ test.beforeEach(async () => {
 test.afterEach(async () => {
   await hub.close();
   await ha.close();
-  await rm(dataDir, { recursive: true, force: true });
+  await rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
 });
 
 async function navigate(page: Page, name: string) {
@@ -77,7 +77,7 @@ test('the copy on a device brings the home back onto a new hub', async ({ page }
   ha.state.areas = [];
   ha.state.deskArea = null;
   ha.state.doorArea = null;
-  await rm(dataDir, { recursive: true, force: true });
+  await rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   dataDir = await mkdtemp(join(tmpdir(), 'hjem-hub-e2e-'));
   hub = await startHub({ haUrl: ha.url, haToken: ha.token, dataDir, port: 0, host: '127.0.0.1', version: '0.0.0-test', settle: 50 });
   await expect.poll(() => hub.home.current()?.revision).toBe(1);

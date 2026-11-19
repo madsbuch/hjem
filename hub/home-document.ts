@@ -63,6 +63,7 @@ export class HomeDocumentService {
   private structure: unknown[] = [];
   private routines = '';
   private stopped = false;
+  private reading: Promise<void> = Promise.resolve();
 
   constructor(private readonly options: Options) {
     this.client = new HomeAssistantClient({
@@ -93,11 +94,13 @@ export class HomeDocumentService {
     });
   }
 
-  stop(): void {
+  /** Stop reading the home; resolves once a read that was under way has finished with its files. */
+  async stop(): Promise<void> {
     this.stopped = true;
     clearTimeout(this.timer);
     clearInterval(this.periodic);
     this.client.disconnect();
+    await this.reading;
   }
 
   current(): HomeRecord | null {
@@ -117,7 +120,8 @@ export class HomeDocumentService {
   schedule(delay = this.options.settle ?? 5_000): void {
     if (this.stopped) return;
     clearTimeout(this.timer);
-    this.timer = setTimeout(() => void this.build(), delay);
+    // Reads run one after another, so stopping can wait for the one under way.
+    this.timer = setTimeout(() => { this.reading = this.reading.then(() => this.build()); }, delay);
   }
 
   /** Rooms, names, and the list of moods and routines changing means the document may have. */

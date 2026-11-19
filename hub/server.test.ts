@@ -27,7 +27,7 @@ async function fixture() {
   const logs: string[] = [];
   const start = () => startHub({ haUrl: ha.url, haToken: ha.token, dataDir, port: 0, host: '127.0.0.1', version: '0.0.0-test', settle: 20, log: (line) => logs.push(line) });
   let hub = await start();
-  cleanup.push(() => ha.close(), () => rm(dataDir, { recursive: true, force: true }), () => hub.close());
+  cleanup.push(() => ha.close(), () => rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }), () => hub.close());
   const url = () => `http://127.0.0.1:${hub.port}`;
   /** The app's own client, connected to the hub as it would connect to Home Assistant. */
   const app = async (code = hub.pairingCode) => {

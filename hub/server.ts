@@ -285,7 +285,7 @@ ${ingress
   return {
     port, hubId, pairingCode, home,
     async close() {
-      home.stop();
+      await home.stop();
       for (const client of sockets.clients) client.terminate();
       await new Promise<void>((resolve) => server.close(() => resolve()));
     },
