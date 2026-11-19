@@ -21,7 +21,7 @@ import { requestConciergeVoice } from './concierge-voice-api';
 import { listConciergeChats, loadConciergeChat, saveConciergeChat, type ChatRecord, type ChatSummary } from './concierge-history';
 import {
   conciergeSystemPrompt,
-  conciergeTools,
+  toolsFor,
   createConciergeExecutor,
   type ConciergeContext,
 } from './concierge-tools';
@@ -306,10 +306,12 @@ export function useConcierge(context: ConciergeContext, homeKey: string) {
     try {
       const result = await runConcierge({
         messages: wire,
-        systemPrompt: conciergeSystemPrompt + '\nEarlier conversation messages are historical context. Never repeat previous device actions automatically or use historical device states as current facts; discover the current home before acting.' + (voice
+        systemPrompt: conciergeSystemPrompt + '\nEarlier conversation messages are historical context. Never repeat previous device actions automatically or use historical device states as current facts; discover the current home before acting.' + (latest.current.appsAvailable === false
+          ? '\nHjem is not the home screen on this device, so you cannot find or open apps here; say so if asked.'
+          : '') + (voice
           ? '\nThis is a spoken conversation. Reply naturally and concisely in the language the user speaks. Avoid Markdown formatting in spoken answers. Use the same home tools and wait for their results before reporting completed actions.'
           : ''),
-        tools: conciergeTools,
+        tools: toolsFor(latest.current),
         // Setting up a routine takes several reads before the write, and a retry if it is refused.
         limits: { requests: 16, tools: 36 },
         request: voice

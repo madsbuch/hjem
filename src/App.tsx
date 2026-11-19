@@ -334,6 +334,11 @@ export default function App() {
     error: launcher.error,
     onRefresh: () => void launcher.refresh(),
   };
+  /** Where Hjem is an app rather than the home screen, it leaves the device's apps to the device. */
+  const menu = navigation.filter(({ id }) => id !== 'apps' || launcher.homeScreen);
+  useEffect(() => {
+    if (page === 'apps' && !launcher.homeScreen) setPage('home');
+  }, [page, launcher.homeScreen]);
   /** The Planner and Home setup open from Settings, so Settings stays highlighted there. */
   const section: Page = page === 'planner' || page === 'setup' ? 'settings' : page;
   const navigate = (next: Page) => {
@@ -522,8 +527,9 @@ export default function App() {
     snapshot,
     demo: mode === 'demo',
     connected: status === 'connected',
-    apps: launcher.apps,
+    apps: launcher.homeScreen ? launcher.apps : [],
     appsPreview: launcher.preview,
+    appsAvailable: launcher.homeScreen,
     action: act,
     launch: launchApp,
     setup,
@@ -783,7 +789,7 @@ export default function App() {
         </button>
         <nav aria-label="Main navigation">
           <div className="sidebar-links">
-            {navigation.filter(({ id }) => id !== 'settings').map(({ id, label, Icon }) => (
+            {menu.filter(({ id }) => id !== 'settings').map(({ id, label, Icon }) => (
               <button
                 key={id}
                 className={`nav-item ${section === id ? 'selected' : ''}`}
@@ -1056,7 +1062,7 @@ export default function App() {
             />
           )}
 
-          {page === 'apps' && (
+          {page === 'apps' && launcher.homeScreen && (
             <>
               <section className="page-intro">
                 <div>
@@ -1251,7 +1257,7 @@ export default function App() {
                   copies={copies}
                   hubId={mode === 'live' ? hub?.hubId : undefined}
                 />
-                <AppVisibilitySettings
+                {launcher.homeScreen && <AppVisibilitySettings
                   apps={launcher.allApps}
                   hidden={launcher.hidden}
                   preview={launcher.preview}
@@ -1259,41 +1265,62 @@ export default function App() {
                   error={launcher.error}
                   onSetHidden={launcher.setHidden}
                   onRefresh={() => void launcher.refresh()}
-                />
+                />}
                 <ElectricitySettings
                   settings={electricity.settings}
                   onChange={electricity.setSettings}
                   notify={notify}
                 />
-                <section className="settings-card home-screen-card">
-                  <span className="settings-icon">
-                    <House size={25} />
-                  </span>
-                  <h2>A home for your tablet</h2>
-                  <p>
-                    {launcher.supported
-                      ? 'Make Hjem your default home screen to return to your apps, music, and home controls whenever you press Home.'
-                      : 'Install Hjem on your Android tablet to open installed apps and use it as your home screen. This preview uses sample apps.'}
-                  </p>
-                  <div className="setting-row">
-                    <span>Home screen</span>
-                    <strong>
-                      {launcher.isDefaultHome
-                        ? 'Hjem is your default'
-                        : launcher.supported
-                          ? 'Ready to set up'
-                          : 'Preview'}
-                    </strong>
-                  </div>
-                  <button
-                    className="primary-button"
-                    disabled={!launcher.supported || launcher.loading}
-                    onClick={() => void chooseHomeApp()}
-                  >
-                    Choose default home app
-                    <ArrowUpRight size={17} />
-                  </button>
-                </section>
+                {launcher.homeScreen ? (
+                  <section className="settings-card home-screen-card">
+                    <span className="settings-icon">
+                      <House size={25} />
+                    </span>
+                    <h2>A home for your tablet</h2>
+                    <p>
+                      {launcher.supported
+                        ? 'Make Hjem your default home screen to return to your apps, music, and home controls whenever you press Home.'
+                        : 'Install Hjem on your Android tablet to open installed apps and use it as your home screen. This preview uses sample apps.'}
+                    </p>
+                    <div className="setting-row">
+                      <span>Home screen</span>
+                      <strong>
+                        {launcher.isDefaultHome
+                          ? 'Hjem is your default'
+                          : launcher.supported
+                            ? 'Ready to set up'
+                            : 'Preview'}
+                      </strong>
+                    </div>
+                    <button
+                      className="primary-button"
+                      disabled={!launcher.supported || launcher.loading}
+                      onClick={() => void chooseHomeApp()}
+                    >
+                      Choose default home app
+                      <ArrowUpRight size={17} />
+                    </button>
+                  </section>
+                ) : launcher.supported && (
+                  <section className="settings-card home-screen-card">
+                    <span className="settings-icon">
+                      <House size={25} />
+                    </span>
+                    <h2>Home screen</h2>
+                    <p>
+                      Hjem is an app on this device. Make it the home screen, as
+                      on a tablet, and it also shows and opens your apps.
+                    </p>
+                    <button
+                      className="secondary-button"
+                      disabled={launcher.loading}
+                      onClick={() => void chooseHomeApp()}
+                    >
+                      Use Hjem as the home screen
+                      <ArrowUpRight size={17} />
+                    </button>
+                  </section>
+                )}
                 <section className="settings-card appearance-card">
                   <span className="settings-icon">
                     <Moon size={25} />
@@ -1349,7 +1376,7 @@ export default function App() {
       <div className="mobile-navigation">
         <div className="connection-status-slot">{connectionNotice}</div>
         <nav className="mobile-nav" aria-label="Mobile navigation">
-          {navigation.map(({ id, label, Icon }) => (
+          {menu.map(({ id, label, Icon }) => (
             <button
               key={id}
               className={section === id ? 'selected' : ''}

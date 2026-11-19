@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   createConciergeExecutor,
+  toolsFor,
   type ConciergeContext,
 } from './concierge-tools';
 import type { HassEntity, HassSnapshot } from './home-assistant';
@@ -795,5 +796,21 @@ describe('Home Concierge automations, scripts, and helpers', () => {
     expect(renameDevice).toHaveBeenCalledExactlyOnceWith('speaker-device', 'Radio', controller.signal);
     expect(setEntityHidden).not.toHaveBeenCalled();
     expect(deleteRoom).not.toHaveBeenCalled();
+  });
+});
+
+describe('Home Concierge where Hjem is not the home screen', () => {
+  it('has no app tools, and refuses them if asked anyway', async () => {
+    const { run, context, launch } = setup();
+    expect(toolsFor(context).map((definition) => definition.function.name)).toEqual(expect.arrayContaining(['list_apps', 'open_app']));
+    context.appsAvailable = false;
+    const names = toolsFor(context).map((definition) => definition.function.name);
+    expect(names).not.toContain('list_apps');
+    expect(names).not.toContain('open_app');
+    expect(names).toEqual(expect.arrayContaining(['get_home_state', 'control_device', 'save_automation']));
+    await expect(run('list_apps')).rejects.toThrow('not this device’s home screen');
+    await expect(run('open_app', { package_name: 'com.sonos.acr2' })).rejects.toThrow('not this device’s home screen');
+    expect(launch).not.toHaveBeenCalled();
+    await expect(run('get_home_state')).resolves.toMatchObject({ devices: expect.any(Array) });
   });
 });
