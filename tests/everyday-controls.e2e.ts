@@ -97,38 +97,103 @@ test('everything else stays under All devices, and the chosen tab is kept', asyn
   await expect(tabs(page).getByRole('tab', { name: 'All devices' })).toHaveAttribute('aria-selected', 'true');
 });
 
-test('a colour light changes colour and white from its row', async ({ page }) => {
+/** Press and hold the dot, slide to a point relative to the wheel's centre (or the white bar), and let go. */
+async function slide(page: Page, dot: ReturnType<Page['getByRole']>, target: (wheel: { cx: number; cy: number; radius: number }) => { x: number; y: number }, release = true) {
+  await dot.scrollIntoViewIfNeeded();
+  const box = await dot.boundingBox();
+  if (!box) throw new Error('No colour dot');
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.locator('.color-wheel').waitFor();
+  // A light without colours has no wheel, only the white bar.
+  const part = async (selector: string) => await page.locator(selector).count() ? page.locator(selector).boundingBox() : null;
+  const disc = await part('.color-wheel-disc');
+  const bar = await part('.color-wheel-white');
+  const wheel = disc ? { cx: disc.x + disc.width / 2, cy: disc.y + disc.height / 2, radius: disc.width / 2 }
+    : bar ? { cx: bar.x + bar.width / 2, cy: bar.y + bar.height / 2, radius: bar.width / 2 } : null;
+  if (!wheel) throw new Error('The wheel did not open');
+  const point = target(wheel);
+  await page.mouse.move(point.x, point.y, { steps: 5 });
+  if (release) await page.mouse.up();
+}
+
+test('holding a colour light’s dot opens a colour wheel; sliding and letting go sets the colour', async ({ page }) => {
   await controls(page);
   const kitchen = page.getByRole('region', { name: 'Kitchen', exact: true });
   const living = page.getByRole('region', { name: 'Living room', exact: true });
-  // Only lights that can change colour or white offer it.
+  const wheel = page.locator('.color-wheel');
+  // Only lights that can change colour or white have a dot.
   await expect(living.getByRole('button', { name: /Pendant lights colour/ })).toHaveCount(0);
-  const colour = kitchen.getByRole('button', { name: /Kitchen lights colour/ });
-  await expect(colour).toHaveAttribute('aria-expanded', 'false');
-  await colour.click();
-  const palette = kitchen.getByRole('group', { name: 'Kitchen lights colour' });
-  await expect(palette.getByRole('button')).toHaveCount(8);
+  const dot = kitchen.getByRole('button', { name: /Kitchen lights colour/ });
+  await expect(wheel).toHaveCount(0);
 
-  // Choosing a colour turns the light on in that colour.
-  await palette.getByRole('button', { name: 'Blue' }).click();
+  // While held, the wheel is open and names what letting go would choose.
+  await slide(page, dot, ({ cx, cy, radius }) => ({ x: cx, y: cy + radius * 0.9 }), false);
+  await expect(wheel).toBeVisible();
+  await expect(wheel.getByRole('status')).toHaveText('Turquoise');
+  await expect(kitchen.locator('.controls-room-heading')).toContainText('Off');
+  await page.mouse.up();
+  // Letting go sets it, turns the light on, and the wheel is gone.
+  await expect(wheel).toHaveCount(0);
   await expect(kitchen.locator('.controls-room-heading')).toContainText('1 on');
-  await expect(palette.getByRole('button', { name: 'Blue' })).toHaveAttribute('aria-pressed', 'true');
-  await expect(colour).toHaveAccessibleName('Kitchen lights colour, blue');
-  await expect(colour.locator('i')).toHaveCSS('background-color', 'rgb(0, 64, 255)');
+  await expect(dot).toHaveAccessibleName(/^Kitchen lights colour, turquoise\./);
+  // The dot shows the chosen colour: strongly green and blue, hardly any red.
+  const shown = await dot.locator('i').evaluate((node) => getComputedStyle(node).backgroundColor.match(/\d+/g)?.map(Number) ?? []);
+  expect(shown[0]).toBeLessThan(60);
+  expect(shown[1]).toBeGreaterThan(235);
+  expect(shown[2]).toBeGreaterThan(235);
 
-  // Back to white, warmer or cooler.
-  const white = palette.getByRole('slider', { name: 'Kitchen lights white, warm to cool' });
-  await white.focus();
-  await page.keyboard.press('End');
-  await expect(white).toHaveValue('6500');
-  await expect(colour).toHaveAccessibleName('Kitchen lights colour, white');
-  await expect(palette.getByRole('button', { name: 'Blue' })).toHaveAttribute('aria-pressed', 'false');
+  // Any colour on the wheel, not a fixed few: a pale pink towards the centre.
+  await slide(page, dot, ({ cx, cy, radius }) => ({ x: cx - radius * 0.3, y: cy - radius * 0.3 }));
+  await expect(dot).toHaveAccessibleName(/, pink\./);
 
-  // A light with only warm-to-cool white has the slider and no colours; one palette shows at a time.
-  await living.getByRole('button', { name: /Reading lamp colour/ }).click();
-  await expect(palette).toHaveCount(0);
-  const reading = living.getByRole('group', { name: 'Reading lamp colour' });
-  await expect(reading.getByRole('slider')).toHaveCount(1);
-  await expect(reading.getByRole('button')).toHaveCount(0);
+  // A plain tap, or sliding off the wheel and letting go, changes nothing.
+  await dot.click();
+  await expect(wheel).toHaveCount(0);
+  await slide(page, dot, ({ cx, cy, radius }) => ({ x: cx + radius * 1.6, y: cy - radius * 1.2 }));
+  await expect(dot).toHaveAccessibleName(/, pink\./);
+
+  // The bar under the wheel sets a white, warm to cool.
+  await slide(page, dot, ({ cx, cy, radius }) => ({ x: cx + radius * 0.98, y: cy + radius + 27 }), false);
+  await expect(wheel.getByRole('status')).toHaveText('Cool white');
+  await page.mouse.up();
+  await expect(dot).toHaveAccessibleName(/, white\./);
+
+  // A light with only warm-to-cool white gets the bar without a wheel.
+  const reading = living.getByRole('button', { name: /Reading lamp colour/ });
+  await slide(page, reading, ({ cx, cy, radius }) => ({ x: cx - radius * 0.9, y: cy }), false);
+  await expect(page.locator('.color-wheel-disc')).toHaveCount(0);
+  await expect(wheel.getByRole('status')).toHaveText('Warm white');
+  await page.mouse.up();
+  await expect(wheel).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test('the colour wheel works from the keyboard', async ({ page }) => {
+  await controls(page);
+  const kitchen = page.getByRole('region', { name: 'Kitchen', exact: true });
+  const dot = kitchen.getByRole('button', { name: /Kitchen lights colour/ });
+  const wheel = page.locator('.color-wheel');
+  await dot.focus();
+  await page.keyboard.press('Enter');
+  await expect(wheel).toBeVisible();
+  await expect(dot).toHaveAttribute('aria-expanded', 'true');
+  // Escape leaves it as it was.
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Escape');
+  await expect(wheel).toHaveCount(0);
+  await expect(kitchen.locator('.controls-room-heading')).toContainText('Off');
+
+  await page.keyboard.press('Enter');
+  for (let step = 0; step < 12; step++) await page.keyboard.press('ArrowRight');
+  await expect(wheel.getByRole('status')).toHaveText('Green');
+  await page.keyboard.press('Enter');
+  await expect(wheel).toHaveCount(0);
+  await expect(dot).toHaveAccessibleName(/, green\./);
+
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('PageUp');
+  await expect(wheel.getByRole('status')).toHaveText(/white$/);
+  await page.keyboard.press('Enter');
+  await expect(dot).toHaveAccessibleName(/, white\./);
 });

@@ -161,6 +161,9 @@ html[data-theme='dark'] .controls-room {
 }
 .controls-color {
   grid-column: 3;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  user-select: none;
   width: 36px;
   height: 36px;
   padding: 0;
@@ -185,63 +188,64 @@ html[data-theme='dark'] .controls-room {
 .controls-color:focus-visible {
   outline-offset: -2px;
 }
-.controls-palette {
-  grid-column: 1 / -1;
-  display: grid;
-  gap: 10px;
-  padding: 6px 0 10px;
-}
-.controls-palette label {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 12px;
-  font-size: 11px;
-  color: var(--muted);
-}
-.controls-white {
-  appearance: none;
-  -webkit-appearance: none;
-  width: 100%;
-  height: 12px;
-  margin: 0;
-  border-radius: 6px;
+/* The wheel opens under the finger and is only there while it is held. */
+.color-wheel {
+  --wheel-card: #fff;
+  position: fixed;
+  z-index: 60;
   border: 1px solid var(--border);
-  cursor: pointer;
+  border-radius: 20px;
+  background: var(--wheel-card);
+  box-shadow: 0 12px 40px #0d16204d;
+  pointer-events: none;
+  user-select: none;
 }
-.controls-white::-webkit-slider-thumb {
-  appearance: none;
-  -webkit-appearance: none;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: #fff;
-  border: 2px solid #5b6672;
-  box-shadow: 0 1px 3px #0003;
+html[data-theme='dark'] .color-wheel {
+  --wheel-card: #20262c;
 }
-.controls-white::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #fff;
-  border: 2px solid #5b6672;
-}
-.controls-swatches {
-  display: grid;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
-  gap: 6px;
-}
-.controls-swatches button {
+.color-wheel-choice {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  top: 14px;
   height: 34px;
-  padding: 0;
-  display: grid;
-  place-items: center;
-  border-radius: 9px;
-  border: 1px solid #0002;
-  color: #1c232b;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 550;
 }
-.controls-swatches button[aria-pressed='true'] {
-  box-shadow: 0 0 0 2px var(--room-card), 0 0 0 4px var(--forest);
+.color-wheel-choice i {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid #0003;
+  background: var(--border);
+}
+.color-wheel-disc {
+  position: absolute;
+  width: 208px;
+  height: 208px;
+  margin: -104px 0 0 -104px;
+  border-radius: 50%;
+  border: 1px solid #0002;
+  background:
+    radial-gradient(closest-side, #fff, #fff0),
+    conic-gradient(#f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00);
+}
+.color-wheel-white {
+  position: absolute;
+  border-radius: 10px;
+  border: 1px solid #0002;
+}
+.color-wheel-marker {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  margin: -13px 0 0 -13px;
+  border-radius: 50%;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 1px #0006, 0 2px 6px #0005;
 }
 .controls-light .controls-switch {
   grid-column: 4;
