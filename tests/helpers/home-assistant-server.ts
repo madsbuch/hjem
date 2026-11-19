@@ -89,6 +89,11 @@ export async function localHomeAssistant() {
           result = { context: { id: 'fixture-action' } };
           break;
         default:
+          // Like Home Assistant, answer a command it does not have; Hjem asks whether it is talking to a hub.
+          if (value.type === 'hjem/home/subscribe') {
+            send(socket, { id: value.id, type: 'result', success: false, error: { code: 'unknown_command', message: 'Unknown command.' } });
+            return;
+          }
           throw new Error(`Unexpected fixture command: ${value.type}`);
       }
       send(socket, { id: value.id, type: 'result', success: true, result });

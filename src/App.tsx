@@ -38,7 +38,9 @@ import {
   type ConnectionStatus,
   type HassEntity,
   type HassSnapshot,
+  type HubState,
 } from './lib/home-assistant';
+import { listReplicas, replicaFrom, saveReplica, type HomeReplica } from './lib/home-replica';
 import { demoSnapshot, applyDemoService, joinDemoAppliance } from './lib/demo';
 import { HomeSetupManager } from './lib/home-setup';
 import { DemoHomeSetupTransport } from './lib/demo-home-setup';
@@ -188,6 +190,9 @@ export default function App() {
   const dialog = useRef<HTMLDialogElement>(null);
   const client = useRef<HomeAssistantClient | null>(null);
   const sessionVersion = useRef(0);
+  const [hub, setHub] = useState<HubState | null>(null);
+  const [copies, setCopies] = useState<HomeReplica[]>([]);
+  const keepCopy = useRef<(state: HubState) => void>(() => undefined);
   const formIsBusy = status === 'connecting' || savingConnection;
   const canControl = !formIsBusy && (mode === 'demo' || status === 'connected');
   const modeRef = useRef(mode);
@@ -252,8 +257,16 @@ export default function App() {
         if (!active) return;
         setStatus(next);
         setConnectionMessage(message || '');
+        // A new connection may be to Home Assistant directly; it says so by not answering as a hub.
+        if (next === 'connecting' || next === 'disconnected') setHub(null);
+      },
+      onHub: (state) => {
+        if (!active) return;
+        setHub(state);
+        keepCopy.current(state);
       },
     });
+    void listReplicas().then((saved) => { if (active) setCopies(saved); }).catch(() => undefined);
     client.current = connection;
     const saved = getStorageSnapshot().connection;
     if (saved) {
@@ -536,6 +549,14 @@ export default function App() {
       concierge_model: concierge.settings.model,
     };
   }
+
+  /** Every copy of the home the hub sends is kept on this device, with this device's settings. */
+  keepCopy.current = (state) => {
+    const replica = replicaFrom(state, collectSettings());
+    if (!replica) return;
+    void saveReplica(replica).then(setCopies).catch(() =>
+      notify('This device could not save its copy of your home. It will try again with the next change.', true));
+  };
 
   /** Merge imported settings into this tablet's; nothing existing is removed. */
   async function restoreSettings(settings: ExportedSettings): Promise<string[]> {
@@ -1132,6 +1153,12 @@ export default function App() {
                       <strong className="server-value">{server}</strong>
                     </div>
                   )}
+                  {mode === 'live' && hub && (
+                    <div className="setting-row">
+                      <span>Through</span>
+                      <strong>Hjem hub{hub.version ? ` ${hub.version}` : ''}</strong>
+                    </div>
+                  )}
                   {storage.connection && (
                     <button
                       className="text-button disconnect"
@@ -1221,6 +1248,8 @@ export default function App() {
                   restoreSettings={restoreSettings}
                   onBusyChange={setSetupUiBusy}
                   notify={notify}
+                  copies={copies}
+                  hubId={mode === 'live' ? hub?.hubId : undefined}
                 />
                 <AppVisibilitySettings
                   apps={launcher.allApps}
@@ -1410,6 +1439,12 @@ export default function App() {
           <p className="field-help">
             In Home Assistant, open your profile → Security → Long-lived access
             tokens. Create a token for Hjem, then select Generate QR code.
+          </p>
+          <p className="field-help">
+            Using the Hjem hub? Enter its address, such as
+            http://homeassistant.local:8099, and its pairing code in place of
+            the token. The code is shown when you open Hjem hub in Home
+            Assistant.
           </p>
           {isTauri() && (
             <div className="privacy-note">

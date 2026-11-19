@@ -220,6 +220,8 @@ export type ServerMessage =
   | { type: 'state_changed'; id: number; change: StateChange }
   | { type: 'registry_updated'; id: number }
   | { type: 'device_event'; id: number; event: DeviceEvent }
+  /** A Hjem hub's copy of the home; the connection parses it. */
+  | { type: 'home_document'; id: number; data: unknown }
   | { type: 'other_event'; id: number };
 
 function parseMessage(value: unknown): ServerMessage {
@@ -249,6 +251,7 @@ function parseMessage(value: unknown): ServerMessage {
       if (!isRecord(value.event)) invalid('event');
       // Subscriptions such as ZHA pairing stream log entries rather than bus events.
       if (typeof value.event.event_type !== 'string') return { type: 'other_event', id };
+      if (value.event.event_type === 'hjem_home') return { type: 'home_document', id, data: value.event.data };
       if (['area_registry_updated', 'device_registry_updated', 'entity_registry_updated'].includes(value.event.event_type))
         return { type: 'registry_updated', id };
       const eventType = value.event.event_type;
@@ -315,6 +318,7 @@ export type ClientCommand =
   | { type: 'config/entity_registry/update'; entity_id: string; name: string | null }
   | { type: 'config/entity_registry/update'; entity_id: string; hidden_by: 'user' | null }
   | { type: 'search/related'; item_type: 'area'; item_id: string }
+  | { type: 'hjem/home/subscribe' }
   | { type: 'validate_config'; triggers?: Record<string, unknown>[]; conditions?: Record<string, unknown>[]; actions?: Record<string, unknown>[] }
   | { type: 'device_automation/trigger/list'; device_id: string }
   | { type: 'trace/list'; domain: RoutineKind; item_id: string }

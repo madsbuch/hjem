@@ -214,6 +214,10 @@ test('live room and mood changes persist at the HA endpoint and survive reconnec
           }
           value = { context: { id: 'test-call' } }; break;
         }
+        case 'hjem/home/subscribe':
+          // Home Assistant has no such command; only a Hjem hub does.
+          socket.send(JSON.stringify({ id: command.id, type: 'result', success: false, error: { code: 'unknown_command', message: 'Unknown command.' } }));
+          return;
         default: throw new Error(`Unexpected fixture command ${String(command.type)}`);
       }
       socket.send(JSON.stringify({ id: command.id, type: 'result', success: true, result: value }));

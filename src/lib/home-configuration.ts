@@ -1,6 +1,8 @@
 import type { HassDevice, HassSnapshot } from './home-assistant';
-import type { HomeSetup, MoodTarget } from './home-setup-types';
+import { helperDomains, type HelperDomain, type HomeSetup, type MoodTarget, type RoutineConfig, type RoutineKind } from './home-setup-types';
+import { routineParts, routineReferences, rewriteReferences } from './home-routines';
 import type { Theme } from './storage';
+import { SceneConfigNotFoundError } from './home-assistant-scenes';
 import { domainOf, nameOf } from './entities';
 
 /**
@@ -38,6 +40,22 @@ export interface ExportedMood {
   name: string;
   targets: ExportedMoodTarget[];
 }
+/** An automation or script, with what it names recorded so it can follow the devices to a new server. */
+export interface ExportedRoutine {
+  kind: RoutineKind;
+  name: string;
+  /** False for an automation that was paused. */
+  enabled: boolean;
+  config: RoutineConfig;
+  entities: EntityReference[];
+  devices: { id: string; key: string }[];
+  rooms: { id: string; name: string }[];
+}
+export interface ExportedHelper {
+  domain: HelperDomain;
+  name: string;
+  settings: Record<string, unknown>;
+}
 export interface EntityReference {
   device: string | null;
   entity_id: string;
@@ -61,6 +79,8 @@ export interface HjemConfiguration {
   /** Entity names and rooms for entities that have no device. */
   entities: ExportedEntity[];
   moods: ExportedMood[];
+  routines: ExportedRoutine[];
+  helpers: ExportedHelper[];
   settings: ExportedSettings;
 }
 
@@ -102,6 +122,8 @@ export function buildConfiguration(
   moods: ExportedMood[],
   settings: ExportedSettings,
   now = new Date(),
+  routines: ExportedRoutine[] = [],
+  helpers: ExportedHelper[] = [],
 ): HjemConfiguration {
   const overrides = (deviceId: string | null) => snapshot.registry
     .filter((entry) => entry.device_id === deviceId && (entry.name || entry.area_id))
@@ -123,12 +145,71 @@ export function buildConfiguration(
     })),
     entities: overrides(null),
     moods,
+    routines,
+    helpers,
     settings,
   };
 }
 
+/**
+ * Read every editable automation and script, and every helper. With `strict`,
+ * a failed read is an error rather than a gap, so a partial copy never replaces a complete one.
+ */
+export async function exportRoutines(setup: HomeSetup, snapshot: HassSnapshot, strict = false): Promise<{ routines: ExportedRoutine[]; helpers: ExportedHelper[]; skipped: string[] }> {
+  const routines: ExportedRoutine[] = [];
+  const skipped: string[] = [];
+  for (const kind of routineKinds) {
+    for (const entity of snapshot.entities.filter((item) => domainOf(item) === kind)) {
+      // Automations written in Home Assistant's own files have no id and cannot be saved again.
+      if (kind === 'automation' && typeof entity.attributes.id !== 'string') {
+        skipped.push(nameOf(entity));
+        continue;
+      }
+      try {
+        const inspected = await setup.inspectRoutine(entity.entity_id);
+        if (!isRecord(inspected) || !isRecord(inspected.config)) throw new Error('Unreadable routine.');
+        const { id: _id, ...config } = inspected.config;
+        const references = routineReferences(kind, config);
+        routines.push({
+          kind,
+          name: nameOf(entity),
+          enabled: kind === 'script' || entity.state !== 'off',
+          config,
+          entities: references.entities.map((id) => entityReference(snapshot, id)),
+          devices: references.devices.flatMap((id) => {
+            const device = snapshot.devices.find((item) => item.id === id);
+            return device ? [{ id, key: deviceKey(device) }] : [];
+          }),
+          rooms: references.areas.flatMap((id) => {
+            const name = areaName(snapshot, id);
+            return name ? [{ id, name }] : [];
+          }),
+        });
+      } catch (error) {
+        // A script kept in Home Assistant's own files reads as missing; anything else is a real failure.
+        if (strict && !(error instanceof SceneConfigNotFoundError) && !(error instanceof Error && error.message.includes('own files'))) throw error;
+        skipped.push(nameOf(entity));
+      }
+    }
+  }
+  const helpers: ExportedHelper[] = [];
+  try {
+    const listed = await setup.listHelpers();
+    for (const item of isRecord(listed) ? list(listed.helpers) : []) {
+      if (!isRecord(item)) continue;
+      const domain = helperDomains.find((candidate) => candidate === item.domain);
+      const name = text(item.name, 100);
+      if (domain && name) helpers.push({ domain, name, settings: isRecord(item.settings) ? item.settings : {} });
+    }
+  } catch (error) {
+    if (strict) throw error;
+  }
+  return { routines, helpers, skipped };
+}
+const routineKinds: RoutineKind[] = ['script', 'automation'];
+
 /** Read every editable mood through the setup manager, keyed by device. */
-export async function exportMoods(setup: HomeSetup, snapshot: HassSnapshot): Promise<{ moods: ExportedMood[]; skipped: string[] }> {
+export async function exportMoods(setup: HomeSetup, snapshot: HassSnapshot, strict = false): Promise<{ moods: ExportedMood[]; skipped: string[] }> {
   const moods: ExportedMood[] = [];
   const skipped: string[] = [];
   const scenes = snapshot.entities.filter((entity) => domainOf(entity) === 'scene' &&
@@ -147,7 +228,9 @@ export async function exportMoods(setup: HomeSetup, snapshot: HassSnapshot): Pro
       const name = isRecord(inspected) && typeof inspected.name === 'string' ? inspected.name : nameOf(scene);
       if (targets.length) moods.push({ name, targets });
       else skipped.push(name);
-    } catch {
+    } catch (error) {
+      // A scene whose saved definition is gone is a gap; any other failed read is not.
+      if (strict && !(error instanceof SceneConfigNotFoundError)) throw error;
       skipped.push(nameOf(scene));
     }
   }
@@ -243,6 +326,35 @@ export function parseConfiguration(raw: string): HjemConfiguration {
       });
       return name && targets.length ? [{ name, targets }] : [];
     }),
+    routines: list(value.routines).flatMap((item): ExportedRoutine[] => {
+      if (!isRecord(item) || !isRecord(item.config)) return [];
+      const kind = routineKinds.find((candidate) => candidate === item.kind);
+      const name = text(item.name, 80);
+      if (!kind || !name) return [];
+      return [{
+        kind,
+        name,
+        enabled: item.enabled !== false,
+        config: item.config,
+        entities: list(item.entities).map(parseReference).filter(present),
+        devices: list(item.devices).flatMap((entry) => {
+          const id = isRecord(entry) ? text(entry.id) : null;
+          const key = isRecord(entry) ? text(entry.key) : null;
+          return id && key ? [{ id, key }] : [];
+        }),
+        rooms: list(item.rooms).flatMap((entry) => {
+          const id = isRecord(entry) ? text(entry.id) : null;
+          const room = isRecord(entry) ? text(entry.name, 100) : null;
+          return id && room ? [{ id, name: room }] : [];
+        }),
+      }];
+    }),
+    helpers: list(value.helpers).flatMap((item): ExportedHelper[] => {
+      if (!isRecord(item)) return [];
+      const domain = helperDomains.find((candidate) => candidate === item.domain);
+      const name = text(item.name, 80);
+      return domain && name ? [{ domain, name, settings: isRecord(item.settings) ? item.settings : {} }] : [];
+    }),
     settings: {
       theme: isTheme(settings.theme) ? settings.theme : 'system',
       calendars: list(settings.calendars).flatMap((item) => {
@@ -276,6 +388,11 @@ export interface ImportPlan {
   moods: MoodStep[];
   /** Moods that already exist here by name and are left as they are. */
   existingMoods: string[];
+  /** Helpers, scripts, and automations that are not here yet, in the order they are created. */
+  helpers: ExportedHelper[];
+  routines: ExportedRoutine[];
+  /** Automations and scripts that already exist here by name and are left as they are. */
+  existingRoutines: string[];
 }
 
 const same = (first: string, second: string) => first.toLocaleLowerCase() === second.toLocaleLowerCase();
@@ -366,6 +483,13 @@ export function planImport(configuration: HjemConfiguration, snapshot: HassSnaps
     });
     if (targets.length) moods.push({ name: mood.name, targets, missing: mood.targets.length - targets.length });
   }
+  const named = (domain: string) => snapshot.entities.filter((entity) => domainOf(entity) === domain).map(nameOf);
+  const existingRoutines: string[] = [];
+  const routines = configuration.routines.filter((routine) => {
+    const exists = named(routine.kind).some((name) => same(name, routine.name));
+    if (exists) existingRoutines.push(routine.name);
+    return !exists;
+  });
   return {
     homeName: configuration.home_name,
     exportedAt: configuration.exported_at,
@@ -376,7 +500,34 @@ export function planImport(configuration: HjemConfiguration, snapshot: HassSnaps
     rooms,
     moods,
     existingMoods,
+    helpers: configuration.helpers.filter((helper) => !named(helper.domain).some((name) => same(name, helper.name))),
+    routines,
+    existingRoutines,
   };
+}
+
+/** A saved routine with its entities, devices, and rooms pointed at this home's. */
+export function localizeRoutine(routine: ExportedRoutine, snapshot: HassSnapshot): RoutineConfig {
+  const { deviceFor, resolveEntity } = matcher(snapshot);
+  const entities = new Map<string, string>();
+  for (const reference of routine.entities) {
+    // A mood or helper created by this import has no device and keeps its id.
+    const id = resolveEntity(reference.device, reference.entity_id);
+    if (id) entities.set(reference.entity_id, id);
+  }
+  const devices = new Map<string, string>();
+  for (const reference of routine.devices) {
+    const device = deviceFor(reference.key);
+    if (device) devices.set(reference.id, device.id);
+  }
+  const areas = new Map<string, string>();
+  for (const room of routine.rooms) {
+    const area = snapshot.areas.find((item) => same(item.name, room.name));
+    if (area) areas.set(room.id, area.area_id);
+  }
+  const config = rewriteReferences(routine.config, { entities, devices, areas });
+  if (!isRecord(config)) throw new Error('This routine could not be read.');
+  return config;
 }
 
 /** Map exported entity references (favourites, speaker) to this home's entity IDs. */
@@ -411,6 +562,23 @@ export async function applyImport(
       },
     })),
     ...plan.moods.map((mood) => ({ label: `Create mood ${mood.name}`, run: () => setup.saveMood({ name: mood.name, targets: mood.targets }, signal) })),
+    ...plan.helpers.map((helper) => ({ label: `Create helper ${helper.name}`, run: () => setup.saveHelper({ domain: helper.domain, name: helper.name, settings: helper.settings }, signal) })),
+    // Scripts come before automations, which may run them. Each is checked again against this home.
+    ...[...plan.routines].sort((first, second) => Number(first.kind === 'automation') - Number(second.kind === 'automation')).map((routine) => ({
+      label: `Create ${routine.kind} ${routine.name}`,
+      run: () => {
+        const config = localizeRoutine(routine, currentSnapshot());
+        const parts = routineParts(routine.kind, config);
+        const common = {
+          name: routine.name,
+          ...(typeof config.description === 'string' ? { description: config.description } : {}),
+          ...(typeof config.mode === 'string' ? { mode: config.mode } : {}),
+        };
+        return routine.kind === 'automation'
+          ? setup.saveAutomation({ ...common, triggers: parts.triggers, conditions: parts.conditions, actions: parts.actions, enabled: routine.enabled }, signal)
+          : setup.saveScript({ ...common, sequence: parts.actions, ...(typeof config.icon === 'string' ? { icon: config.icon } : {}) }, signal);
+      },
+    })),
   ];
   const failures: string[] = [];
   let applied = 0;

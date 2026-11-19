@@ -645,6 +645,48 @@ describe('automations, scripts, and helpers', () => {
   });
 });
 
+describe('a Hjem hub in place of Home Assistant', () => {
+  const document = { format: 'hjem-configuration', version: 1, exported_at: '2026-11-19T10:00:00Z', home_name: 'Our home', rooms: ['Kitchen'], devices: [], entities: [], moods: [], routines: [], helpers: [], settings: {} };
+  async function connected(onHub?: (hub: unknown) => void) {
+    const client = new HomeAssistantClient({ onSnapshot: () => undefined, onStatus: () => undefined, ...(onHub ? { onHub } : {}) });
+    clients.push(client);
+    const connection = client.connect('http://homeassistant.local:8099', 'ABCDE-FGHJK-LMNPQ-RSTUV');
+    const socket = required(FakeSocket.instances.at(-1));
+    await authenticate(socket);
+    await initialSnapshot(socket);
+    await connection;
+    return { client, socket };
+  }
+
+  it('receives the hub’s copy of the home, and each newer one', async () => {
+    const hubs: unknown[] = [];
+    const { socket } = await connected((hub) => hubs.push(hub));
+    const request = required(socket.sent.find((message) => message.type === 'hjem/home/subscribe'));
+    socket.answer('hjem/home/subscribe', { hub_id: 'hub-1', version: '0.1.0', revision: 3, updated_at: '2026-11-19T10:00:00Z', document });
+    await flush();
+    socket.receive({ id: request.id, type: 'event', event: { event_type: 'hjem_home', data: { hub_id: 'hub-1', version: '0.1.0', revision: 4, updated_at: '2026-11-19T11:00:00Z', document: { ...document, rooms: ['Kitchen', 'Hall'] } } } });
+    // The same event on another subscription, or an unreadable copy, changes nothing.
+    socket.receive({ id: 9999, type: 'event', event: { event_type: 'hjem_home', data: { hub_id: 'hub-2', revision: 9, document } } });
+    socket.receive({ id: request.id, type: 'event', event: { event_type: 'hjem_home', data: { hub_id: 'hub-1', revision: 5, document: { format: 'something-else' } } } });
+    expect(hubs).toEqual([
+      expect.objectContaining({ hubId: 'hub-1', version: '0.1.0', revision: 3, document: expect.objectContaining({ rooms: ['Kitchen'] }) }),
+      expect.objectContaining({ hubId: 'hub-1', revision: 4, updatedAt: '2026-11-19T11:00:00Z', document: expect.objectContaining({ rooms: ['Kitchen', 'Hall'] }) }),
+    ]);
+  });
+
+  it('stays an ordinary connection when Home Assistant answers that it is not a hub', async () => {
+    const hubs: unknown[] = [];
+    const { client, socket } = await connected((hub) => hubs.push(hub));
+    socket.answer('hjem/home/subscribe', 'Unknown command.', false);
+    await flush();
+    expect(hubs).toEqual([]);
+    expect(client.getSnapshot().locationName).toBe('Our home');
+    // A connection nobody asked about hubs on does not ask Home Assistant either.
+    const plain = await connected();
+    expect(plain.socket.sent.some((message) => message.type === 'hjem/home/subscribe')).toBe(false);
+  });
+});
+
 describe('server addresses', () => {
   it('normalizes local addresses, TLS, and reverse proxy paths', () => {
     expect(normalizeServerUrl(' homeassistant.local:8123/ ')).toBe(

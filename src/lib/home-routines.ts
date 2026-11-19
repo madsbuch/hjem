@@ -75,6 +75,31 @@ function collect(value: unknown, references: References, services: boolean, dept
   }
 }
 
+/** Every entity, device, and room a saved routine names. */
+export function routineReferences(kind: RoutineKind, config: RoutineConfig): { entities: string[]; devices: string[]; areas: string[] } {
+  const references = emptyReferences();
+  const parts = routineParts(kind, config);
+  collect([parts.triggers, parts.conditions, parts.actions], references, false);
+  return { entities: [...references.entities], devices: [...references.devices], areas: [...references.areas] };
+}
+
+/** The same routine with its entities, devices, and rooms renamed; anything not in a map is kept. */
+export function rewriteReferences(value: unknown, maps: { entities: Map<string, string>; devices: Map<string, string>; areas: Map<string, string> }, depth = 0): unknown {
+  if (depth > MAX_DEPTH) throw new Error('This configuration is nested too deeply.');
+  if (Array.isArray(value)) return value.map((item) => rewriteReferences(item, maps, depth + 1));
+  if (!isRecord(value)) return value;
+  const rename = (entry: unknown, map: Map<string, string>): unknown => {
+    if (typeof entry === 'string' && !isTemplate(entry)) return entry.split(',').map((id) => map.get(id.trim()) ?? id.trim()).join(', ');
+    if (Array.isArray(entry)) return entry.map((id: unknown) => typeof id === 'string' ? map.get(id) ?? id : id);
+    return rewriteReferences(entry, maps, depth + 1);
+  };
+  return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key,
+    key === 'entity_id' || (key === 'scene' && typeof entry === 'string') ? rename(entry, maps.entities)
+      : key === 'device_id' ? rename(entry, maps.devices)
+        : key === 'area_id' ? rename(entry, maps.areas)
+          : rewriteReferences(entry, maps, depth + 1)]));
+}
+
 function steps(value: unknown, label: string, required: boolean): Step[] {
   const list: unknown[] = value === undefined || value === null ? [] : Array.isArray(value) ? value : [value];
   if (list.length > MAX_STEPS || !list.every(isRecord))

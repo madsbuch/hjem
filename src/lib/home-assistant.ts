@@ -1,5 +1,6 @@
 import { parseCalendarEvents, type HassCalendarEvent } from './calendar';
 import { parseSceneConfig, requestEditorConfig, requestSceneConfig, SceneRequestError } from './home-assistant-scenes';
+import { parseConfiguration, type HjemConfiguration } from './home-configuration';
 import {
   helperDomains,
   type HelperDomain,
@@ -95,12 +96,24 @@ export type ZigbeeStack = 'zha' | 'zigbee2mqtt';
 export const MAX_PAIRING_SECONDS = 254;
 export const ZIGBEE2MQTT_PERMIT_TOPIC = 'zigbee2mqtt/bridge/request/permit_join';
 
+/** A Hjem hub between this device and the home, with its numbered copy of the home. */
+export interface HubState {
+  hubId: string;
+  version: string;
+  revision: number;
+  updatedAt: string | null;
+  /** Null until the hub has read the home for the first time. */
+  document: HjemConfiguration | null;
+}
+
 export type ConnectionStatus =
   'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'error';
 
 interface Callbacks {
   onSnapshot: (snapshot: HassSnapshot) => void;
   onStatus: (status: ConnectionStatus, message?: string) => void;
+  /** Called when the connection turns out to be a Hjem hub, and for each new copy of the home. */
+  onHub?: (hub: HubState) => void;
 }
 interface PendingCommand {
   resolve: (value: unknown) => void;
@@ -171,6 +184,7 @@ export class HomeAssistantClient implements HomeSetupTransport {
   private deviceEventSubscriptions = new Set<number>();
   private activityListeners = new Set<ActivityListener>();
   private pairingSubscriptions = new Set<number>();
+  private homeSubscription?: number;
   private registryRefreshTimer?: ReturnType<typeof setTimeout>;
   private structureRevision = 0;
   private stateRefreshes = new Set<StateChange[]>();
@@ -647,6 +661,7 @@ export class HomeAssistantClient implements HomeSetupTransport {
     this.authenticated = false;
     this.nextId = 1;
     this.subscriptionId = undefined;
+    this.homeSubscription = undefined;
     this.registrySubscriptions.clear();
     this.deviceEventSubscriptions.clear();
     this.bufferedChanges = [];
@@ -751,6 +766,8 @@ export class HomeAssistantClient implements HomeSetupTransport {
       }
     } else if (message.type === 'device_event' && this.deviceEventSubscriptions.has(message.id)) {
       this.emitActivity({ kind: 'device_event', event: message.event });
+    } else if (message.type === 'home_document' && message.id === this.homeSubscription) {
+      this.receiveHome(message.data);
     } else if (message.type === 'registry_updated' && this.registrySubscriptions.has(message.id)) {
       clearTimeout(this.registryRefreshTimer);
       this.registryRefreshTimer = setTimeout(() => {
@@ -830,6 +847,14 @@ export class HomeAssistantClient implements HomeSetupTransport {
           if (current()) this.deviceEventSubscriptions.delete(id);
         });
       }
+      // Only a Hjem hub knows this command; Home Assistant itself answers that it does not.
+      if (this.callbacks.onHub) {
+        const homeId = this.nextId;
+        this.homeSubscription = homeId;
+        void this.command({ type: 'hjem/home/subscribe' })
+          .then((value) => { if (current()) this.receiveHome(value); })
+          .catch(() => { if (current() && this.homeSubscription === homeId) this.homeSubscription = undefined; });
+      }
       this.heartbeatTimer = setInterval(() => {
         if (current())
           void this.command({ type: 'ping' }).catch(() => {
@@ -849,6 +874,25 @@ export class HomeAssistantClient implements HomeSetupTransport {
             error instanceof ServerCommandError,
         );
     }
+  }
+
+  private receiveHome(value: unknown): void {
+    if (!isRecord(value) || typeof value.hub_id !== 'string' || !value.hub_id || value.hub_id.length > 100 ||
+        typeof value.revision !== 'number' || !Number.isSafeInteger(value.revision) || value.revision < 0) return;
+    let document: HjemConfiguration | null = null;
+    try {
+      if (value.document !== null && value.document !== undefined) document = parseConfiguration(JSON.stringify(value.document));
+    } catch {
+      // A copy this version cannot read is not kept; the connection itself is unaffected.
+      return;
+    }
+    this.callbacks.onHub?.({
+      hubId: value.hub_id,
+      version: typeof value.version === 'string' ? value.version.slice(0, 40) : '',
+      revision: value.revision,
+      updatedAt: typeof value.updated_at === 'string' ? value.updated_at.slice(0, 40) : null,
+      document,
+    });
   }
 
   private applyChange(change: StateChange): void {

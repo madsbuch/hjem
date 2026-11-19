@@ -133,11 +133,31 @@ The demo home and the browser preview show clearly labelled sample prices shaped
 
 Home Concierge can answer questions such as “When should I run the dishwasher before 7?”, “Is power cheap right now?”, or “What has November cost so far?”. It has three read-only tools: hourly prices for today and tomorrow with their parts, the cheapest hours for a task (one block or separate hours, with an earliest start and a deadline, worked out by Hjem rather than estimated by the model), and use and cost day by day, including the share of fixed subscriptions and the days Osmund has not costed yet. They read the data the Electricity page has already loaded, so asking makes no extra Osmund requests. Concierge cannot schedule devices to run later; it suggests a time instead. The prices and use needed for an answer are sent to OpenRouter with the request; the Osmund key never is.
 
+## Hjem hub
+
+The Hjem hub is a small service that runs beside Home Assistant on the Raspberry Pi. Tablets, phones, and computers connect to the hub instead of to Home Assistant, and each of them keeps a full copy of the home.
+
+**Install.** In Home Assistant, open **Settings → Add-ons → Add-on store** (called Apps in recent versions), choose **Repositories** from the menu, and add `https://github.com/madsbuch/hjem`. Install **Hjem hub** and start it. Home Assistant offers each new version as an update. Nothing is configured on the Raspberry Pi itself. The add-on needs Home Assistant OS or a supervised installation.
+
+**Connect a device.** Select **Open web UI** on the add-on to see its pairing code. In Hjem, open **Settings → Home Assistant → Connect your home**, enter the hub's address, such as `http://homeassistant.local:8099`, and the pairing code in place of an access token. Settings then shows **Through: Hjem hub**. The same code pairs every device, no Home Assistant token is created or stored on any of them, and anyone with the code can control the home from your network. Ten wrong codes from one address pause pairing from that address for ten minutes.
+
+**What a device can do through the hub.** Everything it can do connected directly: live state, controls, the Home planner, Home setup, and Concierge. The hub passes on only the Home Assistant commands Hjem uses and the three editor endpoints for moods, automations, and scripts; any other command or path is refused by the hub and never reaches Home Assistant.
+
+**A copy of the home on every device.** The hub keeps one numbered copy of the home: rooms, the names and rooms of devices, moods, automations, scripts, and helpers, with devices identified by hardware identity. It reads the home again when something changes and every 15 minutes, and sends each new copy to every connected device straight away. A device stores the latest five copies per hub, with its own Hjem settings added. A copy is only ever replaced by a complete one: if part of the home cannot be read, the previous copy stays.
+
+**Restoring.** If the hub or the Raspberry Pi is replaced, install the add-on again, pair a device that was connected before, and open **Settings → Move or back up your home → Restore from this device**. Choose a copy, check the preview, and import. It works like importing a file: it creates what is missing, never deletes, and can be run again after pairing more appliances. Automations and scripts are pointed at the new server's devices by hardware identity and are checked again before they are saved. Once restored, the new hub's own copy catches up and reaches every other device.
+
+Not part of a copy yet: access tokens and the OpenRouter and Osmund keys, and the Zigbee network itself, which Home Assistant's own backup carries. Copies on a device are kept in the app's own storage. The hub is reached on the home network only, and devices are not discovered automatically; the address is typed once.
+
+The hub can also run without Home Assistant OS, as a container or with Node.js 22: build it with `npm run build:hub`, then run `hjem-hub/dist/hub.mjs` with `HJEM_HA_URL` and `HJEM_HA_TOKEN` set to a Home Assistant address and an administrator's long-lived token, and `HJEM_DATA` to a folder it can write to. The pairing code is printed in its log.
+
+To release a new version of the add-on, raise `version` in `hjem-hub/config.yaml`. The build on `main` publishes the image `ghcr.io/madsbuch/hjem-hub` under that version for 64-bit ARM and x86. The package must be public on GitHub for Home Assistant to download it.
+
 ## Moving or backing up your home
 
-**Settings → Move or back up your home → Export configuration** saves a JSON file with your rooms, the names and rooms of your lights, remotes, and other devices, your moods, and Hjem's settings: appearance, calendar links, pinned devices, music speaker, hidden and pinned apps, and the Concierge model. On Android you choose where to save it, such as Downloads or a cloud drive; the browser preview downloads it. Access tokens and the OpenRouter key are never included. Calendar links are, so keep the file private.
+**Settings → Move or back up your home → Export configuration** saves a JSON file with your rooms, the names and rooms of your lights, remotes, and other devices, your moods, automations, scripts, and helpers, and Hjem's settings: appearance, calendar links, pinned devices, music speaker, hidden and pinned apps, and the Concierge model. On Android you choose where to save it, such as Downloads or a cloud drive; the browser preview downloads it. Access tokens and the OpenRouter key are never included. Calendar links are, so keep the file private.
 
-**Import configuration** reads a file, shows what it will change, and applies it only after you confirm. Each change goes through the same validated setup steps as the Home planner, so it appears in **Recent setup changes** under Concierge and can be undone. Import only adds and updates: it creates missing rooms, restores names and rooms, creates moods that don't exist yet, and merges settings. It never deletes anything, and running it twice is safe.
+**Import configuration** reads a file, shows what it will change, and applies it only after you confirm. Each change goes through the same validated setup steps as the Home planner, so it appears in **Recent setup changes** under Concierge and can be undone. Import only adds and updates: it creates missing rooms, restores names and rooms, creates moods, helpers, scripts, and automations that don't exist yet, and merges settings. It never deletes anything, and running it twice is safe.
 
 Devices are matched by hardware identity, not by Home Assistant's internal IDs, which change on a new server. Zigbee devices are matched by their IEEE address, whether they use ZHA or Zigbee2MQTT. Other devices use their integration's identifier, or their default name as a last resort. Devices that aren't on the new server yet are listed in the preview; pair them with **Add appliance** in the Home planner, then import the same file again.
 
@@ -240,6 +260,8 @@ TypeScript runs in strict mode, external payloads are validated from `unknown`, 
 | `src/lib/demo.ts`           | Interactive sample home                                              |
 | `public/brand/`             | Original SVG logo, wordmark, and app-icon master                     |
 | `src-tauri/`                | Rust application shell, platform configuration, and generated icons  |
+| `hub/`                      | The Hjem hub service, sharing the home logic in `src/lib/`           |
+| `hjem-hub/`                 | The hub packaged as a Home Assistant add-on                          |
 
 Hjem is an independent interface for Home Assistant, not an official Home Assistant application.
 

@@ -108,3 +108,50 @@ html[data-theme='dark'] .configuration-unmatched li span {
 html[data-theme='dark'] .configuration-failures {
   color: #e6a46c;
 }
+
+.configuration-copies {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+.configuration-copies h3 {
+  font-size: 13px;
+  font-weight: 600;
+}
+.configuration-copies p {
+  margin: 0;
+}
+.configuration-copy-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  display: grid;
+  gap: 8px;
+}
+.configuration-copy-list button {
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 14px;
+  display: grid;
+  gap: 2px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: transparent;
+}
+.configuration-copy-list button:hover {
+  border-color: var(--forest);
+}
+.configuration-copy-list strong {
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.configuration-copy-list span {
+  font-size: 12px;
+  color: var(--muted);
+}
