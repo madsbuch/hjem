@@ -126,15 +126,21 @@ jobs:
         run: echo "version=$ImageVersion" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v6
         if: matrix.name == 'linux'
+        id: packages
         with:
           path: ~/apt-archives
           key: apt-linux-desktop-1-${{ steps.image.outputs.version }}
+          # GitHub rolls out new runner images gradually. Files cached on another
+          # image still save most of the download; only what changed is fetched.
+          restore-keys: apt-linux-desktop-1-
       - name: Install Linux build dependencies
         if: matrix.name == 'linux'
+        env:
+          EXACT_CACHE: ${{ steps.packages.outputs.cache-hit }}
         run: |
           mkdir -p "$HOME/apt-archives/partial"
-          if ls "$HOME"/apt-archives/*.deb >/dev/null 2>&1 && sudo dpkg -i "$HOME"/apt-archives/*.deb; then
-            echo "Installed from the cached package files."
+          if [ "$EXACT_CACHE" = "true" ] && sudo dpkg -i "$HOME"/apt-archives/*.deb; then
+            echo "Installed from the cached package files, without contacting Ubuntu's servers."
           else
             sudo apt-get -o Acquire::Retries=6 update
             sudo apt-get install -y --no-install-recommends \
