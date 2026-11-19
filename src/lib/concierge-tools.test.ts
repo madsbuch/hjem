@@ -6,6 +6,7 @@ import {
 } from './concierge-tools';
 import type { HassEntity, HassSnapshot } from './home-assistant';
 import type { HomeSetup } from './home-setup-types';
+import { demoSnapshot } from './demo';
 
 const record = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -812,5 +813,24 @@ describe('Home Concierge where Hjem is not the home screen', () => {
     await expect(run('open_app', { package_name: 'com.sonos.acr2' })).rejects.toThrow('not this device’s home screen');
     expect(launch).not.toHaveBeenCalled();
     await expect(run('get_home_state')).resolves.toMatchObject({ devices: expect.any(Array) });
+  });
+});
+
+describe('Home Concierge light colour', () => {
+  it('sets colour and white only on lights that have them, within their range', async () => {
+    const { run, context, action } = setup();
+    context.snapshot = structuredClone(demoSnapshot);
+    await run('get_home_state');
+    await expect(run('control_device', { entity_id: 'light.kitchen', action: 'set_color', hue: 225, saturation: 100 })).resolves.toMatchObject({ accepted: true, hs_color: [225, 100] });
+    expect(action).toHaveBeenLastCalledWith(expect.objectContaining({ entity_id: 'light.kitchen' }), 'turn_on', { hs_color: [225, 100] });
+    await run('control_device', { entity_id: 'light.reading_lamp', action: 'set_color_temperature', value: 4000 });
+    expect(action).toHaveBeenLastCalledWith(expect.objectContaining({ entity_id: 'light.reading_lamp' }), 'turn_on', { color_temp_kelvin: 4000 });
+    // The reading lamp has white only, the pendant neither, and values stay in range.
+    await expect(run('control_device', { entity_id: 'light.reading_lamp', action: 'set_color', hue: 0, saturation: 100 })).rejects.toThrow('not supported');
+    await expect(run('control_device', { entity_id: 'light.living_pendant', action: 'set_color_temperature', value: 3000 })).rejects.toThrow('not supported');
+    await expect(run('control_device', { entity_id: 'light.kitchen', action: 'set_color', hue: 400, saturation: 100 })).rejects.toThrow('hue must be');
+    await expect(run('control_device', { entity_id: 'light.kitchen', action: 'set_color', hue: 10 })).rejects.toThrow('saturation must be');
+    await expect(run('control_device', { entity_id: 'light.reading_lamp', action: 'set_color_temperature', value: 9000 })).rejects.toThrow('between 2200 and 6500');
+    expect(action).toHaveBeenCalledTimes(2);
   });
 });

@@ -263,6 +263,12 @@ function parseMoodTarget(value: unknown): MoodTarget | null {
   const volume = finite(value.volume_pct);
   if (brightness !== undefined) target.brightness_pct = brightness;
   if (kelvin !== undefined) target.color_temp_kelvin = kelvin;
+  const hue = finite(value.hue);
+  const saturation = finite(value.saturation);
+  if (hue !== undefined && saturation !== undefined) {
+    target.hue = hue;
+    target.saturation = saturation;
+  }
   if (temperature !== undefined) target.temperature = temperature;
   if (position !== undefined) target.position = position;
   if (volume !== undefined) target.volume_pct = volume;

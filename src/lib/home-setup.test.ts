@@ -306,3 +306,35 @@ describe('mood capability validation', () => {
     expect(() => compileMoodTargets(basicMood.targets, snapshot)).toThrow('hidden or disabled');
   });
 });
+
+describe('moods with colour', () => {
+  const kitchen = 'light.kitchen';
+  it('saves a colour, reads it back, and confirms it when the mood is set', async () => {
+    const home = fixture();
+    const saved = await home.manager.saveMood({ name: 'Disco', targets: [{ entity_id: kitchen, state: 'on', brightness_pct: 80, hue: 275, saturation: 100 }] });
+    const stored = await home.transport.readScene(required(saved.config_id));
+    expect(stored.entities[kitchen]).toEqual({ state: 'on', brightness: 204, hs_color: [275, 100] });
+    const read = await home.manager.inspectMood(required(saved.entity_id));
+    expect(read).toMatchObject({ editable: true, targets: [{ entity_id: kitchen, state: 'on', hue: 275, saturation: 100 }] });
+    await expect(home.manager.describeMood(required(saved.entity_id))).resolves.toEqual(['Kitchen lights: on, 80%, purple']);
+    await expect(home.manager.activateMood(required(saved.entity_id))).resolves.toMatchObject({ verified: true });
+    expect(home.snapshot().entities.find((entity) => entity.entity_id === kitchen)?.attributes).toMatchObject({ hs_color: [275, 100], color_mode: 'hs' });
+  });
+
+  it('keeps a mood editable when Home Assistant saved the same colour in several forms', async () => {
+    const home = fixture();
+    await home.transport.saveScene('snapshot', { id: 'snapshot', name: 'Snapshot', entities: { [kitchen]: { state: 'on', hs_color: [30, 90], rgb_color: [255, 140, 25], xy_color: [0.58, 0.39], color_mode: 'hs' } } });
+    const scene = required(home.snapshot().entities.find((entity) => entity.attributes.id === 'snapshot'));
+    await expect(home.manager.inspectMood(scene.entity_id)).resolves.toMatchObject({ editable: true, unsupported_settings: [], targets: [{ hue: 30, saturation: 90 }] });
+  });
+
+  it('refuses colour on lights without it, colour with white, and out-of-range values', () => {
+    const snapshot = structuredClone(demoSnapshot);
+    const mood = (target: Record<string, unknown>) => () => compileMoodTargets([{ entity_id: kitchen, state: 'on', ...target }], snapshot);
+    expect(() => compileMoodTargets([{ entity_id: 'light.reading_lamp', state: 'on', hue: 10, saturation: 90 }], snapshot)).toThrow('does not show colours');
+    expect(mood({ hue: 10, saturation: 90, color_temp_kelvin: 3000 })).toThrow('not both');
+    expect(mood({ hue: 10 })).toThrow('Saturation must be');
+    expect(mood({ hue: 500, saturation: 50 })).toThrow('Hue must be');
+    expect(() => compileMoodTargets([{ entity_id: kitchen, state: 'off', hue: 10, saturation: 90 }], snapshot)).toThrow('off light');
+  });
+});

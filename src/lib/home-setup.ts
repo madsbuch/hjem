@@ -1,5 +1,5 @@
 import type { HassArea, HassEntity, HassSnapshot } from './home-assistant';
-import { domainOf, isUnavailable, nameOf, roomFor, supports, supportsBrightness } from './entities';
+import { colorName, domainOf, isUnavailable, nameOf, roomFor, supports, supportsBrightness, supportsColor } from './entities';
 import { SceneConfigNotFoundError, SceneRequestError } from './home-assistant-scenes';
 import {
   helperDomains,
@@ -126,7 +126,12 @@ export function compileMoodTargets(targets: MoodTarget[], snapshot: HassSnapshot
     if (['light', 'switch', 'input_boolean', 'fan'].includes(domain)) {
       if (!['on', 'off'].includes(target.state)) throw new Error(`${nameOf(entity)} requires an on or off state.`);
       if (domain === 'light') {
-        allowed = ['brightness_pct', 'color_temp_kelvin'];
+        allowed = ['brightness_pct', 'color_temp_kelvin', 'hue', 'saturation'];
+        if (target.hue !== undefined || target.saturation !== undefined) {
+          if (!supportsColor(entity)) throw new Error(`${nameOf(entity)} does not show colours.`);
+          if (target.color_temp_kelvin !== undefined) throw new Error('Give a light a colour or a colour temperature, not both.');
+          state.hs_color = [numeric(target.hue, 0, 360, 'Hue'), numeric(target.saturation, 0, 100, 'Saturation')];
+        }
         if (target.brightness_pct !== undefined) {
           if (!supportsBrightness(entity)) throw new Error(`${nameOf(entity)} does not support brightness.`);
           state.brightness = Math.round(numeric(target.brightness_pct, 1, 100, 'Brightness') * 255 / 100);
@@ -139,7 +144,7 @@ export function compileMoodTargets(targets: MoodTarget[], snapshot: HassSnapshot
           if (!finite(minimum) || !finite(maximum)) throw new Error(`${nameOf(entity)} does not report its colour-temperature range.`);
           state.color_temp_kelvin = numeric(target.color_temp_kelvin, minimum, maximum, 'Colour temperature');
         }
-        if (target.state === 'off' && fields.length) throw new Error('An off light cannot also set brightness or colour temperature.');
+        if (target.state === 'off' && fields.length) throw new Error('An off light cannot also set brightness, colour, or colour temperature.');
       }
     } else if (domain === 'climate') {
       allowed = ['temperature'];
@@ -194,6 +199,12 @@ function targetsFromConfig(config: SceneConfig): { targets: MoodTarget[]; unsupp
       if (key === 'brightness' && finite(attribute)) target.brightness_pct = Math.round(attribute / 255 * 10000) / 100;
       else if (key === 'brightness_pct' && finite(attribute)) target.brightness_pct = attribute;
       else if (key === 'color_temp_kelvin' && finite(attribute)) target.color_temp_kelvin = attribute;
+      else if (key === 'hs_color' && Array.isArray(attribute) && finite(attribute[0]) && finite(attribute[1])) {
+        target.hue = attribute[0];
+        target.saturation = attribute[1];
+      }
+      // Home Assistant saves the same colour in several forms; hue and saturation is the one Hjem keeps.
+      else if ((key === 'rgb_color' || key === 'xy_color') && Array.isArray(state.hs_color)) continue;
       else if (key === 'temperature' && finite(attribute)) target.temperature = attribute;
       else if (key === 'current_position' && finite(attribute)) target.position = attribute;
       else if (key === 'volume_level' && finite(attribute)) target.volume_pct = attribute * 100;
@@ -225,6 +236,14 @@ function sceneProblems(config: SceneConfig, snapshot: HassSnapshot): string[] {
       const tolerance = key === 'brightness' ? 2 : key === 'color_temp_kelvin' ? 60 : key === 'volume_level' ? 0.015 : key === 'temperature' ? 0.1 : 1;
       if (finite(wanted) && finite(actual) ? Math.abs(wanted - actual) > tolerance : wanted !== actual)
         problems.push(`${nameOf(entity)} has not confirmed its ${key.replaceAll('_', ' ')} setting.`);
+    }
+    // Bulbs round colours to what they can show, so near enough counts.
+    const wantedColor = expected.hs_color;
+    if (Array.isArray(wantedColor) && finite(wantedColor[0]) && finite(wantedColor[1])) {
+      const actual: unknown = entity.attributes.hs_color;
+      const hueGap = Array.isArray(actual) && finite(actual[0]) ? Math.abs(actual[0] - wantedColor[0]) : 360;
+      const close = Array.isArray(actual) && finite(actual[1]) && Math.min(hueGap, 360 - hueGap) <= 10 && Math.abs(actual[1] - wantedColor[1]) <= 10;
+      if (!close) problems.push(`${nameOf(entity)} has not confirmed its colour.`);
     }
   }
   return problems;
@@ -631,6 +650,7 @@ export class HomeSetupManager implements HomeSetup {
       const settings = [
         target.brightness_pct !== undefined && `${Math.round(target.brightness_pct)}%`,
         target.color_temp_kelvin !== undefined && `${target.color_temp_kelvin} K`,
+        target.hue !== undefined && target.saturation !== undefined && colorName(target.hue, target.saturation).toLowerCase(),
         target.temperature !== undefined && `${target.temperature}°`,
         target.position !== undefined && `${target.position}%`,
         target.volume_pct !== undefined && `volume ${Math.round(target.volume_pct)}%`,

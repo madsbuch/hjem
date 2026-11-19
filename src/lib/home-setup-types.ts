@@ -19,6 +19,9 @@ export interface MoodTarget {
   state: string;
   brightness_pct?: number;
   color_temp_kelvin?: number;
+  /** A colour, as hue 0–360 and saturation 0–100; given together, and not with a colour temperature. */
+  hue?: number;
+  saturation?: number;
   temperature?: number;
   position?: number;
   volume_pct?: number;

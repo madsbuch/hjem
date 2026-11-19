@@ -96,3 +96,39 @@ test('everything else stays under All devices, and the chosen tab is kept', asyn
   await main.getByRole('button', { name: 'Controls', exact: true }).click();
   await expect(tabs(page).getByRole('tab', { name: 'All devices' })).toHaveAttribute('aria-selected', 'true');
 });
+
+test('a colour light changes colour and white from its row', async ({ page }) => {
+  await controls(page);
+  const kitchen = page.getByRole('region', { name: 'Kitchen', exact: true });
+  const living = page.getByRole('region', { name: 'Living room', exact: true });
+  // Only lights that can change colour or white offer it.
+  await expect(living.getByRole('button', { name: /Pendant lights colour/ })).toHaveCount(0);
+  const colour = kitchen.getByRole('button', { name: /Kitchen lights colour/ });
+  await expect(colour).toHaveAttribute('aria-expanded', 'false');
+  await colour.click();
+  const palette = kitchen.getByRole('group', { name: 'Kitchen lights colour' });
+  await expect(palette.getByRole('button')).toHaveCount(8);
+
+  // Choosing a colour turns the light on in that colour.
+  await palette.getByRole('button', { name: 'Blue' }).click();
+  await expect(kitchen.locator('.controls-room-heading')).toContainText('1 on');
+  await expect(palette.getByRole('button', { name: 'Blue' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(colour).toHaveAccessibleName('Kitchen lights colour, blue');
+  await expect(colour.locator('i')).toHaveCSS('background-color', 'rgb(0, 64, 255)');
+
+  // Back to white, warmer or cooler.
+  const white = palette.getByRole('slider', { name: 'Kitchen lights white, warm to cool' });
+  await white.focus();
+  await page.keyboard.press('End');
+  await expect(white).toHaveValue('6500');
+  await expect(colour).toHaveAccessibleName('Kitchen lights colour, white');
+  await expect(palette.getByRole('button', { name: 'Blue' })).toHaveAttribute('aria-pressed', 'false');
+
+  // A light with only warm-to-cool white has the slider and no colours; one palette shows at a time.
+  await living.getByRole('button', { name: /Reading lamp colour/ }).click();
+  await expect(palette).toHaveCount(0);
+  const reading = living.getByRole('group', { name: 'Reading lamp colour' });
+  await expect(reading.getByRole('slider')).toHaveCount(1);
+  await expect(reading.getByRole('button')).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});

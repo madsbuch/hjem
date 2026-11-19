@@ -1,8 +1,21 @@
 import { useEffect, useState } from 'react';
-import { LightbulbOff, LoaderCircle, MessageCircle } from 'lucide-react';
+import { Check, LightbulbOff, LoaderCircle, MessageCircle } from 'lucide-react';
 import type { HassEntity } from '../lib/home-assistant';
 import type { HomeSetup, RoutineDescription } from '../lib/home-setup-types';
-import { nameOf, numberAttribute, supportsBrightness } from '../lib/entities';
+import {
+  colorName,
+  colorOf,
+  colorPresets,
+  hsToRgb,
+  kelvinToCss,
+  lightColorCss,
+  nameOf,
+  numberAttribute,
+  supportsBrightness,
+  supportsColor,
+  supportsColorTemperature,
+  whiteRange,
+} from '../lib/entities';
 import { ago, useSummaries } from './HomeStudio';
 import '../home-controls.css';
 
@@ -51,7 +64,18 @@ const usable = (entity: HassEntity) => entity.state !== 'unavailable';
 const sliderKeys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'];
 
 /** One light on one line: its name, brightness where it has one, and its switch. */
-function LightRow({ entity, room, disabled, pending, onAction }: { entity: HassEntity; room: string; disabled: boolean; pending: boolean; onAction: LightAction }) {
+interface RowProps {
+  entity: HassEntity;
+  room: string;
+  disabled: boolean;
+  pending: boolean;
+  onAction: LightAction;
+  /** This light's colour choices are showing. */
+  open: boolean;
+  onOpen: (open: boolean) => void;
+}
+
+function LightRow({ entity, room, disabled, pending, onAction, open, onOpen }: RowProps) {
   const name = nameOf(entity);
   // Under its room's heading, "Kitchen counter strip" is just "Counter strip".
   const rest = name.toLocaleLowerCase().startsWith(`${room.toLocaleLowerCase()} `) ? name.slice(room.length + 1).trim() : '';
@@ -66,6 +90,15 @@ function LightRow({ entity, room, disabled, pending, onAction }: { entity: HassE
   const dim = (value: number) => {
     void onAction(entity, 'turn_on', { brightness_pct: value }).then((sent) => { if (!sent) setLevel(brightness); });
   };
+  const colourful = supportsColor(entity);
+  const tunable = supportsColorTemperature(entity);
+  const [warmest, coolest] = whiteRange(entity);
+  const kelvin = Math.max(warmest, Math.min(coolest, numberAttribute(entity, 'color_temp_kelvin', 2700)));
+  const [white, setWhite] = useState(kelvin);
+  useEffect(() => setWhite(kelvin), [kelvin]);
+  const current = on ? colorOf(entity) : null;
+  const shade = current ? colorName(current[0], current[1]) : 'White';
+  const whiten = (value: number) => void onAction(entity, 'turn_on', { color_temp_kelvin: value });
   return (
     <li className={`controls-light${on ? ' on' : ''}${usable(entity) ? '' : ' unavailable'}`}>
       <span className="controls-light-name" title={name}>{shown}</span>
@@ -85,6 +118,17 @@ function LightRow({ entity, room, disabled, pending, onAction }: { entity: HassE
             onKeyUp={(event) => { if (sliderKeys.includes(event.key)) dim(event.currentTarget.valueAsNumber); }}
           />
         )}
+      {(colourful || tunable) && usable(entity) && (
+        <button
+          className="controls-color"
+          aria-expanded={open}
+          aria-label={`${name} colour${on ? `, ${shade.toLowerCase()}` : ''}`}
+          disabled={disabled}
+          onClick={() => onOpen(!open)}
+        >
+          <i aria-hidden="true" style={on ? { background: lightColorCss(entity) } : undefined} />
+        </button>
+      )}
       <button
         role="switch"
         aria-checked={on}
@@ -95,11 +139,57 @@ function LightRow({ entity, room, disabled, pending, onAction }: { entity: HassE
       >
         <i aria-hidden="true" />
       </button>
+      {open && (colourful || tunable) && usable(entity) && (
+        <div className="controls-palette" role="group" aria-label={`${name} colour`}>
+          {tunable && (
+            <label>
+              <span>White</span>
+              <input
+                className="controls-white"
+                type="range"
+                min={warmest}
+                max={coolest}
+                step="50"
+                value={white}
+                disabled={locked}
+                aria-label={`${name} white, warm to cool`}
+                aria-valuetext={`${white} kelvin`}
+                style={{ background: `linear-gradient(to right, ${kelvinToCss(warmest)}, ${kelvinToCss(coolest)})` }}
+                onChange={(event) => setWhite(event.target.valueAsNumber)}
+                onPointerUp={(event) => whiten(event.currentTarget.valueAsNumber)}
+                onKeyUp={(event) => { if (sliderKeys.includes(event.key)) whiten(event.currentTarget.valueAsNumber); }}
+              />
+            </label>
+          )}
+          {colourful && (
+            <div className="controls-swatches">
+              {colorPresets.map((preset) => {
+                const chosen = !!current && shade === preset.name;
+                const [r, g, b] = hsToRgb(preset.hue, preset.saturation);
+                return (
+                  <button
+                    key={preset.name}
+                    aria-label={preset.name}
+                    aria-pressed={chosen}
+                    disabled={locked}
+                    style={{ background: `rgb(${r}, ${g}, ${b})` }}
+                    onClick={() => void onAction(entity, 'turn_on', { hs_color: [preset.hue, preset.saturation] })}
+                  >
+                    {chosen && <Check size={16} aria-hidden="true" />}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
     </li>
   );
 }
 
 export function LightsPanel({ rooms, disabled, pending, onAction, onSwitch }: LightsProps) {
+  // One light's colours at a time, so the list stays short.
+  const [palette, setPalette] = useState('');
   const all = rooms.flatMap((room) => room.lights);
   const on = all.filter(isOn);
   if (!all.length)
@@ -132,7 +222,8 @@ export function LightsPanel({ rooms, disabled, pending, onAction, onSwitch }: Li
               </div>
               <ul>
                 {room.lights.map((entity) => (
-                  <LightRow key={entity.entity_id} entity={entity} room={room.name} disabled={disabled} pending={pending.has(entity.entity_id)} onAction={onAction} />
+                  <LightRow key={entity.entity_id} entity={entity} room={room.name} disabled={disabled} pending={pending.has(entity.entity_id)} onAction={onAction}
+                    open={palette === entity.entity_id} onOpen={(open) => setPalette(open ? entity.entity_id : '')} />
                 ))}
               </ul>
             </section>

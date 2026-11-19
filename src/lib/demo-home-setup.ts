@@ -167,7 +167,8 @@ export class DemoHomeSetupTransport implements HomeSetupTransport {
         if (target === undefined || entity.state === 'unavailable') return entity;
         if (typeof target === 'string') return { ...entity, state: target };
         const { state, ...attributes } = target;
-        return { ...entity, state, attributes: { ...entity.attributes, ...attributes } };
+        const mode = attributes.hs_color !== undefined ? { color_mode: 'hs' } : attributes.color_temp_kelvin !== undefined ? { color_mode: 'color_temp' } : {};
+        return { ...entity, state, attributes: { ...entity.attributes, ...attributes, ...mode } };
       }),
     });
   }

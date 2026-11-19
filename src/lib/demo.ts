@@ -211,7 +211,11 @@ export const demoSnapshot: HassSnapshot = {
     }),
     entity('light.kitchen', 'Kitchen lights', 'off', {
       brightness: 204,
-      supported_color_modes: ['brightness'],
+      supported_color_modes: ['color_temp', 'hs'],
+      color_mode: 'color_temp',
+      color_temp_kelvin: 2700,
+      min_color_temp_kelvin: 2200,
+      max_color_temp_kelvin: 6500,
     }),
     entity('switch.coffee', 'Coffee machine', 'off'),
     entity('light.bedside', 'Bedside lamp', 'off', {
@@ -351,6 +355,12 @@ export function applyDemoService(
           ...e.attributes,
           ...(data.brightness_pct !== undefined
             ? { brightness: Math.round(actionNumber(data.brightness_pct) * 2.55) }
+            : {}),
+          ...(Array.isArray(data.hs_color) && data.hs_color.length === 2
+            ? { hs_color: [actionNumber(data.hs_color[0]), actionNumber(data.hs_color[1])], color_mode: 'hs' }
+            : {}),
+          ...(data.color_temp_kelvin !== undefined
+            ? { color_temp_kelvin: actionNumber(data.color_temp_kelvin), color_mode: 'color_temp' }
             : {}),
         },
       };
