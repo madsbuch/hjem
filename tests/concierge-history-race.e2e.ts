@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { openSettings } from './helpers/settings';
 import { localHomeAssistant } from './helpers/home-assistant-server';
 import { nativeStorage } from './helpers/native-storage';
 
@@ -20,7 +21,7 @@ async function navigate(page: Page, name: 'Settings' | 'Concierge') {
 }
 
 async function openConnection(page: Page) {
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Home Assistant');
   await page.locator('main').getByRole('button', { name: 'Manage connection', exact: true }).click();
   await expect(page.locator('.connection-dialog')).toBeVisible();
 }

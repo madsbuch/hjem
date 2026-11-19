@@ -551,3 +551,21 @@ html[data-theme='dark'] .theme-option[aria-pressed='true'] {
     min-height: 78px;
   }
 }
+
+html[data-theme='dark'] .settings-menu {
+  background: #20262c;
+}
+html[data-theme='dark'] .settings-menu button:hover {
+  background: #262d35;
+}
+html[data-theme='dark'] .settings-menu-icon {
+  background: #303a45;
+  color: #a9b8c8;
+}
+html[data-theme='dark'] .settings-menu-text span,
+html[data-theme='dark'] .settings-back {
+  color: #a7aeb6;
+}
+html[data-theme='dark'] .settings-back:hover {
+  background: #262d35;
+}

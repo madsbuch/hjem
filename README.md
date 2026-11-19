@@ -13,6 +13,7 @@ Start with the interactive demo home, then connect your own Home Assistant in Se
 - Search devices and filter by room or pinned favourites.
 - See electricity prices by the hour, the cheapest hours, and your use and cost from Osmund.
 - Use the Home planner in Settings to pair new Zigbee appliances, name lights and remotes, put them in rooms, blink a lamp to find it, and see which remote you just pressed.
+- Settings is a menu of categories (Home Assistant, Home setup, Concierge, Calendars, Electricity, Backup and restore, Home screen and apps, Appearance, About), each showing its current state and opening its own page. Links elsewhere in Hjem open the matching category.
 - Choose Light, Dark, or System appearance in Settings. Changes fade over 800 ms; System follows the device’s appearance schedule immediately, checks again when the app returns to the foreground, and polls every ten minutes as a fallback. Reduced-motion preferences disable the fade.
 - Open Home setup in Settings to configure the home by talking to Concierge, with the home's rooms, automations, scripts, moods, and helpers shown live beside the conversation.
 - Ask Home Concierge to organize rooms and devices, create and maintain moods, set up automations and scripts, adjust devices, control Sonos, or open tablet apps.
@@ -73,7 +74,7 @@ Music and the calendar share the top of the home screen, with the full-width moo
 
 ## Home planner
 
-Open **Settings → Home planner** to add appliances and tidy up names and rooms, one light or remote at a time. It lives under Settings rather than the main menu because it is for occasional setup, not everyday use; **Settings** at the top of the planner returns there. Each card has a name you can edit in place (press Enter or move away to save, Escape to cancel) and a room picker. **Needs a room** shows only what is still unplaced, and **New room** adds a room without leaving the page.
+Open **Settings → Home setup → Home planner** to add appliances and tidy up names and rooms, one light or remote at a time. It lives under Settings rather than the main menu because it is for occasional setup, not everyday use; **Settings** at the top of the planner returns there. Each card has a name you can edit in place (press Enter or move away to save, Escape to cancel) and a room picker. **Needs a room** shows only what is still unplaced, and **New room** adds a room without leaving the page.
 
 **Lights.** Select **Blink** on a card and the lamp switches off and on three times, then returns to its original on/off state and brightness. Look around the room to see which lamp it is; select **Stop blinking** to end early and restore it. Light groups and hidden lights are left out. A light that is the only light on its device is renamed and placed as that device, as Home Assistant shows it; otherwise the light entity itself is changed. Lights without a unique ID can blink but cannot be renamed by Home Assistant.
 
@@ -87,7 +88,7 @@ Renames and room changes are written to Home Assistant's device and entity regis
 
 ## Home setup
 
-Open **Settings → Home setup** to configure the home without filling in forms. The screen is split in two: Concierge takes a third, and the rest shows the home as Home Assistant has it right now. Say what you want ("when the front door opens after dark, turn on the hallway lamp", "make the top button on the bedroom remote dim the bedside lamp", "why didn't the wake-up automation run this morning?") and watch the result appear on the right. On a phone or a narrow window, **Concierge** and **Your home** at the top switch between the two sides.
+Open **Settings → Home setup → Open home setup** to configure the home without filling in forms. The screen is split in two: Concierge takes a third, and the rest shows the home as Home Assistant has it right now. Say what you want ("when the front door opens after dark, turn on the hallway lamp", "make the top button on the bedroom remote dim the bedside lamp", "why didn't the wake-up automation run this morning?") and watch the result appear on the right. On a phone or a narrow window, **Concierge** and **Your home** at the top switch between the two sides.
 
 The home side has six tabs:
 
@@ -145,7 +146,7 @@ The Hjem hub is a small service that runs beside Home Assistant on the Raspberry
 
 **A copy of the home on every device.** The hub keeps one numbered copy of the home: rooms, the names and rooms of devices, moods, automations, scripts, and helpers, with devices identified by hardware identity. It reads the home again when something changes and every 15 minutes, and sends each new copy to every connected device straight away. A device stores the latest five copies per hub, with its own Hjem settings added. A copy is only ever replaced by a complete one: if part of the home cannot be read, the previous copy stays.
 
-**Restoring.** If the hub or the Raspberry Pi is replaced, install the add-on again, pair a device that was connected before, and open **Settings → Move or back up your home → Restore from this device**. Choose a copy, check the preview, and import. It works like importing a file: it creates what is missing, never deletes, and can be run again after pairing more appliances. Automations and scripts are pointed at the new server's devices by hardware identity and are checked again before they are saved. Once restored, the new hub's own copy catches up and reaches every other device.
+**Restoring.** If the hub or the Raspberry Pi is replaced, install the add-on again, pair a device that was connected before, and open **Settings → Backup and restore → Restore from this device**. Choose a copy, check the preview, and import. It works like importing a file: it creates what is missing, never deletes, and can be run again after pairing more appliances. Automations and scripts are pointed at the new server's devices by hardware identity and are checked again before they are saved. Once restored, the new hub's own copy catches up and reaches every other device.
 
 Not part of a copy yet: access tokens and the OpenRouter and Osmund keys, and the Zigbee network itself, which Home Assistant's own backup carries. Copies on a device are kept in the app's own storage. The hub is reached on the home network only, and devices are not discovered automatically; the address is typed once.
 
@@ -155,7 +156,7 @@ To release a new version of the add-on, raise `version` in `hjem-hub/config.yaml
 
 ## Moving or backing up your home
 
-**Settings → Move or back up your home → Export configuration** saves a JSON file with your rooms, the names and rooms of your lights, remotes, and other devices, your moods, automations, scripts, and helpers, and Hjem's settings: appearance, calendar links, pinned devices, music speaker, hidden and pinned apps, and the Concierge model. On Android you choose where to save it, such as Downloads or a cloud drive; the browser preview downloads it. Access tokens and the OpenRouter key are never included. Calendar links are, so keep the file private.
+**Settings → Backup and restore → Export configuration** saves a JSON file with your rooms, the names and rooms of your lights, remotes, and other devices, your moods, automations, scripts, and helpers, and Hjem's settings: appearance, calendar links, pinned devices, music speaker, hidden and pinned apps, and the Concierge model. On Android you choose where to save it, such as Downloads or a cloud drive; the browser preview downloads it. Access tokens and the OpenRouter key are never included. Calendar links are, so keep the file private.
 
 **Import configuration** reads a file, shows what it will change, and applies it only after you confirm. Each change goes through the same validated setup steps as the Home planner, so it appears in **Recent setup changes** under Concierge and can be undone. Import only adds and updates: it creates missing rooms, restores names and rooms, creates moods, helpers, scripts, and automations that don't exist yet, and merges settings. It never deletes anything, and running it twice is safe.
 
@@ -179,9 +180,9 @@ Speaker cards show the current track and artist, with play/pause, previous/next 
 
 On Android, Hjem lists launchable apps in the current profile, using their names and icons from Android. Open **Apps** to search and launch an app. The list refreshes when you return to Hjem. Apps work independently of your Home Assistant connection. Hold an app to open its options: **App info** opens Android’s settings for that app, and **Uninstall app** opens Android’s uninstall confirmation. You can cancel there; Hjem refreshes the app list when you return. Right-click and Shift+F10 also open the options menu.
 
-Open **Settings → App visibility** to hide unused apps from Hjem. Search by name or package, then turn off the app’s switch. Hidden apps disappear from the app drawer, search, and Concierge’s app list. Use the **Hidden** filter in Settings to show them again. Visibility choices are saved in SQLite on native platforms, independently for Android and sample apps. Hiding an app does not uninstall it or change Android settings.
+Open **Settings → Home screen and apps** to hide unused apps from Hjem. Search by name or package, then turn off the app’s switch. Hidden apps disappear from the app drawer, search, and Concierge’s app list. Use the **Hidden** filter in Settings to show them again. Visibility choices are saved in SQLite on native platforms, independently for Android and sample apps. Hiding an app does not uninstall it or change Android settings.
 
-To use Hjem as the tablet's home screen, choose **Settings → Choose default home app**, then select **Hjem** in Android's settings. Hjem never changes the default automatically. You can choose your previous launcher from the same Android setting.
+To use Hjem as the tablet's home screen, choose **Settings → Home screen and apps → Choose default home app**, then select **Hjem** in Android's settings. Hjem never changes the default automatically. You can choose your previous launcher from the same Android setting.
 
 The same Android app works as a home screen or as an ordinary app, and follows Android's setting. Where Hjem is the default home app, typically the tablet, it shows the Apps page, App visibility, and lets Concierge find and open apps. Where it is not, typically a phone, those are left out: there is no Apps page, and Concierge has no app tools. Settings then offers **Use Hjem as the home screen**, which opens the same Android setting. As an ordinary app, Hjem opens as a normal task and appears in Android's app switcher; as the home screen it does not, because Android keeps home screens out of it. Android may ask once which home app to use after Hjem is installed; choose your usual one to keep Hjem as an app. The change takes effect when you return to Hjem.
 

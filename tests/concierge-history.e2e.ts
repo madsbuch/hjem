@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
+import { openSettings } from './helpers/settings';
 import type { ChatRecord } from '../src/lib/concierge-history';
 import { nativeStorage } from './helpers/native-storage';
 
@@ -37,7 +38,7 @@ async function browserChat(page: Page, respond?: (request: Request, index: numbe
     return reply(route, completion(`Saved answer ${index + 1}.`));
   });
   await page.goto('/');
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Concierge');
   await page.getByLabel('OpenRouter API key', { exact: true }).fill('fixture-only-history-key');
   await page.getByRole('radio', { name: 'Use another model', exact: true }).check();
   await page.getByLabel('Custom model ID', { exact: true }).fill(model);

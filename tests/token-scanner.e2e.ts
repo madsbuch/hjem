@@ -13,6 +13,7 @@ async function openConnection(page: Page) {
     ? mobile
     : page.getByRole('navigation', { name: 'Main navigation' });
   await nav.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Settings', exact: true }).getByRole('button', { name: /^Home Assistant/ }).click();
   await page
     .locator('main')
     .getByRole('button', { name: 'Connect your home', exact: true })

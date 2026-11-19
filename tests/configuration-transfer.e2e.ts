@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { openSettings } from './helpers/settings';
 import { expect, test, type Page } from '@playwright/test';
 
 async function navigate(page: Page, name: string) {
@@ -7,7 +8,10 @@ async function navigate(page: Page, name: string) {
   const mobile = page.getByRole('navigation', { name: 'Mobile navigation' });
   const navigation = await mobile.isVisible() ? mobile : page.getByRole('navigation', { name: 'Main navigation' });
   await navigation.getByRole('button', { name: name === 'Planner' ? 'Settings' : name, exact: true }).click();
-  if (name === 'Planner') await page.getByRole('button', { name: 'Open home planner' }).click();
+  if (name === 'Planner') {
+    await page.getByRole('navigation', { name: 'Settings', exact: true }).getByRole('button', { name: /^Home setup/ }).click();
+    await page.getByRole('button', { name: 'Open home planner' }).click();
+  }
 }
 async function rename(page: Page, from: string, to: string) {
   await navigate(page, 'Planner');
@@ -21,7 +25,7 @@ test('exports the home to a file and restores it from that file', async ({ page 
   await page.goto('/');
   await rename(page, 'Reading lamp', 'Desk lamp');
 
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Backup and restore');
   const card = page.getByRole('region', { name: 'Move or back up your home' });
   const downloading = page.waitForEvent('download');
   await card.getByRole('button', { name: 'Export configuration' }).click();
@@ -35,7 +39,7 @@ test('exports the home to a file and restores it from that file', async ({ page 
   await expect(page.getByText('Configuration saved.')).toBeVisible();
 
   await rename(page, 'Desk lamp', 'Somewhere else');
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Backup and restore');
   const choosing = page.waitForEvent('filechooser');
   await card.getByRole('button', { name: 'Import configuration' }).click();
   await (await choosing).setFiles({ name: 'hjem.json', mimeType: 'application/json', buffer: Buffer.from(text) });
@@ -53,7 +57,7 @@ test('exports the home to a file and restores it from that file', async ({ page 
 
 test('explains a file that is not a Hjem configuration', async ({ page }) => {
   await page.goto('/');
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Backup and restore');
   const card = page.getByRole('region', { name: 'Move or back up your home' });
   const choosing = page.waitForEvent('filechooser');
   await card.getByRole('button', { name: 'Import configuration' }).click();

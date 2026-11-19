@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
+import { openSettings } from './helpers/settings';
 import { isRecord } from '../src/lib/home-assistant-protocol';
 
 const cors = {
@@ -48,7 +49,7 @@ test('Concierge answers when electricity is cheapest from the published prices',
     return reply(route, [], `Start the dishwasher at ${String(found.start).slice(11)}; that is the cheapest stretch before 07:00.`);
   });
   await page.goto('/');
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Concierge');
   await page.getByLabel('OpenRouter API key', { exact: true }).fill('fixture-only-key');
   await page.getByRole('radio', { name: 'Use another model', exact: true }).check();
   await page.getByLabel('Custom model ID', { exact: true }).fill('fixture/electricity-model');

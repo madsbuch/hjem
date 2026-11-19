@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
+import { openSettings } from './helpers/settings';
 import { isRecord } from '../src/lib/home-assistant-protocol';
 import type { HassEntity } from '../src/lib/home-assistant';
 import type { SceneConfig } from '../src/lib/home-setup-types';
@@ -31,7 +32,7 @@ async function navigate(page: Page, name: string) {
   await nav.getByRole('button', { name, exact: true }).click();
 }
 async function configure(page: Page) {
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Concierge');
   await page.getByLabel('OpenRouter API key', { exact: true }).fill('fixture-only-key');
   await page.getByRole('radio', { name: 'Use another model', exact: true }).check();
   await page.getByLabel('Custom model ID', { exact: true }).fill('fixture/setup-model');
@@ -253,7 +254,7 @@ test('live room and mood changes persist at the HA endpoint and survive reconnec
     return reply(route, [], 'The office and Desk reading mood are saved in Home Assistant.');
   });
   const connect = async () => {
-    await navigate(page, 'Settings');
+    await openSettings(page, 'Home Assistant');
     await page.locator('main').getByRole('button', { name: /^(Connect your home|Manage connection)$/ }).click();
     await page.getByLabel('Home Assistant address', { exact: true }).fill('http://home-setup.test');
     await page.getByLabel('Long-lived access token', { exact: true }).fill('fixture-home-token');

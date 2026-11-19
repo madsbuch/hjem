@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { openSettings } from './helpers/settings';
 import { nativeStorage } from './helpers/native-storage';
 
 const installedApps = [
@@ -29,7 +30,7 @@ test('hidden installed apps stay out of search, persist, and return when shown a
   await expect(apps(page).getByRole('button', { name: 'Open Sonos', exact: true })).toBeVisible();
   await expect(apps(page).getByRole('button', { name: /^(Pin|Unpin) / })).toHaveCount(0);
 
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Home screen');
   await expect(sonosSwitch(page)).toBeChecked();
   await visibility(page).getByRole('textbox', { name: 'Find installed apps', exact: true }).fill('com.sonos');
   await expect(sonosSwitch(page)).toBeVisible();
@@ -51,7 +52,7 @@ test('hidden installed apps stay out of search, persist, and return when shown a
   await page.reload();
   await navigate(page, 'Apps');
   await expect(apps(page).getByRole('button', { name: 'Open Sonos', exact: true })).toHaveCount(0);
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Home screen');
   await visibility(page).getByRole('button', { name: 'Hidden', exact: true }).click();
   await expect(sonosSwitch(page)).toBeVisible();
   await expect(sonosSwitch(page)).not.toBeChecked();
@@ -76,7 +77,7 @@ test('failed visibility saves show an error and leave the installed app visible'
   storage.setAndroidApps(installedApps);
   storage.fail('storage_set_app_hidden');
   await page.goto('/');
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Home screen');
   await sonosSwitch(page).click();
   await expect(visibility(page).getByRole('alert')).toContainText('Could not save settings. Please try again.');
   await expect(sonosSwitch(page)).toBeChecked();
@@ -90,7 +91,7 @@ test('failed visibility saves show an error and leave the installed app visible'
   await navigate(page, 'Apps');
   await expect(apps(page).getByRole('button', { name: 'Open Sonos', exact: true })).toBeVisible();
   storage.fail('');
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Home screen');
   await sonosSwitch(page).click();
   await expect(sonosSwitch(page)).not.toBeChecked();
   await expect(visibility(page).getByRole('alert')).toHaveCount(0);
@@ -106,7 +107,7 @@ test('demo and Android visibility stay separate even for matching package names'
   await page.goto('/');
   await navigate(page, 'Apps');
   await expect(apps(page).getByRole('button', { name: 'Open Sonos', exact: true })).toBeVisible();
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Home screen');
   await sonosSwitch(page).click();
   await expect(sonosSwitch(page)).not.toBeChecked();
   expect(storage.snapshot.hiddenApps).toEqual([
@@ -119,7 +120,7 @@ test('demo and Android visibility stay separate even for matching package names'
   await navigate(page, 'Apps');
   await expect(apps(page).getByRole('button', { name: 'Open Music', exact: true })).toBeVisible();
   await expect(apps(page).getByRole('button', { name: 'Open Sonos', exact: true })).toHaveCount(0);
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Home screen');
   await expect(sonosSwitch(page)).not.toBeChecked();
   await sonosSwitch(page).click();
   await expect(sonosSwitch(page)).toBeChecked();
@@ -132,7 +133,7 @@ test('demo and Android visibility stay separate even for matching package names'
   await navigate(page, 'Apps');
   await expect(apps(page).getByRole('button', { name: 'Open Spotify', exact: true })).toBeVisible();
   await expect(apps(page).getByRole('button', { name: 'Open Sonos', exact: true })).toHaveCount(0);
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Home screen');
   await expect(sonosSwitch(page)).not.toBeChecked();
   await sonosSwitch(page).click();
   await expect(sonosSwitch(page)).toBeChecked();
@@ -144,7 +145,7 @@ test('keyboard switches can hide every installed app and restore the empty launc
   const storage = await nativeStorage(page);
   storage.setAndroidApps([{ name: 'Sonos', packageName: 'com.sonos.acr2' }]);
   await page.goto('/');
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Home screen');
   await expect(sonosSwitch(page)).toBeChecked();
   await sonosSwitch(page).focus();
   await sonosSwitch(page).press('Space');
@@ -156,7 +157,7 @@ test('keyboard switches can hide every installed app and restore the empty launc
   await expect(apps(page).getByRole('button', { name: 'Refresh apps', exact: true })).toBeEnabled();
   await expect(apps(page).getByRole('button', { name: /^Open / })).toHaveCount(0);
 
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Home screen');
   await visibility(page).getByRole('button', { name: 'Hidden', exact: true }).click();
   await expect(sonosSwitch(page)).not.toBeChecked();
   await sonosSwitch(page).focus();

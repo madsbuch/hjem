@@ -30,6 +30,11 @@ import {
   Workflow,
   Lightbulb,
   CircleHelp,
+  ChevronRight,
+  ArrowLeft,
+  CalendarDays,
+  ArchiveRestore,
+  Info,
 } from 'lucide-react';
 import {
   HomeAssistantClient,
@@ -96,6 +101,7 @@ import {
   setAppHidden,
 } from './lib/storage';
 
+type SettingsCategory = 'connection' | 'home' | 'concierge' | 'calendars' | 'electricity' | 'backup' | 'apps' | 'appearance' | 'about';
 type Page = 'home' | 'apps' | 'controls' | 'electricity' | 'planner' | 'setup' | 'concierge' | 'settings';
 const navigation: { id: Page; label: string; Icon: typeof House }[] = [
   { id: 'home', label: 'Overview', Icon: House },
@@ -141,6 +147,8 @@ export default function App() {
   const launcher = useLauncher();
   const launching = useRef(false);
   const [page, setPage] = useState<Page>('home');
+  /** The settings category that is open; none shows the settings menu. */
+  const [settingsCategory, setSettingsCategory] = useState<SettingsCategory | null>(null);
   const [snapshot, updateSnapshot] = useState<HassSnapshot>(() =>
     storage.connection
       ? {
@@ -343,10 +351,16 @@ export default function App() {
   const section: Page = page === 'planner' || page === 'setup' ? 'settings' : page;
   const navigate = (next: Page) => {
     setPage(next);
+    setSettingsCategory(null);
     setRoom('all');
     setQuery('');
     setOnlyFavourites(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+  /** Open one category of Settings, or its menu. */
+  const openSettings = (next: SettingsCategory | null) => {
+    navigate('settings');
+    setSettingsCategory(next);
   };
   const askConcierge = (text: string) => {
     setConciergeDraft({ id: ++draftSequence.current, text });
@@ -744,6 +758,28 @@ export default function App() {
     );
   };
 
+  const themeLabel = themeOptions.find((option) => option.id === theme)?.label ?? 'System';
+  type SettingsEntry = { id: SettingsCategory; label: string; detail: string; Icon: typeof House };
+  // Where Hjem neither is nor can become the home screen, there is nothing to set up for it.
+  const homeScreenEntry: SettingsEntry[] = launcher.homeScreen || launcher.supported ? [{
+    id: 'apps',
+    label: launcher.homeScreen ? 'Home screen and apps' : 'Home screen',
+    detail: launcher.homeScreen ? (launcher.isDefaultHome ? 'Hjem is your home screen' : 'Preview with sample apps') : 'Hjem is an app on this device',
+    Icon: House,
+  }] : [];
+  const settingsMenu: SettingsEntry[] = [
+    { id: 'connection', label: 'Home Assistant', detail: `${connectionLabel}${mode === 'live' && hub ? ' · through Hjem hub' : ''}`, Icon: Wifi },
+    { id: 'home', label: 'Home setup', detail: 'Automations, rooms, names, new appliances, and pinned devices', Icon: Workflow },
+    { id: 'concierge', label: 'Concierge', detail: concierge.settings.hasApiKey && concierge.settings.model ? concierge.settings.model : 'Not set up yet', Icon: MessageCircle },
+    { id: 'calendars', label: 'Calendars', detail: storage.calendarFeeds.length ? `${storage.calendarFeeds.length} linked` : 'None linked yet', Icon: CalendarDays },
+    { id: 'electricity', label: 'Electricity', detail: electricity.settings.hasApiKey ? 'Connected to Osmund' : 'Not connected', Icon: Zap },
+    { id: 'backup', label: 'Backup and restore', detail: copies[0] ? 'A copy of your home is on this device' : 'Save your home to a file, or bring it back', Icon: ArchiveRestore },
+    ...homeScreenEntry,
+    { id: 'appearance', label: 'Appearance', detail: themeLabel, Icon: Moon },
+    { id: 'about', label: 'About Hjem', detail: 'Version 0.1.0', Icon: Info },
+  ];
+  const category = settingsMenu.find((item) => item.id === settingsCategory);
+
   const conciergeChat = {
     messages: concierge.messages,
     busy: concierge.busy,
@@ -764,7 +800,7 @@ export default function App() {
     onRetrySaving: concierge.retrySaving,
     onStop: concierge.stop,
     onClear: concierge.clear,
-    onOpenSettings: () => navigate('settings'),
+    onOpenSettings: () => openSettings('concierge'),
     draftRequest: conciergeDraft,
     onDraftApplied: (id: number) => setConciergeDraft((current) => current?.id === id ? undefined : current),
   };
@@ -1043,7 +1079,7 @@ export default function App() {
             <ElectricityPage
               electricity={electricity}
               now={now}
-              onOpenSettings={() => navigate('settings')}
+              onOpenSettings={() => openSettings('electricity')}
             />
           )}
 
@@ -1057,7 +1093,7 @@ export default function App() {
               onLightStep={sendLightStep}
               subscribe={subscribeActivity}
               onPermit={permitJoin}
-              onBack={() => navigate('settings')}
+              onBack={() => openSettings('home')}
               notify={notify}
             />
           )}
@@ -1105,7 +1141,7 @@ export default function App() {
               now={now}
               onUndo={(id) => void undoSetup(id)}
               onAsk={(text) => setConciergeDraft({ id: ++draftSequence.current, text })}
-              onBack={() => navigate('settings')}
+              onBack={() => openSettings('home')}
             >
               <ConciergeChat
                 {...conciergeChat}
@@ -1118,7 +1154,7 @@ export default function App() {
             </HomeStudio>
           )}
 
-          {page === 'settings' && (
+          {page === 'settings' && !category && (
             <>
               <section className="page-intro">
                 <div>
@@ -1132,16 +1168,33 @@ export default function App() {
                   strokeWidth={1.3}
                 />
               </section>
-              <div className="settings-grid">
-                <CalendarSettings />
-                <ConciergeSettings
-                  settings={concierge.settings}
-                  onChange={concierge.setSettings}
-                  onBusyChange={concierge.setSettingsBusy}
-                  disabled={concierge.busy || concierge.settingsBusy || concierge.historyLoading}
-                  initialError={concierge.settingsError}
-                />
-                <section className="settings-card">
+              <nav className="settings-menu" aria-label="Settings">
+                {settingsMenu.map(({ id, label, detail, Icon }) => (
+                  <button key={id} onClick={() => openSettings(id)}>
+                    <span className="settings-menu-icon"><Icon size={21} strokeWidth={1.7} aria-hidden="true" /></span>
+                    <span className="settings-menu-text">
+                      <strong>{label}</strong>
+                      <span>{detail}</span>
+                    </span>
+                    <ChevronRight size={18} aria-hidden="true" />
+                  </button>
+                ))}
+              </nav>
+            </>
+          )}
+
+          {page === 'settings' && category && (
+            <>
+              <section className="settings-heading">
+                <button className="settings-back" onClick={() => openSettings(null)}>
+                  <ArrowLeft size={16} aria-hidden="true" /> Settings
+                </button>
+                <h1>{category.label}</h1>
+              </section>
+              <div className="settings-grid settings-detail">
+                {category.id === 'connection' && (
+                  <>
+<section className="settings-card">
                   <span className="settings-icon">
                     <Wifi size={25} />
                   </span>
@@ -1189,7 +1242,11 @@ export default function App() {
                     </button>
                   )}
                 </section>
-                <section className="settings-card">
+                  </>
+                )}
+                {category.id === 'home' && (
+                  <>
+<section className="settings-card">
                   <span className="settings-icon">
                     <Workflow size={25} />
                   </span>
@@ -1204,7 +1261,7 @@ export default function App() {
                     <ArrowRight size={17} />
                   </button>
                 </section>
-                <section className="settings-card">
+<section className="settings-card">
                   <span className="settings-icon">
                     <PencilRuler size={25} />
                   </span>
@@ -1219,7 +1276,7 @@ export default function App() {
                     <ArrowRight size={17} />
                   </button>
                 </section>
-                <section className="settings-card">
+<section className="settings-card">
                   <span className="settings-icon amber">
                     <Star size={25} />
                   </span>
@@ -1243,7 +1300,29 @@ export default function App() {
                     <ArrowRight size={17} />
                   </button>
                 </section>
-                <ConfigurationTransfer
+                  </>
+                )}
+                {category.id === 'concierge' && (
+<ConciergeSettings
+                  settings={concierge.settings}
+                  onChange={concierge.setSettings}
+                  onBusyChange={concierge.setSettingsBusy}
+                  disabled={concierge.busy || concierge.settingsBusy || concierge.historyLoading}
+                  initialError={concierge.settingsError}
+                />
+                )}
+                {category.id === 'calendars' && (
+<CalendarSettings />
+                )}
+                {category.id === 'electricity' && (
+<ElectricitySettings
+                  settings={electricity.settings}
+                  onChange={electricity.setSettings}
+                  notify={notify}
+                />
+                )}
+                {category.id === 'backup' && (
+<ConfigurationTransfer
                   snapshot={snapshot}
                   getSnapshot={() => snapshotRef.current}
                   setup={setup}
@@ -1257,21 +1336,10 @@ export default function App() {
                   copies={copies}
                   hubId={mode === 'live' ? hub?.hubId : undefined}
                 />
-                {launcher.homeScreen && <AppVisibilitySettings
-                  apps={launcher.allApps}
-                  hidden={launcher.hidden}
-                  preview={launcher.preview}
-                  loading={launcher.loading}
-                  error={launcher.error}
-                  onSetHidden={launcher.setHidden}
-                  onRefresh={() => void launcher.refresh()}
-                />}
-                <ElectricitySettings
-                  settings={electricity.settings}
-                  onChange={electricity.setSettings}
-                  notify={notify}
-                />
-                {launcher.homeScreen ? (
+                )}
+                {category.id === 'apps' && (
+                  <>
+{launcher.homeScreen ? (
                   <section className="settings-card home-screen-card">
                     <span className="settings-icon">
                       <House size={25} />
@@ -1321,7 +1389,20 @@ export default function App() {
                     </button>
                   </section>
                 )}
-                <section className="settings-card appearance-card">
+{launcher.homeScreen && <AppVisibilitySettings
+                  apps={launcher.allApps}
+                  hidden={launcher.hidden}
+                  preview={launcher.preview}
+                  loading={launcher.loading}
+                  error={launcher.error}
+                  onSetHidden={launcher.setHidden}
+                  onRefresh={() => void launcher.refresh()}
+                />}
+                  </>
+                )}
+                {category.id === 'appearance' && (
+                  <>
+<section className="settings-card appearance-card">
                   <span className="settings-icon">
                     <Moon size={25} />
                   </span>
@@ -1352,7 +1433,11 @@ export default function App() {
                     ))}
                   </div>
                 </section>
-                <section className="about-card">
+                  </>
+                )}
+                {category.id === 'about' && (
+                  <>
+<section className="about-card">
                   <img src="/brand/logo.svg" alt="Hjem logo" />
                   <div>
                     <h2>
@@ -1367,9 +1452,12 @@ export default function App() {
                     </span>
                   </div>
                 </section>
+                  </>
+                )}
               </div>
             </>
           )}
+
         </main>
       </div>
 

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { openSettings } from './helpers/settings';
 import type { ChatRecord } from '../src/lib/concierge-history';
 
 type VoiceRequest = {
@@ -132,7 +133,7 @@ async function navigate(page: Page, name: string) {
 async function startConcierge(page: Page, denied = false) {
   await installVoiceHarness(page, denied);
   await page.goto('/');
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Concierge');
   await page.getByLabel('OpenRouter API key', { exact: true }).fill('fixture-voice-key');
   await page.getByRole('radio', { name: 'Use another model', exact: true }).check();
   await page.getByLabel('Custom model ID', { exact: true }).fill('fixture/text');
@@ -242,7 +243,7 @@ test('a voice message streams PCM audio and keeps a readable transcript without 
   expect(JSON.stringify(saved)).not.toContain('input_audio');
   expect(JSON.stringify(saved)).not.toContain(audioPart!.input_audio!.data);
   expect(JSON.stringify(saved)).not.toContain(outputAudio);
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Concierge');
   await expect(page.getByLabel('Custom model ID', { exact: true })).toHaveValue('fixture/text');
   await page.reload();
   await navigate(page, 'Concierge');

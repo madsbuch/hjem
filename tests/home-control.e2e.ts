@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { openSettings } from './helpers/settings';
 import { nativeStorage } from './helpers/native-storage';
 
 async function navigate(
@@ -14,7 +15,7 @@ async function navigate(
 }
 
 async function openConnection(page: Page) {
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Home Assistant');
   await page
     .locator('main')
     .getByRole('button', { name: /^(Connect your home|Manage connection)$/ })
@@ -663,7 +664,7 @@ test('manual dark and light appearance changes persist across refresh', async ({
     .locator('.device-card')
     .first()
     .evaluate((element) => getComputedStyle(element).backgroundColor);
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Appearance');
   const appearance = page.getByRole('group', {
     name: 'Appearance',
     exact: true,
@@ -681,7 +682,7 @@ test('manual dark and light appearance changes persist across refresh', async ({
   expect(darkSurface).not.toBe(lightSurface);
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Appearance');
   await expect(
     appearance.getByRole('button', { name: 'Dark', exact: true }),
   ).toHaveAttribute('aria-pressed', 'true');
@@ -692,7 +693,7 @@ test('manual dark and light appearance changes persist across refresh', async ({
   ).toHaveAttribute('aria-pressed', 'true');
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Appearance');
   await expect(
     appearance.getByRole('button', { name: 'Light', exact: true }),
   ).toHaveAttribute('aria-pressed', 'true');
@@ -704,7 +705,7 @@ test('system appearance follows live device changes and manual choices override 
   await page.emulateMedia({ colorScheme: 'dark' });
   await page.goto('/');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Appearance');
   const appearance = page.getByRole('group', {
     name: 'Appearance',
     exact: true,
@@ -1079,7 +1080,7 @@ test('browser app launches and Android home settings give honest preview feedbac
     /apps open in Hjem for Android/i,
   );
   await expect(page).toHaveURL(/\/$/);
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Home screen');
   await expect(
     page.getByRole('heading', { name: 'A home for your tablet', exact: true }),
   ).toBeVisible();
@@ -1270,13 +1271,13 @@ test('saved Home Assistant connection and selected speaker restore after reload 
   ]);
   await page.reload();
   await expect(page.getByRole('tab', { name: 'Basic player', exact: true })).toHaveAttribute('aria-selected', 'true');
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Home Assistant');
   await expect(page.locator('main .setting-row').filter({ hasText: 'Connection' })).toContainText('Home connected');
   expect(await page.evaluate(() => Object.values(localStorage).join(''))).not.toContain('private-test-access-token');
   await page.getByRole('button', { name: 'Forget connection', exact: true }).click();
   await expect.poll(() => storage.snapshot.connection).toBeNull();
   await page.reload();
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Home Assistant');
   await expect(page.locator('main .setting-row').filter({ hasText: 'Connection' })).toContainText('Demo home');
   await expect(page.getByRole('button', { name: 'Forget connection', exact: true })).toHaveCount(0);
 });

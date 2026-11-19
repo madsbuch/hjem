@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
+import { openSettings } from './helpers/settings';
 import { nativeStorage } from './helpers/native-storage';
 
 const fakeKey = 'sk-or-v1-hjem-e2e-only-not-a-real-key';
@@ -163,7 +164,7 @@ async function navigate(
 }
 
 async function configure(page: Page) {
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Concierge');
   await page.getByLabel('OpenRouter API key', { exact: true }).fill(fakeKey);
   await page
     .getByRole('radio', { name: 'Use another model', exact: true })
@@ -270,7 +271,7 @@ test('settings check a custom model and key, and keep browser keys out of storag
   await expect(
     page.getByRole('textbox', { name: 'Message Home Concierge' }),
   ).toBeDisabled();
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Concierge');
   await expect(page.getByLabel('Custom model ID', { exact: true })).toHaveCount(0);
   await expect(
     page.getByRole('button', { name: 'Test key', exact: true }),
@@ -577,7 +578,7 @@ test('model recommendations are concise, selectable, and preserve a saved custom
   }, nativeModels);
   const mock = await mockOpenRouter(page);
   await page.goto('/');
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Concierge');
   const picker = page.getByRole('group', {
     name: 'Concierge model',
     exact: true,
@@ -597,13 +598,13 @@ test('model recommendations are concise, selectable, and preserve a saved custom
     page.getByText('Home Concierge settings saved.', { exact: true }),
   ).toBeVisible();
   await page.reload();
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Concierge');
   await expect(
     page.getByRole('radio', { name: 'GPT-6.1 Terra', exact: true }),
   ).toBeChecked();
   await configure(page);
   await navigate(page, 'Overview');
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Concierge');
   await expect(
     page.getByRole('radio', { name: 'Use another model', exact: true }),
   ).toBeChecked();
@@ -632,7 +633,7 @@ test('changing the saved model starts a fresh conversation', async ({
   await expect(
     page.getByRole('log').getByText('This is an intercepted test response.'),
   ).toBeVisible();
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Concierge');
   await page
     .getByRole('radio', { name: 'Claude Haiku 5.5', exact: true })
     .check();

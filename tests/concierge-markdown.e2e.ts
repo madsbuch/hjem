@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { openSettings } from './helpers/settings';
 
 const cors = {
   'access-control-allow-origin': '*',
@@ -38,7 +39,7 @@ async function startChat(page: Page, answer: string) {
     } else await route.abort('blockedbyclient');
   });
   await page.goto('/');
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Concierge');
   await page.getByLabel('OpenRouter API key', { exact: true }).fill('fixture-only-key');
   await page.getByRole('radio', { name: 'Use another model', exact: true }).check();
   await page.getByLabel('Custom model ID', { exact: true }).fill('fixture/markdown');

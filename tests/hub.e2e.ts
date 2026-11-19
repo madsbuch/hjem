@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { startHub, type Hub } from '../hub/server';
+import { openSettings } from './helpers/settings';
 import { fakeHomeAssistant } from '../hub/testing/fake-home-assistant';
 
 // A real hub in front of a simulated Home Assistant; the app only ever talks to the hub.
@@ -28,7 +29,7 @@ async function navigate(page: Page, name: string) {
 }
 async function connect(page: Page, code: string) {
   await page.goto('/');
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Home Assistant');
   await page.getByRole('button', { name: 'Connect your home' }).click();
   await page.getByLabel('Home Assistant address').fill(`http://127.0.0.1:${hub.port}`);
   await page.getByLabel('Long-lived access token').fill(code);
@@ -40,6 +41,7 @@ test('a device pairs with the hub, controls the home through it, and keeps a ful
   await expect(page.getByText('Home Assistant connected.')).toBeVisible();
   await expect(page.locator('.setting-row', { hasText: 'Through' })).toContainText('Hjem hub 0.0.0-test');
 
+  await openSettings(page, 'Backup and restore');
   const card = page.getByRole('region', { name: 'Move or back up your home' });
   await expect(card.getByText('This device keeps a full copy of your home from the Hjem hub')).toBeVisible();
   await card.getByRole('button', { name: 'Restore from this device' }).click();
@@ -59,8 +61,11 @@ test('a device pairs with the hub, controls the home through it, and keeps a ful
 
 test('the copy on a device brings the home back onto a new hub', async ({ page }) => {
   await connect(page, hub.pairingCode);
+  await expect(page.getByText('Home Assistant connected.')).toBeVisible();
+  await openSettings(page, 'Backup and restore');
   const card = page.getByRole('region', { name: 'Move or back up your home' });
   await expect(card.getByText('This device keeps a full copy of your home from the Hjem hub')).toBeVisible();
+  await openSettings(page, 'Home Assistant');
 
   // The Raspberry Pi is replaced: a new Home Assistant with the same lamp paired, and nothing set up.
   await hub.close();
@@ -82,6 +87,7 @@ test('the copy on a device brings the home back onto a new hub', async ({ page }
   await page.getByRole('button', { name: 'Connect Home Assistant' }).click();
   await expect(page.getByText('Home Assistant connected.')).toBeVisible();
 
+  await openSettings(page, 'Backup and restore');
   await card.getByRole('button', { name: 'Restore from this device' }).click();
   const old = card.getByRole('listitem').filter({ hasText: 'from another hub' });
   await expect(old).toContainText('1 room, 1 device, 1 mood, 1 automation or script');

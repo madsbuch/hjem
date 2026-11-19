@@ -41,6 +41,7 @@ async function settings(page: Page) {
   await page.locator('nav:visible').first().waitFor();
   const navigation = await mobile.isVisible() ? mobile : page.getByRole('navigation', { name: 'Main navigation' });
   await navigation.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Settings', exact: true }).getByRole('button', { name: /^Concierge/ }).click();
   return page.locator('#concierge-settings');
 }
 

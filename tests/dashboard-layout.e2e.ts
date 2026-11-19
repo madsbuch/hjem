@@ -46,12 +46,15 @@ test('navigation and content stay clear of system bars in connected layouts', as
       await page.screenshot({ path: testInfo.outputPath(`connected-${size.width}.png`), scale: 'css' });
 
       await settings.click();
-      await expect(page.getByRole('button', { name: 'Manage connection', exact: true })).toBeVisible();
-      await page.locator('.about-card').scrollIntoViewIfNeeded();
+      // The end of the settings menu, the longest list here, stays above the navigation.
+      const menu = page.getByRole('navigation', { name: 'Settings', exact: true });
+      await menu.getByRole('button').last().scrollIntoViewIfNeeded();
       await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-      const lastCard = await page.locator('.about-card').boundingBox();
+      const lastCard = await menu.boundingBox();
       const bottomLimit = phone ? (await page.locator('.mobile-navigation').boundingBox())!.y : size.height - 48;
       expect(lastCard!.y + lastCard!.height).toBeLessThanOrEqual(bottomLimit);
+      await menu.getByRole('button', { name: /^Home Assistant/ }).click();
+      await expect(page.getByRole('button', { name: 'Manage connection', exact: true })).toBeVisible();
       await navigation.getByRole('button', { name: 'Overview', exact: true }).click();
       await expect.poll(async () => page.evaluate(() => window.scrollY)).toBe(0);
     }

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { openSettings } from './helpers/settings';
 import { nativeStorage } from './helpers/native-storage';
 
 test.use({ timezoneId: 'Europe/Copenhagen' });
@@ -48,7 +49,7 @@ test('saves two calendar links, shows their real events in demo mode, and persis
   storage.setFeedResponse(familyUrl, calendar('family-lunch', 'Family lunch from iCal'));
   storage.setFeedResponse(workUrl, calendar('work-day', 'Work planning day', true));
   await page.goto('/');
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Calendars');
   await addLink(page, 'Family', familyUrl);
   await addLink(page, 'Work', workUrl);
   expect(storage.snapshot.calendarFeeds).toEqual([
@@ -76,7 +77,7 @@ test('saves two calendar links, shows their real events in demo mode, and persis
   await page.locator('nav:visible').first().waitFor();
   await expect(agenda.getByRole('article', { name: /^Family lunch from iCal,/ })).toBeVisible();
   await expect(agenda.getByText('Work planning day', { exact: true })).toBeVisible();
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Calendars');
   await page.getByRole('button', { name: 'Remove Work calendar', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Remove Work calendar', exact: true })).toHaveCount(0);
   expect(storage.snapshot.calendarFeeds).toEqual([{ id: 1, name: 'Family', url: familyUrl }]);
@@ -121,7 +122,7 @@ test('reports a failed calendar save without claiming the link was added', async
   const storage = await nativeStorage(page);
   storage.fail('calendar_add_feed');
   await page.goto('/');
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Calendars');
   const settings = page.getByRole('region', { name: 'Calendars', exact: true });
   await settings.getByLabel('Calendar name', { exact: true }).fill('Unsaved calendar');
   await settings.getByLabel('iCal / ICS link', { exact: true }).fill(familyUrl);
@@ -140,7 +141,7 @@ test('shows full calendar URLs and edits the saved name and link in place', asyn
   storage.setFeedResponse(familyUrl, calendar('old', 'Old calendar event'));
   storage.setFeedResponse(workUrl, calendar('new', 'New calendar event'));
   await page.goto('/');
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Calendars');
   const settings = page.getByRole('region', { name: 'Calendars', exact: true });
   const url = settings.getByLabel('iCal / ICS link', { exact: true });
   await expect(url).toHaveAttribute('type', 'url');
@@ -158,7 +159,7 @@ test('shows full calendar URLs and edits the saved name and link in place', asyn
   await expect(page.getByRole('article', { name: /^New calendar event,/ })).toBeVisible();
   await expect(page.getByRole('article', { name: /^Old calendar event,/ })).toHaveCount(0);
   await page.reload();
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Calendars');
   await settings.getByRole('button', { name: 'Edit Updated family calendar', exact: true }).click();
   await expect(url).toHaveValue(workUrl);
   await expect(settings.getByLabel('Calendar name', { exact: true })).toHaveValue('Updated family');
@@ -170,7 +171,7 @@ test('cancelled, duplicate and failed calendar edits preserve the existing subsc
   const initial = [{ id: 7, name: 'Family', url: familyUrl }, { id: 8, name: 'Work', url: workUrl }];
   const storage = await nativeStorage(page, { calendarFeeds: initial });
   await page.goto('/');
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Calendars');
   const settings = page.getByRole('region', { name: 'Calendars', exact: true });
   const url = settings.getByLabel('iCal / ICS link', { exact: true });
   await settings.getByRole('button', { name: 'Edit Family calendar', exact: true }).click();
@@ -191,7 +192,7 @@ test('cancelled, duplicate and failed calendar edits preserve the existing subsc
   await expect(settings.getByRole('button', { name: 'Edit Family calendar', exact: true })).toBeVisible();
   expect(storage.snapshot.calendarFeeds).toEqual(initial);
   await page.reload();
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Calendars');
   await expect(settings.getByText(familyUrl, { exact: true })).toBeVisible();
 });
 
@@ -200,7 +201,7 @@ test('browser calendar editing replaces the existing feed without duplicates', a
     await route.fulfill({ contentType: 'text/calendar', headers: { 'access-control-allow-origin': '*' }, body: calendar('browser', 'Browser calendar event') });
   });
   await page.goto('/');
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Calendars');
   await addLink(page, 'Family', familyUrl);
   const settings = page.getByRole('region', { name: 'Calendars', exact: true });
   await settings.getByRole('button', { name: 'Edit Family calendar', exact: true }).click();

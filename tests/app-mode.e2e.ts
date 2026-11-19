@@ -43,6 +43,7 @@ test('as the home screen, Hjem shows the device’s apps', async ({ page }) => {
   await navigation.getByRole('button', { name: 'Apps', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Open Sonos', exact: true })).toBeVisible();
   await navigation.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Settings', exact: true }).getByRole('button', { name: /^Home screen/ }).click();
   await expect(page.getByRole('heading', { name: 'App visibility' })).toBeVisible();
   await expect(page.getByText('Hjem is your default')).toBeVisible();
 });
@@ -53,6 +54,7 @@ test('as an ordinary app, Hjem leaves apps to the phone and offers to become the
   await expect(navigation.getByRole('button', { name: 'Controls', exact: true })).toBeVisible();
   await expect(navigation.getByRole('button', { name: 'Apps', exact: true })).toHaveCount(0);
   await navigation.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Settings', exact: true }).getByRole('button', { name: /^Home screen/ }).click();
   await expect(page.getByRole('heading', { name: 'App visibility' })).toHaveCount(0);
   await expect(page.getByText('Hjem is an app on this device.')).toBeVisible();
   await page.getByRole('button', { name: 'Use Hjem as the home screen' }).click();

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { openSettings } from './helpers/settings';
 
 const cors = {
   'access-control-allow-origin': '*',
@@ -48,7 +49,7 @@ async function openConcierge(page: Page, configured: boolean) {
   });
   await page.goto('/');
   if (configured) {
-    await navigate(page, 'Settings');
+    await openSettings(page, 'Concierge');
     await page.getByLabel('OpenRouter API key', { exact: true }).fill('fixture-only-key');
     await page.getByRole('radio', { name: 'Use another model', exact: true }).check();
     await page.getByLabel('Custom model ID', { exact: true }).fill('fixture/scroll');

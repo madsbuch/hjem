@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { openSettings } from './helpers/settings';
 
 async function navigate(page: Page, name: 'Settings' | 'Concierge') {
   await page.locator('nav:visible').first().waitFor();
@@ -102,7 +103,7 @@ test('native model saves block new requests and clear previous provider history'
     log.getByText('An answer from the old provider.', { exact: true }),
   ).toBeVisible();
 
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Concierge');
   await page
     .getByLabel('Custom model ID', { exact: true })
     .fill('fake/new-model');
@@ -128,7 +129,7 @@ test('native model saves block new requests and clear previous provider history'
       () => (window as any).conciergeNativeFixture.requests.length,
     ),
   ).toBe(1);
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Concierge');
   await expect(
     page.getByRole('button', { name: 'Save concierge settings' }),
   ).toBeDisabled();

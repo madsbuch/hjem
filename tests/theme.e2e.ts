@@ -13,6 +13,7 @@ async function openAppearance(page: Page) {
   await navigation
     .getByRole('button', { name: 'Settings', exact: true })
     .click();
+  await page.getByRole('navigation', { name: 'Settings', exact: true }).getByRole('button', { name: /^Appearance/ }).click();
   await expect(
     page.getByRole('group', { name: 'Appearance', exact: true }),
   ).toBeVisible();

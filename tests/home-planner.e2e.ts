@@ -8,6 +8,7 @@ async function openPlanner(page: Page) {
   const navigation = await mobile.isVisible() ? mobile : page.getByRole('navigation', { name: 'Main navigation' });
   // The planner is opened from Settings rather than the main menu.
   await navigation.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Settings', exact: true }).getByRole('button', { name: /^Home setup/ }).click();
   await page.getByRole('button', { name: 'Open home planner' }).click();
   await expect(page.getByRole('heading', { level: 1, name: 'Find, name, and place.' })).toBeVisible();
   await expect(navigation.getByRole('button', { name: 'Settings', exact: true })).toHaveAttribute('aria-current', 'page');
@@ -199,6 +200,8 @@ test('the planner lives under Settings and returns there', async ({ page }) => {
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Planner', exact: true })).toHaveCount(0);
   await openPlanner(page);
+  // Back returns to the settings category the planner was opened from.
   await page.locator('.planner-back').click();
-  await expect(page.getByRole('heading', { level: 1, name: 'A home that fits you.' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Home setup' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open home planner' })).toBeVisible();
 });

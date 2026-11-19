@@ -10,7 +10,10 @@ async function navigate(page: Page, name: string) {
   const mobile = page.getByRole('navigation', { name: 'Mobile navigation' });
   const navigation = await mobile.isVisible() ? mobile : page.getByRole('navigation', { name: 'Main navigation' });
   await navigation.getByRole('button', { name: name === 'Planner' ? 'Settings' : name, exact: true }).click();
-  if (name === 'Planner') await page.getByRole('button', { name: 'Open home planner' }).click();
+  if (name === 'Planner') {
+    await page.getByRole('navigation', { name: 'Settings', exact: true }).getByRole('button', { name: /^Home setup/ }).click();
+    await page.getByRole('button', { name: 'Open home planner' }).click();
+  }
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 }
 

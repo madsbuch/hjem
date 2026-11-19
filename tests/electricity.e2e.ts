@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { openSettings } from './helpers/settings';
 import { nativeStorage } from './helpers/native-storage';
 
 async function navigate(page: Page, name: string) {
@@ -81,7 +82,7 @@ test('connects an Osmund key on the tablet and shows the home’s own data', asy
   // Without Osmund, the demo home shows sample prices and points to Settings.
   await navigate(page, 'Electricity');
   await expect(page.getByText('Sample prices for the demo home. Connect Osmund in Settings to see your own.')).toBeVisible();
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Electricity');
 
   const card = page.getByRole('region', { name: 'Electricity' });
   await card.getByLabel('Osmund API key').fill('osm_wrong');
@@ -107,7 +108,7 @@ test('connects an Osmund key on the tablet and shows the home’s own data', asy
   expect(storage.electricityRequests.filter((request) => request.kind !== 'locations')).toHaveLength(6);
   expect(JSON.stringify(storage.electricityRequests)).not.toContain('osm_');
 
-  await navigate(page, 'Settings');
+  await openSettings(page, 'Electricity');
   await card.getByRole('button', { name: 'Remove key' }).click();
   await expect(page.getByText('Osmund key removed.')).toBeVisible();
   await navigate(page, 'Electricity');

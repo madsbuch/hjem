@@ -1,5 +1,6 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { isRecord } from '../src/lib/home-assistant-protocol';
+import { openSettings } from './helpers/settings';
 
 const cors = {
   'access-control-allow-origin': '*',
@@ -30,14 +31,15 @@ async function navigate(page: Page, name: string) {
 }
 async function openSetup(page: Page, configure = true) {
   await page.goto('/');
-  await navigate(page, 'Settings');
   if (configure) {
+    await openSettings(page, 'Concierge');
     await page.getByLabel('OpenRouter API key', { exact: true }).fill('fixture-only-key');
     await page.getByRole('radio', { name: 'Use another model', exact: true }).check();
     await page.getByLabel('Custom model ID', { exact: true }).fill('fixture/setup-model');
     await page.getByRole('button', { name: 'Save concierge settings' }).click();
     await expect(page.getByText('Home Concierge settings saved.', { exact: true })).toBeVisible();
   }
+  await openSettings(page, 'Home setup');
   await page.getByRole('button', { name: 'Open home setup' }).click();
   await expect(page.getByRole('heading', { name: 'Home setup.' })).toBeVisible();
 }
