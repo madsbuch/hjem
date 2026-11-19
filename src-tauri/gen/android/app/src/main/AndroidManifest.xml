@@ -28,11 +28,15 @@
         android:theme="@style/Theme.hjem"
         android:networkSecurityConfig="@xml/network_security_config"
         android:usesCleartextTraffic="${usesCleartextTraffic}">
-        <!-- Route app-icon launches into the HOME task before creating Tauri's
-             Activity/WebView. A direct LAUNCHER entry can create a second task. -->
+        <!-- Route app-icon launches before creating Tauri's Activity/WebView: into
+             the HOME task where Hjem is the home screen (a direct LAUNCHER entry
+             can create a second task), or into an ordinary task where it is not.
+             This step has a task of its own, so its exclusion from the app
+             switcher does not carry over to the app's task. -->
         <activity
             android:name=".LauncherActivity"
             android:exported="true"
+            android:taskAffinity=""
             android:excludeFromRecents="true"
             android:theme="@android:style/Theme.NoDisplay">
             <intent-filter>
