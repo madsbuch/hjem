@@ -948,10 +948,6 @@ export default function App() {
                 <div>
                   <span className="eyebrow date-label">YOUR DEVICES</span>
                   <h1>Home controls</h1>
-                  <p>
-                    Lights, moods, and automations, the things you reach for
-                    every day.
-                  </p>
                 </div>
                 {controlsTab === 'devices' && <div className="setup-room-actions">
                   <span className="count-pill">{snapshot.areas.length} rooms</span>
@@ -975,8 +971,9 @@ export default function App() {
                       name: area.name,
                       lights: lights.filter((entity) => roomFor(entity, snapshot) === area.area_id),
                     }))}
-                    renderLight={renderDevice}
                     disabled={!canControl}
+                    pending={pending}
+                    onAction={act}
                     onSwitch={(targets, on) => void Promise.all(targets.map((entity) => act(entity, on ? 'turn_on' : 'turn_off')))}
                   />
                 )}

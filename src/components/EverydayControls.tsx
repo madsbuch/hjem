@@ -1,8 +1,8 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState } from 'react';
 import { LightbulbOff, LoaderCircle, MessageCircle } from 'lucide-react';
 import type { HassEntity } from '../lib/home-assistant';
 import type { HomeSetup, RoutineDescription } from '../lib/home-setup-types';
-import { nameOf } from '../lib/entities';
+import { nameOf, numberAttribute, supportsBrightness } from '../lib/entities';
 import { ago, useSummaries } from './HomeStudio';
 import '../home-controls.css';
 
@@ -36,19 +36,70 @@ export function ControlsTabs({ tab, onTab, lightsOn, moods, automationsOn }: Tab
   );
 }
 
+type LightAction = (entity: HassEntity, service: string, data?: Record<string, unknown>) => Promise<boolean>;
 interface LightsProps {
   rooms: { key: string; name: string; lights: HassEntity[] }[];
-  /** A light's own card, with its switch and brightness. */
-  renderLight: (entity: HassEntity) => ReactNode;
   disabled: boolean;
-  /** Switch several lights at once; resolves when Home Assistant has answered for each. */
+  pending: Set<string>;
+  onAction: LightAction;
+  /** Switch several lights at once. */
   onSwitch: (lights: HassEntity[], on: boolean) => void;
 }
 
 const isOn = (entity: HassEntity) => entity.state === 'on';
 const usable = (entity: HassEntity) => entity.state !== 'unavailable';
+const sliderKeys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'];
 
-export function LightsPanel({ rooms, renderLight, disabled, onSwitch }: LightsProps) {
+/** One light on one line: its name, brightness where it has one, and its switch. */
+function LightRow({ entity, room, disabled, pending, onAction }: { entity: HassEntity; room: string; disabled: boolean; pending: boolean; onAction: LightAction }) {
+  const name = nameOf(entity);
+  // Under its room's heading, "Kitchen counter strip" is just "Counter strip".
+  const rest = name.toLocaleLowerCase().startsWith(`${room.toLocaleLowerCase()} `) ? name.slice(room.length + 1).trim() : '';
+  const shown = rest ? `${rest.charAt(0).toLocaleUpperCase()}${rest.slice(1)}` : name;
+  const on = isOn(entity);
+  const raw = numberAttribute(entity, 'brightness', Number.NaN);
+  const known = Number.isFinite(raw) && raw >= 0 && raw <= 255;
+  const brightness = known ? Math.round(raw / 2.55) : 0;
+  const [level, setLevel] = useState(brightness);
+  useEffect(() => setLevel(brightness), [brightness]);
+  const locked = disabled || pending || !usable(entity);
+  const dim = (value: number) => {
+    void onAction(entity, 'turn_on', { brightness_pct: value }).then((sent) => { if (!sent) setLevel(brightness); });
+  };
+  return (
+    <li className={`controls-light${on ? ' on' : ''}${usable(entity) ? '' : ' unavailable'}`}>
+      <span className="controls-light-name" title={name}>{shown}</span>
+      {!usable(entity) ? <span className="controls-light-note">Not responding</span>
+        : supportsBrightness(entity) && (
+          <input
+            className="device-range"
+            type="range"
+            min="1"
+            max="100"
+            value={level || 1}
+            disabled={locked || !on || !known}
+            aria-label={`${name} brightness`}
+            aria-valuetext={known && on ? `${level}%` : 'Off'}
+            onChange={(event) => setLevel(event.target.valueAsNumber)}
+            onPointerUp={(event) => dim(event.currentTarget.valueAsNumber)}
+            onKeyUp={(event) => { if (sliderKeys.includes(event.key)) dim(event.currentTarget.valueAsNumber); }}
+          />
+        )}
+      <button
+        role="switch"
+        aria-checked={on}
+        aria-label={`Toggle ${name}`}
+        className="controls-switch"
+        disabled={locked}
+        onClick={() => void onAction(entity, on ? 'turn_off' : 'turn_on')}
+      >
+        <i aria-hidden="true" />
+      </button>
+    </li>
+  );
+}
+
+export function LightsPanel({ rooms, disabled, pending, onAction, onSwitch }: LightsProps) {
   const all = rooms.flatMap((room) => room.lights);
   const on = all.filter(isOn);
   if (!all.length)
@@ -61,27 +112,33 @@ export function LightsPanel({ rooms, renderLight, disabled, onSwitch }: LightsPr
           <LightbulbOff size={16} aria-hidden="true" /> All lights off
         </button>
       </div>
-      {rooms.filter((room) => room.lights.length).map((room) => {
-        const lit = room.lights.filter(isOn);
-        const reachable = room.lights.filter(usable);
-        return (
-          <section className="controls-room" key={room.key} aria-label={room.name}>
-            <div className="controls-room-heading">
-              <h2>{room.name}</h2>
-              <span>{lit.length ? `${lit.length} on` : 'Off'}</span>
-              <button
-                className="controls-room-switch"
-                disabled={disabled || !reachable.length}
-                onClick={() => onSwitch(lit.length ? lit : reachable, !lit.length)}
-                aria-label={`Turn ${lit.length ? 'off' : 'on'} the lights in ${room.name}`}
-              >
-                {lit.length ? 'Turn off' : 'Turn on'}
-              </button>
-            </div>
-            <div className="devices-grid">{room.lights.map(renderLight)}</div>
-          </section>
-        );
-      })}
+      <div className="controls-rooms">
+        {rooms.filter((room) => room.lights.length).map((room) => {
+          const lit = room.lights.filter(isOn);
+          const reachable = room.lights.filter(usable);
+          return (
+            <section className="controls-room" key={room.key} aria-label={room.name}>
+              <div className="controls-room-heading">
+                <h2>{room.name}</h2>
+                <span>{lit.length ? `${lit.length} on` : 'Off'}</span>
+                <button
+                  className="controls-room-switch"
+                  disabled={disabled || !reachable.length}
+                  onClick={() => onSwitch(lit.length ? lit : reachable, !lit.length)}
+                  aria-label={`Turn ${lit.length ? 'off' : 'on'} the lights in ${room.name}`}
+                >
+                  {lit.length ? 'Turn off' : 'Turn on'}
+                </button>
+              </div>
+              <ul>
+                {room.lights.map((entity) => (
+                  <LightRow key={entity.entity_id} entity={entity} room={room.name} disabled={disabled} pending={pending.has(entity.entity_id)} onAction={onAction} />
+                ))}
+              </ul>
+            </section>
+          );
+        })}
+      </div>
     </>
   );
 }

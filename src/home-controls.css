@@ -8,7 +8,7 @@
   width: fit-content;
   max-width: 100%;
   padding: 4px;
-  margin-bottom: 24px;
+  margin-bottom: 14px;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: #fff;
@@ -51,50 +51,125 @@ html[data-theme='dark'] .controls-tabs {
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 12px;
-  margin-bottom: 22px;
+  gap: 8px 12px;
+  margin-bottom: 12px;
 }
 .controls-summary p {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--muted);
 }
 .controls-summary .secondary-button {
   display: inline-flex;
   gap: 8px;
+  min-height: 40px;
+  padding: 8px 14px;
+}
+/* Rooms pack into as many columns as fit, so a whole home shows without scrolling. */
+.controls-rooms {
+  columns: 290px;
+  column-gap: 12px;
 }
 .controls-room {
-  margin-bottom: 30px;
+  --room-card: #fff;
+  --light-on: #faf4e5;
+  break-inside: avoid;
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: var(--room-card);
+  overflow: hidden;
+}
+html[data-theme='dark'] .controls-room {
+  --room-card: #20262c;
+  --light-on: #393323;
 }
 .controls-room-heading {
   display: flex;
-  align-items: baseline;
-  gap: 12px;
-  margin-bottom: 12px;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 6px 4px 14px;
 }
 .controls-room-heading h2 {
-  font-size: 18px;
-  font-weight: 550;
-  letter-spacing: -0.3px;
-  overflow-wrap: anywhere;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .controls-room-heading > span {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--muted);
   white-space: nowrap;
 }
 .controls-room-switch {
   margin-left: auto;
   flex-shrink: 0;
-  min-height: 40px;
-  padding: 0 14px;
-  border: 1px solid var(--border);
-  border-radius: 9px;
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: 8px;
   background: transparent;
-  font-size: 13px;
+  color: var(--forest);
+  font-size: 12px;
   font-weight: 550;
 }
 .controls-room-switch:hover:not(:disabled) {
-  border-color: var(--forest);
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+.controls-room ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.controls-light {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(64px, 104px) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 42px;
+  padding: 3px 10px 3px 14px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+}
+.controls-light.on {
+  background: var(--light-on);
+}
+.controls-light-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.controls-light.unavailable .controls-light-name,
+.controls-light-note {
+  color: var(--muted);
+}
+.controls-light-note {
+  font-size: 11px;
+  text-align: right;
+}
+.controls-light .device-range {
+  margin: 0;
+  grid-column: 2;
+}
+.controls-light .device-range:disabled {
+  opacity: 0.35;
+}
+.controls-light .controls-switch {
+  grid-column: 3;
+  width: 44px;
+  height: 26px;
+}
+.controls-light .controls-switch i {
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+}
+.controls-light .controls-switch[aria-checked='true'] {
+  background: #c9a45c;
+}
+.controls-light .controls-switch[aria-checked='true'] i {
+  transform: translateX(18px);
 }
 .controls-moods .scene-button {
   min-height: 84px;
@@ -200,12 +275,18 @@ html[data-theme='dark'] .controls-switch i {
 @media (max-width: 700px) {
   .controls-tabs {
     width: 100%;
+    flex-wrap: nowrap;
   }
   .controls-tabs button {
-    flex: 1;
+    flex: 1 1 auto;
     justify-content: center;
-    padding: 0 10px;
-    font-size: 13px;
+    min-width: 0;
+    padding: 0 6px;
+    font-size: 12px;
+  }
+  /* The counts are in each tab's content; one row of tabs matters more here. */
+  .controls-count {
+    display: none;
   }
 }
 @media (prefers-reduced-motion: reduce) {

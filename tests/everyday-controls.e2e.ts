@@ -16,9 +16,14 @@ test('Controls opens on lights, grouped by room, with room and whole-home switch
   await expect(tabs(page).getByRole('tab', { name: /Lights/ })).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByText('2 of 4 lights on')).toBeVisible();
 
+  // Each light is one short line, so a home's lights fit on a tablet without scrolling.
+  const row = await page.getByRole('region', { name: 'Living room', exact: true }).getByRole('listitem').first().boundingBox();
+  expect(row?.height).toBeLessThanOrEqual(48);
+  expect(await page.evaluate(() => innerWidth < 900 || document.documentElement.scrollHeight <= innerHeight)).toBe(true);
+
   // Only lights are here: no thermostat, speaker, or sensor.
   const living = page.getByRole('region', { name: 'Living room', exact: true });
-  await expect(living.locator('.device-card')).toHaveCount(2);
+  await expect(living.getByRole('listitem')).toHaveCount(2);
   await expect(page.getByText('Living room climate')).toHaveCount(0);
   await expect(page.getByText('Coffee machine')).toHaveCount(0);
 
